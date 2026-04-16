@@ -154,14 +154,15 @@ async function createAnimatedSticker(mediaBuffer) {
                 })
                 .outputOptions([
                     '-vcodec libwebp',
-                    '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,fps=15,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0.0,format=rgba',
+                    '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,fps=10,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=white@0.0,format=rgba',
                     '-lossless 0',           
-                    '-compression_level 4',
-                    '-q:v 50',               
+                    '-compression_level 6',
+                    '-qscale 20',               
                     '-loop 0',               
                     '-preset default',
                     '-an',                   
-                    '-vsync 0'
+                    '-vsync 0',
+                    '-t 8'
                 ])
                 .toFormat('webp')
                 .on('end', () => {
@@ -231,19 +232,20 @@ async function createAnimatedStickerWithText(mediaBuffer, text) {
                 .input(inputVideoPath)
                 .complexFilter([
                     // Video (input 1) di-scale dan di-pad ke ukuran 512x412, warna putih
-                    '[1:v]scale=512:412:force_original_aspect_ratio=decrease,pad=512:412:(ow-iw)/2:(oh-ih)/2:color=white@1.0,format=rgba[vid]',
+                    '[1:v]scale=512:412:force_original_aspect_ratio=decrease,fps=10,pad=512:412:(ow-iw)/2:(oh-ih)/2:color=white@1.0,format=rgba[vid]',
                     // Teks PNG (input 0) ditumpuk di atas Video [vid] secara vertikal -> 512x512 total
                     '[0:v][vid]vstack=inputs=2[outv]'
                 ], 'outv')
                 .outputOptions([
                     '-vcodec libwebp',
                     '-lossless 0',           
-                    '-compression_level 4',
-                    '-q:v 50',               
+                    '-compression_level 6',
+                    '-qscale 20',               
                     '-loop 0',               
                     '-preset default',
                     '-an',                   
-                    '-vsync 0'
+                    '-vsync 0',
+                    '-t 8'
                 ])
                 .toFormat('webp')
                 .on('end', () => {
