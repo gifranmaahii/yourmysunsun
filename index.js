@@ -12,7 +12,7 @@ const { logger, baileyLogger } = require('./src/utils/logger');
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
 const { convertToSticker, createStickerWithText } = require('./src/features/sticker');
 const { getTikTokAudio } = require('./src/features/tiktok');
-const { convertToOggOpus } = require('./src/utils/audioConverter');
+const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -172,9 +172,6 @@ async function startBot() {
 
                     await simulateTyping(sock, remoteJid, 800);
 
-                    // Informasi audio (voice note atau file audio biasa)
-                    const isVoiceNote = quotedAudio.ptt || false;
-
                     logger.info(`🎵 Mulai download audio yang di-reply untuk dikirim ke ${targetJid}`);
 
                     const audioBuffer = await downloadMediaMessage(
@@ -191,18 +188,37 @@ async function startBot() {
                         continue;
                     }
 
-                    await randomDelay(1000, 2500);
+                    await randomDelay(500, 1500);
 
-                    // Kirim ke channel target
+                    // ============================================================
+                    // PENGIRIMAN KE CHANNEL:
+                    // Konversi ke OGG Opus MONO 48kHz + ptt:true
+                    // Format ini yang dikenali WhatsApp Channel sebagai audio playable.
+                    // ============================================================
+                    await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio untuk channel...' }, { quoted: msg });
+                    logger.info('🔄 Mengkonversi audio ke OGG Opus Mono untuk channel...');
+
+                    let channelAudioBuffer;
+                    try {
+                        channelAudioBuffer = await convertToOggOpus(audioBuffer);
+                        logger.info(`✅ Konversi OGG Opus Mono berhasil: ${channelAudioBuffer.length} bytes`);
+                    } catch (convErr) {
+                        logger.warn(`⚠️ Gagal konversi OGG Opus, kirim buffer asli: ${convErr.message}`);
+                        channelAudioBuffer = audioBuffer;
+                    }
+
+                    // Kirim ke channel sebagai voice note (OGG Opus Mono ptt:true)
+                    logger.info(`📡 Mengirim OGG Opus ke channel: ${targetJid}`);
                     await sock.sendMessage(targetJid, {
-                        audio: audioBuffer,
-                        mimetype: quotedAudio.mimetype || 'audio/ogg; codecs=opus',
-                        ptt: isVoiceNote,
+                        audio: channelAudioBuffer,
+                        mimetype: 'audio/ogg; codecs=opus',
+                        ptt: true,
+                        waveform: generateWaveform(),
                     });
 
                     // Konfirmasi ke pengirim
                     await sock.sendMessage(remoteJid, {
-                        text: `✅ Audio berhasil dikirim ke:\n\`${targetJid}\``,
+                        text: `✅ Audio berhasil dikirim ke saluran:\n\`${targetJid}\``,
                     }, { quoted: msg });
 
                     logger.info(`🔊 Audio berhasil dikirim ke saluran: ${targetJid}`);
@@ -405,24 +421,45 @@ async function startBot() {
 
                     try {
                         const tikTokData = await getTikTokAudio(url);
-                        
-                        await sock.sendMessage(remoteJid, { text: '🔄 Merender audio ke format channel (Voice Note)...' }, { quoted: msg });
-                        
-                        // Konversi ke ogg opus agar aman dan 100% jalan waktu di-forward ke channel
+
+                        // ================================================
+                        // STRATEGI DUAL FORMAT:
+                        // 1. Kirim ke USER sebagai PTT (OGG Opus) — bisa diplay di chat biasa
+                        // 2. Langsung kirim ke CHANNEL sebagai MP3 audio doc — kompatibel channel
+                        // ================================================
+
+                        await sock.sendMessage(remoteJid, { text: '🔄 Memproses audio TikTok...' }, { quoted: msg });
+
+                        // Konversi ke OGG Opus Mono 48kHz (1 format untuk semua tujuan)
                         const oggBuffer = await convertToOggOpus(tikTokData.buffer);
 
-                        // Kirim audio-nya ke user sebagai PTT (Voice Note)
-                        const sentAudio = await sock.sendMessage(remoteJid, {
+                        // Kirim ke user sebagai PTT voice note
+                        await sock.sendMessage(remoteJid, {
                             audio: oggBuffer,
                             mimetype: 'audio/ogg; codecs=opus',
-                            ptt: true // Jadikan voice note
+                            ptt: true,
+                            waveform: generateWaveform()
                         }, { quoted: msg });
 
-                        // Beri petunjuk cara forward ke channel
-                        await randomDelay(1000, 2000);
-                        await sock.sendMessage(remoteJid, {
-                            text: `✅ *${tikTokData.title}* (@${tikTokData.author})\n\n💡 Untuk meneruskannya ke saluran, silakan *reply Voice Note* di atas lalu ketik:\n*${PREFIX}kirim*`
-                        });
+                        await randomDelay(800, 1500);
+
+                        // Otomatis kirim ke channel sebagai OGG Opus ptt:true (jika CHANNEL_JID diset)
+                        if (CHANNEL_JID) {
+                            logger.info(`📡 Mengirim OGG Opus ke channel: ${CHANNEL_JID}`);
+                            await sock.sendMessage(CHANNEL_JID, {
+                                audio: oggBuffer,
+                                mimetype: 'audio/ogg; codecs=opus',
+                                ptt: true,
+                                waveform: generateWaveform(),
+                            });
+                            await sock.sendMessage(remoteJid, {
+                                text: `✅ *${tikTokData.title}*\n👤 @${tikTokData.author}\n\n📡 Audio sudah otomatis dikirim ke saluran!`,
+                            });
+                        } else {
+                            await sock.sendMessage(remoteJid, {
+                                text: `✅ *${tikTokData.title}* (@${tikTokData.author})\n\n💡 Untuk kirim ke saluran, *reply Voice Note* di atas lalu ketik:\n*${PREFIX}kirim*`,
+                            });
+                        }
 
                     } catch (err) {
                         await sock.sendMessage(remoteJid, {

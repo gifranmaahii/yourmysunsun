@@ -3,3 +3,12 @@ auth_info/
 session/
 .env
 *.log
+
+# Folder temp (hasil konversi sementara)
+temp/
+
+# File output test (tidak perlu masuk repo)
+test_output.ogg
+test_output.mp3
+*.ogg
+*.mp3
