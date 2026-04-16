@@ -1,0 +1,480 @@
+require('dotenv').config();
+
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    downloadMediaMessage,
+} = require('@whiskeysockets/baileys');
+
+const { logger, baileyLogger } = require('./src/utils/logger');
+const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
+const { convertToSticker, createStickerWithText } = require('./src/features/sticker');
+const { getTikTokAudio } = require('./src/features/tiktok');
+const { convertToOggOpus } = require('./src/utils/audioConverter');
+const qrcode = require('qrcode-terminal');
+const path = require('path');
+const fs = require('fs');
+
+// ============================================================
+// KONFIGURASI
+// ============================================================
+const CHANNEL_JID   = process.env.CHANNEL_JID   || '';
+const OWNER_NUMBER  = process.env.OWNER_NUMBER   || '';
+const BOT_NAME      = process.env.BOT_NAME       || 'Robby Bot';
+const PREFIX        = process.env.PREFIX         || '.';
+
+// Folder penyimpanan sesi (cookie / auth) - akan di-persist untuk login 1x
+const SESSION_DIR = path.join(__dirname, 'session');
+if (!fs.existsSync(SESSION_DIR)) {
+    fs.mkdirSync(SESSION_DIR, { recursive: true });
+}
+
+// Cache pesan sederhana (untuk getMessage fallback)
+const msgCache = new Map();
+
+// ============================================================
+// START BOT
+// ============================================================
+async function startBot() {
+    // Muat state auth dari folder session (cookie otomatis disimpan di sini)
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+
+    // Ambil versi Baileys terbaru
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version} (latest: ${isLatest})`);
+
+    // Buat socket WA
+    const sock = makeWASocket({
+        version,
+        auth: state,
+        logger: baileyLogger,           // silent – tidak spam terminal
+        printQRInTerminal: true,        // QR tampil di terminal untuk scan 1x
+        browser: ['Chrome (Linux)', 'Chrome', '120.0.0'],
+        syncFullHistory: false,         // Tidak perlu history penuh (lebih aman)
+        markOnlineOnConnect: false,     // Jangan langsung online (anti-ban)
+        generateHighQualityLinkPreview: false,
+        getMessage: async (key) => {
+            // Fallback dari cache sederhana
+            return msgCache.get(key.id) || undefined;
+        },
+    });
+
+    // ============================================================
+    // EVENT: Update koneksi
+    // ============================================================
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            // Tampilkan QR code di terminal menggunakan qrcode-terminal
+            qrcode.generate(qr, { small: true });
+            logger.info('📱 Scan QR code di atas untuk login WhatsApp');
+            logger.info('💾 Setelah login, sesi akan disimpan otomatis (tidak perlu scan ulang)');
+        }
+
+        if (connection === 'close') {
+            const code = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = code !== DisconnectReason.loggedOut;
+
+            logger.warn(`⚠️ Koneksi terputus (kode: ${code}). Reconnect: ${shouldReconnect}`);
+
+            if (shouldReconnect) {
+                // Reconnect dengan delay supaya tidak terlalu agresif (anti-ban)
+                const delay = Math.floor(Math.random() * 5000) + 3000;
+                logger.info(`🔄 Mencoba reconnect dalam ${delay}ms...`);
+                setTimeout(startBot, delay);
+            } else {
+                logger.error('🚫 Session logout. Hapus folder "session" dan scan QR ulang.');
+            }
+        }
+
+        if (connection === 'open') {
+            logger.info(`✅ ${BOT_NAME} berhasil terhubung ke WhatsApp!`);
+            logger.info(`📡 Channel target: ${CHANNEL_JID || '(belum diatur)'}`);
+            logger.info(`👤 Owner: ${OWNER_NUMBER}`);
+        }
+    });
+
+    // ============================================================
+    // EVENT: Simpan credentials (session/cookie) setiap update
+    // ============================================================
+    sock.ev.on('creds.update', saveCreds);
+
+    // ============================================================
+    // EVENT: Pesan masuk
+    // ============================================================
+    sock.ev.on('messages.upsert', async (upsert) => {
+        // Hanya proses pesan baru (bukan notifikasi sinkronisasi)
+        if (upsert.type !== 'notify') return;
+
+        for (const msg of upsert.messages) {
+            try {
+                // --- Filter dasar (anti-ban & keamanan) ---
+                if (!shouldProcess(msg, sock)) continue;
+                if (!rateLimiter.canProceed()) {
+                    logger.warn('🚫 Rate limit, skip pesan ini');
+                    continue;
+                }
+
+                const remoteJid = msg.key.remoteJid;
+                const message   = msg.message;
+
+                if (!message) continue;
+
+                // Cache pesan untuk getMessage fallback
+                if (msg.key.id) msgCache.set(msg.key.id, message);
+
+                // -----------------------------------------------
+                // FITUR 1: FORWARD AUDIO MANUAL — .kirim [JID_channel]
+                // Cara pakai: reply pesan audio + ketik .kirim
+                //             atau .kirim 628xxx@newsletter untuk channel lain
+                // -----------------------------------------------
+                const textContent =
+                    message.conversation ||
+                    message.extendedTextMessage?.text ||
+                    '';
+
+                if (textContent.startsWith(PREFIX + 'kirim')) {
+                    // Ambil JID target dari argumen, atau pakai default dari .env
+                    const parts       = textContent.trim().split(/\s+/);
+                    const targetJid   = parts[1]?.trim() || CHANNEL_JID;
+
+                    if (!targetJid) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Channel belum diatur.\nGunakan: *${PREFIX}kirim <JID_channel>*\nContoh: ${PREFIX}kirim 628xxx@newsletter`,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Periksa apakah user me-reply audio
+                    const quotedCtx = message.extendedTextMessage?.contextInfo;
+                    const quotedAudio = quotedCtx?.quotedMessage?.audioMessage;
+
+                    if (!quotedAudio) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ *Reply* pesan audio/voice note dulu, lalu ketik *${PREFIX}kirim*`,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Buat ulang objek pesan quoted agar bisa di-download
+                    const quotedMsgObj = {
+                        key: {
+                            remoteJid: remoteJid,
+                            id: quotedCtx.stanzaId,
+                            fromMe: quotedCtx.participant === sock.user?.id,
+                            participant: quotedCtx.participant,
+                        },
+                        message: quotedCtx.quotedMessage,
+                    };
+
+                    await simulateTyping(sock, remoteJid, 800);
+
+                    // Informasi audio (voice note atau file audio biasa)
+                    const isVoiceNote = quotedAudio.ptt || false;
+
+                    logger.info(`🎵 Mulai download audio yang di-reply untuk dikirim ke ${targetJid}`);
+
+                    const audioBuffer = await downloadMediaMessage(
+                        quotedMsgObj,
+                        'buffer',
+                        {},
+                        { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                    );
+
+                    if (!audioBuffer) {
+                        await sock.sendMessage(remoteJid, {
+                            text: '❌ Gagal download audio. Coba lagi.',
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    await randomDelay(1000, 2500);
+
+                    // Kirim ke channel target
+                    await sock.sendMessage(targetJid, {
+                        audio: audioBuffer,
+                        mimetype: quotedAudio.mimetype || 'audio/ogg; codecs=opus',
+                        ptt: isVoiceNote,
+                    });
+
+                    // Konfirmasi ke pengirim
+                    await sock.sendMessage(remoteJid, {
+                        text: `✅ Audio berhasil dikirim ke:\n\`${targetJid}\``,
+                    }, { quoted: msg });
+
+                    logger.info(`🔊 Audio berhasil dikirim ke saluran: ${targetJid}`);
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR 2 & 3: STICKER DARI PERINTAH TEKS
+                // Perintah: .sticker [teks opsional]
+                // -----------------------------------------------
+
+                if (textContent.startsWith(PREFIX + 'sticker') || textContent.startsWith(PREFIX + 's')) {
+                    // Ambil teks opsional setelah command
+                    const cmdParts   = textContent.split(' ');
+                    const stickerText = cmdParts.slice(1).join(' ').trim();
+
+                    // Harus ada gambar yang di-quote atau dikirim bersamaan
+                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const imageMsg  = message.imageMessage || quotedMsg?.imageMessage;
+
+                    if (!imageMsg) {
+                        await randomDelay(500, 1500);
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Kirim gambar sambil ketik perintah, atau quote gambar dengan perintah:\n\n*${PREFIX}sticker* - sticker biasa\n*${PREFIX}sticker teks kamu* - sticker dengan teks di atas`,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Download gambar
+                    const imageBuffer = await downloadMediaMessage(
+                        { message: { imageMessage: imageMsg }, key: msg.key },
+                        'buffer',
+                        {},
+                        { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                    );
+
+                    if (!imageBuffer) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal download gambar' }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Simulate typing sebelum reply (anti-ban & UX)
+                    await simulateTyping(sock, remoteJid, 1500);
+                    await randomDelay(800, 2000);
+
+                    // Konversi ke sticker
+                    let stickerBuffer;
+                    if (stickerText) {
+                        // Sticker dengan teks di atas
+                        stickerBuffer = await createStickerWithText(imageBuffer, stickerText);
+                    } else {
+                        // Sticker biasa
+                        stickerBuffer = await convertToSticker(imageBuffer);
+                    }
+
+                    // Kirim sticker
+                    await sock.sendMessage(remoteJid, {
+                        sticker: stickerBuffer,
+                    }, { quoted: msg });
+
+                    logger.info(`🎨 Sticker dikirim ke ${remoteJid}${stickerText ? ` dengan teks: "${stickerText}"` : ''}`);
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: Perintah melalui gambar yang dikirim langsung
+                // Jika ada imageMessage dengan caption .sticker
+                // -----------------------------------------------
+                if (message.imageMessage) {
+                    const caption = message.imageMessage.caption || '';
+                    if (caption.startsWith(PREFIX + 'sticker') || caption.startsWith(PREFIX + 's')) {
+                        const cmdParts    = caption.split(' ');
+                        const stickerText = cmdParts.slice(1).join(' ').trim();
+
+                        const imageBuffer = await downloadMediaMessage(
+                            msg,
+                            'buffer',
+                            {},
+                            { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                        );
+
+                        if (!imageBuffer) {
+                            await sock.sendMessage(remoteJid, { text: '❌ Gagal download gambar' }, { quoted: msg });
+                            continue;
+                        }
+
+                        await simulateTyping(sock, remoteJid, 1200);
+                        await randomDelay(600, 1800);
+
+                        let stickerBuffer;
+                        if (stickerText) {
+                            stickerBuffer = await createStickerWithText(imageBuffer, stickerText);
+                        } else {
+                            stickerBuffer = await convertToSticker(imageBuffer);
+                        }
+
+                        await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
+                        logger.info(`🎨 Sticker (dari gambar) dikirim ke ${remoteJid}`);
+                        continue;
+                    }
+                }
+
+                // -----------------------------------------------
+                // FITUR: CEK JID SALURAN — .cekjid
+                // Cara 1: Forward pesan dari saluran ke sini, lalu ketik .cekjid
+                // Cara 2: Reply pesan dari saluran lalu ketik .cekjid
+                // Cara 3: Ketik .cekjid di dalam saluran (jika bot admin)
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'cekjid')) {
+                    await randomDelay(400, 900);
+
+                    const foundJids = new Set();
+
+                    // Cek 1: Apakah pesan ini dikirim langsung dari sebuah saluran
+                    if (remoteJid.endsWith('@newsletter')) {
+                        foundJids.add(remoteJid);
+                    }
+
+                    // Cek 2: Dari contextInfo (reply/quote ke pesan asal saluran)
+                    const ctx = message.extendedTextMessage?.contextInfo;
+                    if (ctx) {
+                        // remoteJid dari pesan yang di-quote
+                        if (ctx.remoteJid && ctx.remoteJid.endsWith('@newsletter')) {
+                            foundJids.add(ctx.remoteJid);
+                        }
+                        // participant bisa berisi JID channel dalam beberapa kasus
+                        if (ctx.participant && ctx.participant.endsWith('@newsletter')) {
+                            foundJids.add(ctx.participant);
+                        }
+                    }
+
+                    // Cek 3: Dari pesan yang di-forward (forwardingScore > 0)
+                    // Baileys menyimpan info asal forward di berbagai tipe pesan
+                    const checkForwardedJid = (msgObj) => {
+                        if (!msgObj) return;
+                        // Cek semua kemungkinan field yang menyimpan JID asal
+                        const sources = [
+                            msgObj.extendedTextMessage?.contextInfo?.remoteJid,
+                            msgObj.imageMessage?.contextInfo?.remoteJid,
+                            msgObj.videoMessage?.contextInfo?.remoteJid,
+                            msgObj.audioMessage?.contextInfo?.remoteJid,
+                            msgObj.documentMessage?.contextInfo?.remoteJid,
+                            msgObj.stickerMessage?.contextInfo?.remoteJid,
+                        ];
+                        sources.forEach(jid => {
+                            if (jid && jid.endsWith('@newsletter')) foundJids.add(jid);
+                        });
+                    };
+                    checkForwardedJid(message);
+
+                    // Cek 4: Dari quoted message di dalam reply
+                    if (ctx?.quotedMessage) {
+                        checkForwardedJid(ctx.quotedMessage);
+                    }
+
+                    if (foundJids.size === 0) {
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `❓ *Cara cek JID Saluran:*\n\n` +
+                                `*Cara 1 (termudah):*\n` +
+                                `  1. Buka saluran WhatsApp-mu\n` +
+                                `  2. Forward salah satu postingan dari saluran itu ke chat ini\n` +
+                                `  3. Ketik \`${PREFIX}cekjid\`\n\n` +
+                                `*Cara 2:*\n` +
+                                `  1. Reply pesan dari saluran\n` +
+                                `  2. Ketik \`${PREFIX}cekjid\``,
+                        }, { quoted: msg });
+                    } else {
+                        const jidList = [...foundJids].map(j => `  \`${j}\``).join('\n');
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `📡 *JID Saluran ditemukan:*\n\n` +
+                                `${jidList}\n\n` +
+                                `💡 Salin JID di atas dan isi ke \`.env\`:\n` +
+                                `\`CHANNEL_JID=<JID_di_atas>\`\n\n` +
+                                `Atau langsung pakai saat kirim audio:\n` +
+                                `\`${PREFIX}kirim <JID_di_atas>\``,
+                        }, { quoted: msg });
+                        logger.info(`📡 JID Saluran ditemukan: ${[...foundJids].join(', ')}`);
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: TIKTOK TO AUDIO — .ttaudio [link]
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'ttaudio') || textContent.startsWith(PREFIX + 'tt')) {
+                    const args = textContent.trim().split(/\s+/);
+                    const url = args[1];
+
+                    if (!url || !url.includes('tiktok.com')) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Harap sertakan link TikTok.\n\nContoh:\n*${PREFIX}ttaudio https://vt.tiktok.com/xxxxxx*`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mengekstrak audio dari TikTok...' }, { quoted: msg });
+                    await simulateTyping(sock, remoteJid, 1000);
+
+                    try {
+                        const tikTokData = await getTikTokAudio(url);
+                        
+                        await sock.sendMessage(remoteJid, { text: '🔄 Merender audio ke format channel (Voice Note)...' }, { quoted: msg });
+                        
+                        // Konversi ke ogg opus agar aman dan 100% jalan waktu di-forward ke channel
+                        const oggBuffer = await convertToOggOpus(tikTokData.buffer);
+
+                        // Kirim audio-nya ke user sebagai PTT (Voice Note)
+                        const sentAudio = await sock.sendMessage(remoteJid, {
+                            audio: oggBuffer,
+                            mimetype: 'audio/ogg; codecs=opus',
+                            ptt: true // Jadikan voice note
+                        }, { quoted: msg });
+
+                        // Beri petunjuk cara forward ke channel
+                        await randomDelay(1000, 2000);
+                        await sock.sendMessage(remoteJid, {
+                            text: `✅ *${tikTokData.title}* (@${tikTokData.author})\n\n💡 Untuk meneruskannya ke saluran, silakan *reply Voice Note* di atas lalu ketik:\n*${PREFIX}kirim*`
+                        });
+
+                    } catch (err) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Gagal mengambil audio: ${err.message}`
+                        }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // BANTUAN: .help atau .menu
+                // -----------------------------------------------
+                if (textContent === PREFIX + 'help' || textContent === PREFIX + 'menu') {
+                    await simulateTyping(sock, remoteJid, 1000);
+                    await randomDelay(500, 1200);
+
+                    const helpText = `🤖 *${BOT_NAME}* - Daftar Perintah\n\n` +
+                        `📌 *Sticker*\n` +
+                        `  • Kirim/quote gambar + ketik:\n` +
+                        `    \`${PREFIX}sticker\` → sticker biasa\n` +
+                        `    \`${PREFIX}sticker teksmu\` → sticker + teks di atas\n\n` +
+                        `🎵 *Kirim Audio ke Saluran*\n` +
+                        `  • Reply pesan audio/voice note, lalu ketik:\n` +
+                        `    \`${PREFIX}kirim\` → kirim ke channel default (${CHANNEL_JID || 'belum diatur'})\n` +
+                        `    \`${PREFIX}kirim 628xxx@newsletter\` → kirim ke channel pilihan\n\n` +
+                        `🎧 *TikTok ke Audio*\n` +
+                        `  • Ubah sound dari video TikTok menjadi MP3:\n` +
+                        `    \`${PREFIX}ttaudio <link_tiktok>\`\n\n` +
+                        `📡 *Cek JID Saluran*\n` +
+                        `  • Forward postingan dari saluran ke sini, lalu ketik:\n` +
+                        `    \`${PREFIX}cekjid\` → tampilkan JID saluran tersebut\n\n` +
+                        `ℹ️ *Info*\n` +
+                        `  • Bot berjalan 24/7 dengan session tersimpan\n` +
+                        `  • Owner: ${OWNER_NUMBER || 'belum diatur'}`;
+
+                    await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
+                }
+
+            } catch (err) {
+                logger.error(`❌ Error proses pesan: ${err.message}`);
+                logger.error(err.stack);
+            }
+        }
+    });
+
+    return sock;
+}
+
+// ============================================================
+// JALANKAN BOT
+// ============================================================
+startBot().catch((err) => {
+    logger.error(`💥 Fatal error: ${err.message}`);
+    process.exit(1);
+});
