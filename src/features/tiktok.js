@@ -48,6 +48,7 @@ async function getTikTokAudio(url) {
         logger.error(`❌ Gagal scrape TikTok: ${err.message}`);
         throw err;
     }
+}
 /**
  * Konversi link TikTok menjadi buffer video tanpa watermark
  * Menggunakan unofficial API TikWM (tikwm.com)
