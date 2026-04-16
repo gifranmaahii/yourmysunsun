@@ -11,7 +11,7 @@ const {
 const { logger, baileyLogger } = require('./src/utils/logger');
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
 const { convertToSticker, createStickerWithText, createAnimatedSticker } = require('./src/features/sticker');
-const { getTikTokAudio } = require('./src/features/tiktok');
+const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
@@ -148,13 +148,14 @@ async function startBot() {
                         continue;
                     }
 
-                    // Periksa apakah user me-reply audio
+                    // Periksa apakah user me-reply audio atau sticker
                     const quotedCtx = message.extendedTextMessage?.contextInfo;
                     const quotedAudio = quotedCtx?.quotedMessage?.audioMessage;
+                    const quotedSticker = quotedCtx?.quotedMessage?.stickerMessage;
 
-                    if (!quotedAudio) {
+                    if (!quotedAudio && !quotedSticker) {
                         await sock.sendMessage(remoteJid, {
-                            text: `❌ *Reply* pesan audio/voice note dulu, lalu ketik *${PREFIX}kirim*`,
+                            text: `❌ *Reply* pesan audio/voice note atau stiker, lalu ketik *${PREFIX}kirim* [jid_saluran]`,
                         }, { quoted: msg });
                         continue;
                     }
@@ -172,56 +173,62 @@ async function startBot() {
 
                     await simulateTyping(sock, remoteJid, 800);
 
-                    logger.info(`🎵 Mulai download audio yang di-reply untuk dikirim ke ${targetJid}`);
+                    logger.info(`⬇️ Mulai download media yang di-reply untuk dikirim ke ${targetJid}`);
 
-                    const audioBuffer = await downloadMediaMessage(
+                    const mediaBuffer = await downloadMediaMessage(
                         quotedMsgObj,
                         'buffer',
                         {},
                         { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
                     );
 
-                    if (!audioBuffer) {
+                    if (!mediaBuffer) {
                         await sock.sendMessage(remoteJid, {
-                            text: '❌ Gagal download audio. Coba lagi.',
+                            text: '❌ Gagal download media. Coba lagi.',
                         }, { quoted: msg });
                         continue;
                     }
 
                     await randomDelay(500, 1500);
 
-                    // ============================================================
-                    // PENGIRIMAN KE CHANNEL:
-                    // Konversi ke OGG Opus MONO 48kHz + ptt:true
-                    // Format ini yang dikenali WhatsApp Channel sebagai audio playable.
-                    // ============================================================
-                    await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio untuk channel...' }, { quoted: msg });
-                    logger.info('🔄 Mengkonversi audio ke OGG Opus Mono untuk channel...');
+                    if (quotedAudio) {
+                        // PENGIRIMAN AUDIO KE CHANNEL
+                        await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio untuk channel...' }, { quoted: msg });
+                        logger.info('🔄 Mengkonversi audio ke OGG Opus Mono untuk channel...');
 
-                    let channelAudioBuffer;
-                    try {
-                        channelAudioBuffer = await convertToOggOpus(audioBuffer);
-                        logger.info(`✅ Konversi OGG Opus Mono berhasil: ${channelAudioBuffer.length} bytes`);
-                    } catch (convErr) {
-                        logger.warn(`⚠️ Gagal konversi OGG Opus, kirim buffer asli: ${convErr.message}`);
-                        channelAudioBuffer = audioBuffer;
+                        let channelAudioBuffer;
+                        try {
+                            channelAudioBuffer = await convertToOggOpus(mediaBuffer);
+                            logger.info(`✅ Konversi OGG Opus Mono berhasil: ${channelAudioBuffer.length} bytes`);
+                        } catch (convErr) {
+                            logger.warn(`⚠️ Gagal konversi OGG Opus, kirim buffer asli: ${convErr.message}`);
+                            channelAudioBuffer = mediaBuffer;
+                        }
+
+                        logger.info(`📡 Mengirim OGG Opus ke channel: ${targetJid}`);
+                        await sock.sendMessage(targetJid, {
+                            audio: channelAudioBuffer,
+                            mimetype: 'audio/ogg; codecs=opus',
+                            ptt: true,
+                            waveform: generateWaveform(),
+                        });
+                        
+                    } else if (quotedSticker) {
+                        // PENGIRIMAN STIKER KE CHANNEL
+                        await sock.sendMessage(remoteJid, { text: '⏳ Mengirim stiker ke channel...' }, { quoted: msg });
+                        logger.info(`📡 Mengirim stiker ke channel: ${targetJid}`);
+                        
+                        await sock.sendMessage(targetJid, {
+                            sticker: mediaBuffer
+                        });
                     }
-
-                    // Kirim ke channel sebagai voice note (OGG Opus Mono ptt:true)
-                    logger.info(`📡 Mengirim OGG Opus ke channel: ${targetJid}`);
-                    await sock.sendMessage(targetJid, {
-                        audio: channelAudioBuffer,
-                        mimetype: 'audio/ogg; codecs=opus',
-                        ptt: true,
-                        waveform: generateWaveform(),
-                    });
 
                     // Konfirmasi ke pengirim
                     await sock.sendMessage(remoteJid, {
-                        text: `✅ Audio berhasil dikirim ke saluran:\n\`${targetJid}\``,
+                        text: `✅ ${quotedAudio ? 'Audio' : 'Stiker'} berhasil dikirim ke saluran:\n\`${targetJid}\``,
                     }, { quoted: msg });
 
-                    logger.info(`🔊 Audio berhasil dikirim ke saluran: ${targetJid}`);
+                    logger.info(`📤 Media berhasil dikirim ke saluran: ${targetJid}`);
                     continue;
                 }
 
@@ -520,6 +527,38 @@ async function startBot() {
                 }
 
                 // -----------------------------------------------
+                // FITUR: TIKTOK VIDEO DOWNLOADER
+                // Perintah: .tiktok <url> atau .ttvideo <url>
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'tiktok') || textContent.startsWith(PREFIX + 'ttvideo')) {
+                    const args = textContent.split(' ');
+                    const url = args[1];
+
+                    if (!url || !url.includes('tiktok.com')) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format salah! Gunakan: *${PREFIX}tiktok <link_tiktok>*` }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1500);
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mendownload video TikTok, tunggu bentar ya...' }, { quoted: msg });
+                    
+                    try {
+                        const tiktokData = await getTikTokVideo(url);
+                        
+                        await sock.sendMessage(remoteJid, {
+                            video: tiktokData.buffer,
+                            caption: `🎬 *${tiktokData.title}*\n👤 *${tiktokData.author}*`,
+                            mimetype: 'video/mp4'
+                        }, { quoted: msg });
+                        
+                        logger.info(`✅ Video TikTok dikirim ke ${remoteJid}`);
+                    } catch (error) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal memproses video: ${error.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
                 // BANTUAN: .help atau .menu
                 // -----------------------------------------------
                 if (textContent === PREFIX + 'help' || textContent === PREFIX + 'menu') {
@@ -528,15 +567,17 @@ async function startBot() {
 
                     const helpText = `🤖 *${BOT_NAME}* - Daftar Perintah\n\n` +
                         `📌 *Sticker*\n` +
-                        `  • Kirim/quote gambar + ketik:\n` +
-                        `    \`${PREFIX}sticker\` → sticker biasa\n` +
+                        `  • Kirim/quote gambar atau video + ketik:\n` +
+                        `    \`${PREFIX}sticker\` → sticker biasa / gerak\n` +
                         `    \`${PREFIX}sticker teksmu\` → sticker + teks di atas\n\n` +
-                        `🎵 *Kirim Audio ke Saluran*\n` +
-                        `  • Reply pesan audio/voice note, lalu ketik:\n` +
+                        `🎵 *Kirim Audio/Stiker ke Saluran*\n` +
+                        `  • Reply pesan voice note ATAU stiker, lalu ketik:\n` +
                         `    \`${PREFIX}kirim\` → kirim ke channel default (${CHANNEL_JID || 'belum diatur'})\n` +
                         `    \`${PREFIX}kirim 628xxx@newsletter\` → kirim ke channel pilihan\n\n` +
-                        `🎧 *TikTok ke Audio*\n` +
-                        `  • Ubah sound dari video TikTok menjadi MP3:\n` +
+                        `🎬 *TikTok Downloader*\n` +
+                        `  • Download video TikTok tanpa watermark:\n` +
+                        `    \`${PREFIX}tiktok <link_tiktok>\`\n` +
+                        `  • Ekstrak sound/music dari TikTok:\n` +
                         `    \`${PREFIX}ttaudio <link_tiktok>\`\n\n` +
                         `📡 *Cek JID Saluran*\n` +
                         `  • Forward postingan dari saluran ke sini, lalu ketik:\n` +
