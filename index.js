@@ -10,7 +10,7 @@ const {
 
 const { logger, baileyLogger } = require('./src/utils/logger');
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
-const { convertToSticker, createStickerWithText } = require('./src/features/sticker');
+const { convertToSticker, createStickerWithText, createAnimatedSticker } = require('./src/features/sticker');
 const { getTikTokAudio } = require('./src/features/tiktok');
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const qrcode = require('qrcode-terminal');
@@ -235,51 +235,84 @@ async function startBot() {
                     const cmdParts   = textContent.split(' ');
                     const stickerText = cmdParts.slice(1).join(' ').trim();
 
-                    // Harus ada gambar yang di-quote atau dikirim bersamaan
+                    // Cek ketersediaan media (gambar atau video)
                     const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const imageMsg  = message.imageMessage || quotedMsg?.imageMessage;
+                    const mediaMsg  = message.imageMessage || message.videoMessage || quotedMsg?.imageMessage || quotedMsg?.videoMessage;
+                    
+                    const isVideo = message.videoMessage || quotedMsg?.videoMessage;
 
-                    if (!imageMsg) {
+                    if (!mediaMsg) {
                         await randomDelay(500, 1500);
                         await sock.sendMessage(remoteJid, {
-                            text: `❌ Kirim gambar sambil ketik perintah, atau quote gambar dengan perintah:\n\n*${PREFIX}sticker* - sticker biasa\n*${PREFIX}sticker teks kamu* - sticker dengan teks di atas`,
+                            text: `❌ Kirim gambar/video sambil ketik perintah, atau quote gambar/video dengan perintah:\n\n*${PREFIX}sticker* - sticker biasa/gerak\n*${PREFIX}sticker teks kamu* - sticker dengan teks di atas (hanya untuk gambar)`,
                         }, { quoted: msg });
                         continue;
                     }
+                    
+                    // Batasi durasi jika video (mencegah rendering yang terlalu lama)
+                    const videoDuration = isVideo?.seconds || 0;
+                    if (isVideo && videoDuration > 10) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Durasi video maksimal 10 detik untuk dijadikan sticker gerak.' }, { quoted: msg });
+                        continue;
+                    }
 
-                    // Download gambar
-                    const imageBuffer = await downloadMediaMessage(
-                        { message: { imageMessage: imageMsg }, key: msg.key },
+                    // Download gambar atau video
+                    // Sesuaikan root key object agar dapat di-download dengan benar walau dari quote
+                    let downloadKey;
+                    if (message.imageMessage || message.videoMessage) {
+                        downloadKey = msg;
+                    } else if (quotedMsg?.imageMessage || quotedMsg?.videoMessage) {
+                        downloadKey = { 
+                            message: quotedMsg, 
+                            key: { 
+                                remoteJid: msg.key.remoteJid, 
+                                id: message.extendedTextMessage.contextInfo.stanzaId, 
+                                participant: message.extendedTextMessage.contextInfo.participant 
+                            } 
+                        };
+                    }
+
+                    const mediaBuffer = await downloadMediaMessage(
+                        downloadKey,
                         'buffer',
                         {},
                         { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
                     );
 
-                    if (!imageBuffer) {
-                        await sock.sendMessage(remoteJid, { text: '❌ Gagal download gambar' }, { quoted: msg });
+                    if (!mediaBuffer) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal download media' }, { quoted: msg });
                         continue;
                     }
 
                     // Simulate typing sebelum reply (anti-ban & UX)
                     await simulateTyping(sock, remoteJid, 1500);
+                    if (isVideo) {
+                        await sock.sendMessage(remoteJid, { text: '⏳ Sedang membuat sticker gerak, harap tunggu...' }, { quoted: msg });
+                    }
                     await randomDelay(800, 2000);
 
                     // Konversi ke sticker
                     let stickerBuffer;
-                    if (stickerText) {
-                        // Sticker dengan teks di atas
-                        stickerBuffer = await createStickerWithText(imageBuffer, stickerText);
-                    } else {
-                        // Sticker biasa
-                        stickerBuffer = await convertToSticker(imageBuffer);
+                    try {
+                        if (isVideo) {
+                            stickerBuffer = await createAnimatedSticker(mediaBuffer);
+                        } else if (stickerText) {
+                            // Sticker dengan teks di atas
+                            stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
+                        } else {
+                            // Sticker biasa
+                            stickerBuffer = await convertToSticker(mediaBuffer);
+                        }
+
+                        // Kirim sticker
+                        await sock.sendMessage(remoteJid, {
+                            sticker: stickerBuffer,
+                        }, { quoted: msg });
+                        logger.info(`🎨 Sticker${isVideo ? ' gerak' : ''} dikirim ke ${remoteJid}${stickerText && !isVideo ? ` dengan teks: "${stickerText}"` : ''}`);
+                    } catch (error) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Terjadi kesalahan saat memproses sticker' }, { quoted: msg });
                     }
-
-                    // Kirim sticker
-                    await sock.sendMessage(remoteJid, {
-                        sticker: stickerBuffer,
-                    }, { quoted: msg });
-
-                    logger.info(`🎨 Sticker dikirim ke ${remoteJid}${stickerText ? ` dengan teks: "${stickerText}"` : ''}`);
+                    
                     continue;
                 }
 
@@ -287,36 +320,53 @@ async function startBot() {
                 // FITUR: Perintah melalui gambar yang dikirim langsung
                 // Jika ada imageMessage dengan caption .sticker
                 // -----------------------------------------------
-                if (message.imageMessage) {
-                    const caption = message.imageMessage.caption || '';
+                if (message.imageMessage || message.videoMessage) {
+                    const mediaMessageDetails = message.imageMessage || message.videoMessage;
+                    const caption = mediaMessageDetails.caption || '';
                     if (caption.startsWith(PREFIX + 'sticker') || caption.startsWith(PREFIX + 's')) {
                         const cmdParts    = caption.split(' ');
                         const stickerText = cmdParts.slice(1).join(' ').trim();
+                        const isVideo = !!message.videoMessage;
+                        
+                        const videoDuration = message.videoMessage?.seconds || 0;
+                        if (isVideo && videoDuration > 10) {
+                            await sock.sendMessage(remoteJid, { text: '❌ Durasi video maksimal 10 detik untuk dijadikan sticker gerak.' }, { quoted: msg });
+                            continue;
+                        }
 
-                        const imageBuffer = await downloadMediaMessage(
+                        const mediaBuffer = await downloadMediaMessage(
                             msg,
                             'buffer',
                             {},
                             { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
                         );
 
-                        if (!imageBuffer) {
-                            await sock.sendMessage(remoteJid, { text: '❌ Gagal download gambar' }, { quoted: msg });
+                        if (!mediaBuffer) {
+                            await sock.sendMessage(remoteJid, { text: '❌ Gagal download media' }, { quoted: msg });
                             continue;
                         }
 
                         await simulateTyping(sock, remoteJid, 1200);
+                        if (isVideo) {
+                            await sock.sendMessage(remoteJid, { text: '⏳ Sedang membuat sticker gerak, harap tunggu...' }, { quoted: msg });
+                        }
                         await randomDelay(600, 1800);
 
                         let stickerBuffer;
-                        if (stickerText) {
-                            stickerBuffer = await createStickerWithText(imageBuffer, stickerText);
-                        } else {
-                            stickerBuffer = await convertToSticker(imageBuffer);
-                        }
+                        try {
+                            if (isVideo) {
+                                stickerBuffer = await createAnimatedSticker(mediaBuffer);
+                            } else if (stickerText) {
+                                stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
+                            } else {
+                                stickerBuffer = await convertToSticker(mediaBuffer);
+                            }
 
-                        await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
-                        logger.info(`🎨 Sticker (dari gambar) dikirim ke ${remoteJid}`);
+                            await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
+                            logger.info(`🎨 Sticker${isVideo ? ' gerak' : ''} (dari media) dikirim ke ${remoteJid}`);
+                        } catch (error) {
+                            await sock.sendMessage(remoteJid, { text: '❌ Terjadi kesalahan saat memproses sticker' }, { quoted: msg });
+                        }
                         continue;
                     }
                 }
