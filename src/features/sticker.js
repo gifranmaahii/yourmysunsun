@@ -51,38 +51,8 @@ async function createStickerWithText(imageBuffer, text) {
         const MAX_FONT_SIZE = 36;
         const MIN_FONT_SIZE = 16;
 
-        // === STEP 1: Render teks dengan @napi-rs/canvas ===
-        // Tentukan ukuran font yang pas  
-        let fontSize = MAX_FONT_SIZE;
-        let textCanvas, textCtx;
-
-        // Cari ukuran font yang muat
-        while (fontSize >= MIN_FONT_SIZE) {
-            textCanvas = createCanvas(STICKER_SIZE, TEXT_AREA_HEIGHT);
-            textCtx = textCanvas.getContext('2d');
-
-            textCtx.font = `bold ${fontSize}px Arial, sans-serif`;
-            const metrics = textCtx.measureText(text);
-
-            if (metrics.width <= STICKER_SIZE - (PADDING * 2)) {
-                break; // Font size pas
-            }
-            fontSize -= 2;
-        }
-
-        // Gambar background putih untuk area teks
-        textCtx.fillStyle = '#FFFFFF';
-        textCtx.fillRect(0, 0, STICKER_SIZE, TEXT_AREA_HEIGHT);
-
-        // Gambar teks hitam bold, centered
-        textCtx.fillStyle = '#000000';
-        textCtx.font = `bold ${fontSize}px Arial, sans-serif`;
-        textCtx.textAlign = 'center';
-        textCtx.textBaseline = 'middle';
-        textCtx.fillText(text, STICKER_SIZE / 2, TEXT_AREA_HEIGHT / 2, STICKER_SIZE - (PADDING * 2));
-
-        // Konversi canvas ke buffer PNG
-        const textBuffer = textCanvas.toBuffer('image/png');
+        // === STEP 1: Render teks ===
+        const textBuffer = generateTextPngBuffer(text);
 
         // === STEP 2: Resize gambar asli untuk area bawah ===
         const resizedImage = await sharp(imageBuffer)
@@ -212,12 +182,9 @@ async function createAnimatedSticker(mediaBuffer) {
             // Tambahkan Metadata EXIF supaya WA memutarnya dan tidak mengubah jadi static image
             addExif(outBuffer, 'Bot Stiker', 'Robby Bot')
                 .then(muxedBuffer => {
-                    logger.info('✅ Sticker gerak berhasil dibuat');
                     resolveCallback(muxedBuffer);
                 })
                 .catch(e => {
-                    // Fallback walaupun EXIF gagal
-                    logger.info('✅ Sticker gerak berhasil dibuat (tanpa EXIF fallback)');
                     resolveCallback(outBuffer);
                 });
                 
@@ -231,6 +198,127 @@ async function createAnimatedSticker(mediaBuffer) {
         if (fs.existsSync(inP)) fs.unlinkSync(inP);
         if (fs.existsSync(outP)) fs.unlinkSync(outP);
     }
+}
+
+/**
+ * Konversi video/GIF (mp4) ke Animated WebP Sticker dengan Teks di Atas
+ * 
+ * @param {Buffer} mediaBuffer - Buffer mp4 atau gif
+ * @param {string} text - Teks di atas
+ * @returns {Promise<Buffer>} Buffer WebP animated
+ */
+async function createAnimatedStickerWithText(mediaBuffer, text) {
+    return new Promise((resolve, reject) => {
+        const tempId = randomBytes(6).toString('hex');
+        const tempDir = path.join(__dirname, '../../temp');
+
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        const inputVideoPath  = path.join(tempDir, `v_in_${tempId}.mp4`);
+        const inputTextPath   = path.join(tempDir, `t_in_${tempId}.png`);
+        const outputPath      = path.join(tempDir, `out_${tempId}.webp`);
+
+        try {
+            fs.writeFileSync(inputVideoPath, mediaBuffer);
+            
+            const textBuffer = generateTextPngBuffer(text);
+            fs.writeFileSync(inputTextPath, textBuffer);
+
+            ffmpeg()
+                .input(inputTextPath)
+                .input(inputVideoPath)
+                .complexFilter([
+                    // Video (input 1) di-scale dan di-pad ke ukuran 512x412, warna putih
+                    '[1:v]scale=512:412:force_original_aspect_ratio=decrease,pad=512:412:(ow-iw)/2:(oh-ih)/2:color=white@1.0,format=rgba[vid]',
+                    // Teks PNG (input 0) ditumpuk di atas Video [vid] secara vertikal -> 512x512 total
+                    '[0:v][vid]vstack=inputs=2[outv]'
+                ], 'outv')
+                .outputOptions([
+                    '-vcodec libwebp',
+                    '-lossless 0',           
+                    '-compression_level 4',
+                    '-q:v 50',               
+                    '-loop 0',               
+                    '-preset default',
+                    '-an',                   
+                    '-vsync 0'
+                ])
+                .toFormat('webp')
+                .on('end', () => {
+                    finishProcessing(outputPath, [inputVideoPath, inputTextPath], resolve, reject);
+                })
+                .on('error', (err2) => {
+                    cleanupTempFiles([inputVideoPath, inputTextPath], outputPath);
+                    logger.error(`❌ Gagal konversi sticker gerak + teks: ${err2.message}`);
+                    reject(err2);
+                })
+                .save(outputPath);
+        } catch (e) {
+            cleanupTempFiles([inputVideoPath, inputTextPath], outputPath);
+            reject(e);
+        }
+    });
+
+    function finishProcessing(outPath, inPaths, resolveCallback, rejectCallback) {
+        try {
+            const outBuffer = fs.readFileSync(outPath);
+            cleanupTempFiles(inPaths, outPath);
+            
+            addExif(outBuffer, 'Bot Stiker', 'Robby Bot')
+                .then(muxedBuffer => {
+                    logger.info('✅ Sticker gerak + teks berhasil dibuat');
+                    resolveCallback(muxedBuffer);
+                })
+                .catch(e => {
+                    resolveCallback(outBuffer);
+                });
+        } catch (e) {
+            cleanupTempFiles(inPaths, outPath);
+            rejectCallback(e);
+        }
+    }
+
+    function cleanupTempFiles(inPaths, outP) {
+        if (Array.isArray(inPaths)) {
+            inPaths.forEach(p => { if (fs.existsSync(p)) fs.unlinkSync(p); });
+        } else {
+            if (fs.existsSync(inPaths)) fs.unlinkSync(inPaths);
+        }
+        if (fs.existsSync(outP)) fs.unlinkSync(outP);
+    }
+}
+
+/** Helper untuk membuat buffer PNG teks */
+function generateTextPngBuffer(text) {
+    const STICKER_SIZE = 512;
+    const TEXT_AREA_HEIGHT = 100;       
+    const PADDING = 16;
+    const MAX_FONT_SIZE = 36;
+    const MIN_FONT_SIZE = 16;
+
+    let fontSize = MAX_FONT_SIZE;
+    let textCanvas = createCanvas(STICKER_SIZE, TEXT_AREA_HEIGHT);
+    let textCtx = textCanvas.getContext('2d');
+
+    while (fontSize >= MIN_FONT_SIZE) {
+        textCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+        const metrics = textCtx.measureText(text);
+        if (metrics.width <= STICKER_SIZE - (PADDING * 2)) break;
+        fontSize -= 2;
+    }
+
+    textCtx.fillStyle = '#FFFFFF';
+    textCtx.fillRect(0, 0, STICKER_SIZE, TEXT_AREA_HEIGHT);
+
+    textCtx.fillStyle = '#000000';
+    textCtx.font = `bold ${fontSize}px Arial, sans-serif`;
+    textCtx.textAlign = 'center';
+    textCtx.textBaseline = 'middle';
+    textCtx.fillText(text, STICKER_SIZE / 2, TEXT_AREA_HEIGHT / 2, Math.max(0, STICKER_SIZE - (PADDING * 2)));
+
+    return textCanvas.toBuffer('image/png');
 }
 
 /**
@@ -261,5 +349,6 @@ async function addExif(webpBuffer, packname, author) {
 module.exports = {
     convertToSticker,
     createStickerWithText,
-    createAnimatedSticker
+    createAnimatedSticker,
+    createAnimatedStickerWithText
 };

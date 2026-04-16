@@ -10,7 +10,7 @@ const {
 
 const { logger, baileyLogger } = require('./src/utils/logger');
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
-const { convertToSticker, createStickerWithText, createAnimatedSticker } = require('./src/features/sticker');
+const { convertToSticker, createStickerWithText, createAnimatedSticker, createAnimatedStickerWithText } = require('./src/features/sticker');
 const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const qrcode = require('qrcode-terminal');
@@ -302,9 +302,13 @@ async function startBot() {
                     let stickerBuffer;
                     try {
                         if (isVideo) {
-                            stickerBuffer = await createAnimatedSticker(mediaBuffer);
+                            if (stickerText) {
+                                stickerBuffer = await createAnimatedStickerWithText(mediaBuffer, stickerText);
+                            } else {
+                                stickerBuffer = await createAnimatedSticker(mediaBuffer);
+                            }
                         } else if (stickerText) {
-                            // Sticker dengan teks di atas
+                            // Sticker diam dengan teks di atas
                             stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
                         } else {
                             // Sticker biasa
@@ -315,7 +319,7 @@ async function startBot() {
                         await sock.sendMessage(remoteJid, {
                             sticker: stickerBuffer,
                         }, { quoted: msg });
-                        logger.info(`🎨 Sticker${isVideo ? ' gerak' : ''} dikirim ke ${remoteJid}${stickerText && !isVideo ? ` dengan teks: "${stickerText}"` : ''}`);
+                        logger.info(`🎨 Sticker${isVideo ? ' gerak' : ''} dikirim ke ${remoteJid}${stickerText ? ` dengan teks: "${stickerText}"` : ''}`);
                     } catch (error) {
                         await sock.sendMessage(remoteJid, { text: '❌ Terjadi kesalahan saat memproses sticker' }, { quoted: msg });
                     }
@@ -362,7 +366,11 @@ async function startBot() {
                         let stickerBuffer;
                         try {
                             if (isVideo) {
-                                stickerBuffer = await createAnimatedSticker(mediaBuffer);
+                                if (stickerText) {
+                                    stickerBuffer = await createAnimatedStickerWithText(mediaBuffer, stickerText);
+                                } else {
+                                    stickerBuffer = await createAnimatedSticker(mediaBuffer);
+                                }
                             } else if (stickerText) {
                                 stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
                             } else {
