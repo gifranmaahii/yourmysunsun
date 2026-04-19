@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 
 const {
     default: makeWASocket,
@@ -13,7 +13,7 @@ const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./s
 const { convertToSticker, createStickerWithText, createAnimatedSticker, createAnimatedStickerWithText } = require('./src/features/sticker');
 const { removeBackgroundImage, removeBackgroundVideo, removeBackgroundVideoAI, detectDominantBgColor, checkRemoveBgCredits, resetRemoveBgStatus } = require('./src/features/removebg');
 const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
-const { generateTextImage } = require('./src/features/textImage');
+const { generateTextImage, generateBratImage } = require('./src/features/textImage');
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
@@ -719,6 +719,45 @@ async function startBot() {
                         logger.error(`❌ teks error: ${err.message}`);
                         await sock.sendMessage(remoteJid, {
                             text: `❌ Gagal buat gambar: ${err.message}`
+                        }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: BRAT TEXT — .brat [teks]
+                // Style bratgenerator.com: bg putih, teks hitam bold justified
+                // Output: sticker langsung
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'brat')) {
+                    const bratInput = textContent.replace(/^\.brat\s*/i, '').trim();
+
+                    if (!bratInput) {
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `❌ Tulis teks setelah perintah!\n\n` +
+                                `Contoh:\n` +
+                                `  *${PREFIX}brat sibuk itu cuma alasan aja dek*\n` +
+                                `  *${PREFIX}brat lu kira gue peduli?*\n\n` +
+                                `📌 Output langsung jadi sticker`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 500);
+                    await sock.sendMessage(remoteJid, { text: '🖼️ Membuat brat sticker...' }, { quoted: msg });
+
+                    try {
+                        const imgBuffer = generateBratImage(bratInput);
+                        // Selalu kirim sebagai sticker langsung
+                        const stickerBuffer = await convertToSticker(imgBuffer);
+                        await randomDelay(300, 700);
+                        await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
+                        logger.info(`🟢 Brat sticker dikirim ke ${remoteJid}`);
+                    } catch (err) {
+                        logger.error(`❌ brat error: ${err.message}`);
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Gagal buat brat: ${err.message}`
                         }, { quoted: msg });
                     }
                     continue;
