@@ -12,3 +12,5 @@ test_output.ogg
 test_output.mp3
 *.ogg
 *.mp3
+
+session_backup*/

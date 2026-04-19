@@ -80,14 +80,15 @@ function shouldProcess(msg, sock) {
     // Ignore pesan broadcast/status
     if (msg.key.remoteJid === 'status@broadcast') return false;
 
-    // Ignore pesan lama (lebih dari 60 detik)
+    // Ignore pesan lama (lebih dari 5 menit / 300 detik)
     const messageTimestamp = msg.messageTimestamp;
     if (messageTimestamp) {
         const msgTime = typeof messageTimestamp === 'number'
             ? messageTimestamp
             : parseInt(messageTimestamp.toString());
         const now = Math.floor(Date.now() / 1000);
-        if (now - msgTime > 60) {
+        if (now - msgTime > 300) {
+            logger.info(`🕐 Skip pesan lama: ${now - msgTime}s yang lalu`);
             return false;
         }
     }

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@faouzkk/tiktok-dl": "^1.0.1",
+    "@imgly/background-removal-node": "^1.4.5",
     "@napi-rs/canvas": "^0.1.65",
     "@tobyg74/tiktok-api-dl": "^1.3.7",
     "@whiskeysockets/baileys": "^6.7.16",
