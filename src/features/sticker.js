@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const { createCanvas, registerFont } = require('@napi-rs/canvas');
 const { logger } = require('../utils/logger');
+const { getConfig } = require('../utils/config');
 const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs');
 const path = require('path');
@@ -23,7 +24,8 @@ async function convertToSticker(imageBuffer) {
             .toBuffer();
 
         // Tambahkan metadata EXIF agar WhatsApp mengenali sebagai stiker yang valid
-        sticker = await addExif(sticker, 'Bot Stiker', 'Robby Bot');
+        const cfg1 = getConfig();
+        sticker = await addExif(sticker, cfg1.stickerPackName, cfg1.stickerPackAuthor);
 
         logger.info('✅ Gambar berhasil dikonversi ke sticker');
         return sticker;
@@ -88,7 +90,8 @@ async function createStickerWithText(imageBuffer, text) {
             .toBuffer();
 
         // Tambahkan EXIF agar dikenali WA
-        const stickerMuxed = await addExif(composedSticker, 'Bot Stiker', 'Robby Bot');
+        const cfg2 = getConfig();
+        const stickerMuxed = await addExif(composedSticker, cfg2.stickerPackName, cfg2.stickerPackAuthor);
 
         logger.info(`✅ Sticker dengan teks "${text}" berhasil dibuat`);
         return stickerMuxed;
@@ -181,7 +184,8 @@ async function createAnimatedSticker(mediaBuffer) {
             cleanupTempFiles(inPath, outPath);
             
             // Tambahkan Metadata EXIF supaya WA memutarnya dan tidak mengubah jadi static image
-            addExif(outBuffer, 'Bot Stiker', 'Robby Bot')
+            const cfg3 = getConfig();
+            addExif(outBuffer, cfg3.stickerPackName, cfg3.stickerPackAuthor)
                 .then(muxedBuffer => {
                     resolveCallback(muxedBuffer);
                 })
@@ -268,7 +272,8 @@ async function createAnimatedStickerWithText(mediaBuffer, text) {
             const outBuffer = fs.readFileSync(outPath);
             cleanupTempFiles(inPaths, outPath);
             
-            addExif(outBuffer, 'Bot Stiker', 'Robby Bot')
+            const cfg4 = getConfig();
+            addExif(outBuffer, cfg4.stickerPackName, cfg4.stickerPackAuthor)
                 .then(muxedBuffer => {
                     logger.info('✅ Sticker gerak + teks berhasil dibuat');
                     resolveCallback(muxedBuffer);

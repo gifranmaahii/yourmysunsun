@@ -161,12 +161,12 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
     // Init config (merge .env defaults + data/config.json)
     cfg.initConfig({
-        botName:           process.env.BOT_NAME       || 'Robby Bot',
-        stickerPackName:   process.env.BOT_NAME       || 'Robby Bot',
-        stickerPackAuthor: process.env.BOT_NAME       || 'Robby Bot',
-        ownerNumber:       process.env.OWNER_NUMBER   || '',
-        channelJid:        process.env.CHANNEL_JID    || '',
-        prefix:            process.env.PREFIX         || '.',
+        botName: process.env.BOT_NAME || 'Robby Bot',
+        stickerPackName: process.env.BOT_NAME || 'Robby Bot',
+        stickerPackAuthor: process.env.BOT_NAME || 'Robby Bot',
+        ownerNumber: process.env.OWNER_NUMBER || '',
+        channelJid: process.env.CHANNEL_JID || '',
+        prefix: process.env.PREFIX || '.',
     });
 
     // Ambil versi Baileys terbaru
@@ -231,6 +231,36 @@ async function startBot() {
     sock.ev.on('creds.update', saveCreds);
 
     // ============================================================
+    // EVENT: Contacts sync — build @lid → nomor HP mapping
+    // WhatsApp versi baru pakai format 152xxx@lid (bukan nomor HP)
+    // ============================================================
+    const lidMap = new Map(); // lid_number → phone_number
+    sock.ev.on('contacts.upsert', (contacts) => {
+        for (const c of (contacts || [])) {
+            // c.id = "628xxx@s.whatsapp.net", c.lid = "152xxx@lid"
+            if (c.id && c.lid) {
+                const phoneNum = cfg.cleanNumber(c.id);
+                const lidNum = cfg.cleanNumber(c.lid);
+                if (phoneNum && lidNum && phoneNum !== lidNum) {
+                    lidMap.set(lidNum, phoneNum);
+                    logger.debug(`[LID] ${lidNum} → ${phoneNum}`);
+                }
+            }
+        }
+    });
+    sock.ev.on('contacts.update', (contacts) => {
+        for (const c of (contacts || [])) {
+            if (c.id && c.lid) {
+                const phoneNum = cfg.cleanNumber(c.id);
+                const lidNum = cfg.cleanNumber(c.lid);
+                if (phoneNum && lidNum && phoneNum !== lidNum) {
+                    lidMap.set(lidNum, phoneNum);
+                }
+            }
+        }
+    });
+
+    // ============================================================
     // EVENT: Pesan masuk
     // ============================================================
     sock.ev.on('messages.upsert', async (upsert) => {
@@ -279,19 +309,76 @@ async function startBot() {
                     '';
 
                 // ── Gunakan config dinamis (bisa diubah via .owner) ──────────────
-                const activeCfg   = cfg.getConfig();
+                const activeCfg = cfg.getConfig();
                 const ACTIVE_NAME = activeCfg.botName || BOT_NAME;
 
-                // ── Ekstrak nomor pengirim & cek akses ───────────────────────────
-                // Grup: pengirim dari msg.key.participant; DM: dari remoteJid
-                const senderJid    = msg.key.participant || msg.key.remoteJid || '';
-                const senderIsOwner = cfg.isOwner(senderJid);
-                const senderIsAdmin = cfg.isAdmin(senderJid);
+                // ── Spesial: .myid bisa dipakai SIAPA SAJA (termasuk non-admin) ──
+                // Berguna agar calon admin tahu @lid mereka untuk daftarkan ke owner
+                if (textContent.trim() === PREFIX + 'myid') {
+                    const rawJidForMyId = msg.key.participant || msg.key.remoteJid || '';
+                    const cleanJidForMyId = cfg.cleanNumber(rawJidForMyId);
+                    const pushName = msg.pushName || '';
+                    await simulateTyping(sock, remoteJid, 500);
+                    await sock.sendMessage(remoteJid, {
+                        text:
+                            `🆔 *Info ID WhatsApp Kamu*\n\n` +
+                            `👤 Nama   : ${pushName || '(tidak diketahui)'}\n` +
+                            `🔑 ID/LID : *${cleanJidForMyId}*\n` +
+                            `📋 Raw JID: ${rawJidForMyId}`
+                    }, { quoted: msg });
+                    continue;
+                }
+
+                // ── Ekstrak nomor pengirim & resolve @lid ────────────────────────
+                // Grup: sender = msg.key.participant; DM: sender = msg.key.remoteJid
+                let rawSenderJid = msg.key.participant || msg.key.remoteJid || '';
+                const originalRaw = rawSenderJid; // simpan raw asli untuk log
+
+                // WhatsApp baru pakai @lid (bukan nomor HP langsung)
+                // Coba resolve ke nomor HP via lidMap (dari contacts.upsert)
+                if (rawSenderJid.endsWith('@lid')) {
+                    const lidNum = cfg.cleanNumber(rawSenderJid);
+                    const resolved = lidMap.get(lidNum);
+                    if (resolved) {
+                        rawSenderJid = resolved + '@s.whatsapp.net';
+                        logger.debug(`[LID-RESOLVE] ${lidNum} → ${resolved}`);
+                    } else {
+                        // Coba cari di sock.contacts
+                        const contactEntries = Object.entries(sock.contacts || {});
+                        for (const [cJid, cData] of contactEntries) {
+                            if (cData.lid && cfg.cleanNumber(cData.lid) === lidNum) {
+                                const resolvedPhone = cfg.cleanNumber(cJid);
+                                if (resolvedPhone) {
+                                    rawSenderJid = resolvedPhone + '@s.whatsapp.net';
+                                    lidMap.set(lidNum, resolvedPhone);
+                                    break;
+                                }
+                            }
+                        }
+                        // Jika masih @lid (belum berhasil resolve), biarkan apa adanya
+                        // isOwner() dan isAdmin() support @lid langsung
+                    }
+                }
+
+                const senderIsOwner = cfg.isOwner(rawSenderJid);
+                const senderIsAdmin = cfg.isAdmin(rawSenderJid);
+
+                // Log singkat untuk diagnosa
+                const senderNum = cfg.cleanNumber(rawSenderJid);
+                const adminList = cfg.getConfig().admins;
+                console.log(`[AUTH] raw=${originalRaw} → ${senderNum} | owner=${senderIsOwner} admin=${senderIsAdmin} | admins=[${adminList.join(',')}]`);
 
                 // Jika bukan owner dan bukan admin → abaikan pesan ini
                 if (!senderIsOwner && !senderIsAdmin) {
-                    continue; // diam, jangan balas
+                    console.log(`[AUTH-BLOCK] ❌ ${senderNum} (${originalRaw}) tidak ada di daftar admin.`);
+                    continue; // diam saja
                 }
+
+                console.log(`[AUTH-OK] ✅ ${senderNum} diizinkan`);
+
+                // ── Shortcut: senderJid untuk backward compat ────────────────────
+                const senderJid = rawSenderJid;
+
 
                 // ── Handler .owner (KHUSUS OWNER) ────────────────────────────────
                 if (textContent.startsWith(PREFIX + 'owner')) {
@@ -300,17 +387,18 @@ async function startBot() {
                         continue;
                     }
 
-                    const ownerArgs  = textContent.trim().split(/\s+/);
-                    const ownerCmd   = ownerArgs[1]?.toLowerCase() || '';
-                    const ownerVal   = ownerArgs.slice(2).join(' ').trim();
+                    const ownerArgs = textContent.trim().split(/\s+/);
+                    const ownerCmd = ownerArgs[1]?.toLowerCase() || '';
+                    const ownerVal = ownerArgs.slice(2).join(' ').trim();
 
                     await simulateTyping(sock, remoteJid, 600);
 
                     // Tampilkan menu utama .owner
                     if (!ownerCmd) {
                         const cur = cfg.getConfig();
-                        await sock.sendMessage(remoteJid, { text:
-`⚙️ *Owner Settings Panel*
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `⚙️ *Owner Settings Panel*
 
 📛 *Bot & Sticker*
   \`${PREFIX}owner setname [nama]\` → ubah nama bot
@@ -321,6 +409,9 @@ async function startBot() {
   \`${PREFIX}owner addadmin [nomor]\` → tambah admin
   \`${PREFIX}owner deladmin [nomor]\` → hapus admin
   \`${PREFIX}owner listadmin\` → daftar admin
+
+🔍 *Utilitas*
+  \`${PREFIX}owner lid [nomor_hp]\` → cari @lid dari nomor HP
 
 📊 *Settingan Saat Ini:*
   • Nama bot: *${cur.botName}*
@@ -397,6 +488,60 @@ async function startBot() {
                         } else {
                             const list = admins.map((n, i) => `  ${i + 1}. ${n}`).join('\n');
                             await sock.sendMessage(remoteJid, { text: `👥 *Daftar Admin (${admins.length} orang):*\n${list}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner lid [nomor_hp] ---
+                    if (ownerCmd === 'lid') {
+                        const targetNum = cfg.cleanNumber(ownerVal);
+                        if (!targetNum) {
+                            await sock.sendMessage(remoteJid, {
+                                text: `❌ Format: *${PREFIX}owner lid 6281234567890*\nContoh: *${PREFIX}owner lid 089682824251*`
+                            }, { quoted: msg });
+                            continue;
+                        }
+
+                        // Cari @lid dari nomor HP di lidMap (lid → phone)
+                        // lidMap: lidNum → phoneNum, jadi kita cari yang value-nya cocok
+                        let foundLid = null;
+
+                        for (const [lidNum, phoneNum] of lidMap.entries()) {
+                            if (cfg.cleanNumber(phoneNum) === targetNum) {
+                                foundLid = lidNum;
+                                break;
+                            }
+                        }
+
+                        // Jika tidak ketemu di lidMap, cari di sock.contacts
+                        if (!foundLid) {
+                            const contactEntries = Object.entries(sock.contacts || {});
+                            for (const [cJid, cData] of contactEntries) {
+                                if (cfg.cleanNumber(cJid) === targetNum && cData.lid) {
+                                    foundLid = cfg.cleanNumber(cData.lid);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (foundLid) {
+                            await sock.sendMessage(remoteJid, {
+                                text:
+                                    `🔍 *Hasil Pencarian @lid*\n\n` +
+                                    `📱 Nomor HP : *${targetNum}*\n` +
+                                    `🆔 Nomor LID : *${foundLid}*\n\n` +
+                                    `💡 Untuk daftarkan sebagai admin:\n` +
+                                    `\`${PREFIX}owner addadmin ${foundLid}\``
+                            }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(remoteJid, {
+                                text:
+                                    `❌ @lid untuk *${targetNum}* tidak ditemukan.\n\n` +
+                                    `💡 *Tips:*\n` +
+                                    `• Minta orang tersebut chat ke bot dulu\n` +
+                                    `• Atau simpan kontaknya di HP yang menjalankan bot\n` +
+                                    `• @lid akan otomatis muncul di log terminal saat mereka kirim pesan`
+                            }, { quoted: msg });
                         }
                         continue;
                     }
@@ -684,10 +829,10 @@ async function startBot() {
                             const stickerBuffer = await convertToSticker(finalBuffer);
                             await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
 
-                            let infoText = `✅ Background berhasil dihapus!\n📌 Metode: *${method}*`;
+                            let infoText = `✅ Background berhasil dihapus!`;
                             if (stickerText) infoText += `\n📝 Teks: *${stickerText}*`;
                             if (method.includes('remove.bg') && creditsLeft !== null) {
-                                infoText += `\n💳 Sisa kredit: *${creditsLeft}*`;
+                                infoText += `\n💳 Thanks`;
                             } else if (method === 'AI Lokal') {
                                 infoText += `\n🤖 Gratis & unlimited`;
                             }
@@ -1299,7 +1444,27 @@ Kirim/quote foto atau video + ketik:
 // ============================================================
 // JALANKAN BOT
 // ============================================================
+
+// Tangkap error tak terduga supaya bot tidak crash permanen
+process.on('uncaughtException', (err) => {
+    logger.error(`💥 uncaughtException: ${err.message}`);
+    logger.error(err.stack || '');
+    // Restart bot setelah 5 detik
+    logger.info('🔄 Restart otomatis dalam 5 detik...');
+    setTimeout(() => {
+        startBot().catch((e) => logger.error(`💥 Restart gagal: ${e.message}`));
+    }, 5000);
+});
+
+process.on('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    logger.error(`💥 unhandledRejection: ${msg}`);
+    // Tidak crash — biarkan reconnect logic Baileys yang handle
+});
+
 startBot().catch((err) => {
     logger.error(`💥 Fatal error: ${err.message}`);
-    process.exit(1);
+    logger.info('🔄 Restart otomatis dalam 5 detik...');
+    setTimeout(() => startBot().catch(() => process.exit(1)), 5000);
 });
+
