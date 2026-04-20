@@ -6,6 +6,7 @@ const {
     DisconnectReason,
     fetchLatestBaileysVersion,
     downloadMediaMessage,
+    Browsers,
 } = require('@whiskeysockets/baileys');
 
 const { logger, baileyLogger } = require('./src/utils/logger');
@@ -14,8 +15,10 @@ const cfg = require('./src/utils/config');
 const { convertToSticker, createStickerWithText, createAnimatedSticker, createAnimatedStickerWithText } = require('./src/features/sticker');
 const { removeBackgroundImage, removeBackgroundVideo, removeBackgroundVideoAI, detectDominantBgColor, checkRemoveBgCredits, resetRemoveBgStatus } = require('./src/features/removebg');
 const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
+const { getInstagramMedia } = require('./src/features/instagram');
 const { generateTextImage, generateBratImage } = require('./src/features/textImage');
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
+const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -173,13 +176,39 @@ async function startBot() {
     const { version, isLatest } = await fetchLatestBaileysVersion();
     logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version} (latest: ${isLatest})`);
 
+    let usePairingCode = false;
+    let phoneNumber = '';
+
+    if (!state.creds.registered) {
+        const readline = require('readline');
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const question = (text) => new Promise((resolve) => rl.question(text, resolve));
+
+        console.log(`\n========================================================`);
+        console.log(` 🔑 METODE LOGIN WHATSAPP BOT`);
+        console.log(`========================================================`);
+        console.log(` 1. Scan QR Code (Arahkan kamera HP Anda)`);
+        console.log(` 2. Pairing Code (Login memasukkan kode angka di HP)`);
+        console.log(`========================================================`);
+        const answer = await question('Pilih metode login (1/2): ');
+
+        if (answer.trim() === '2') {
+            usePairingCode = true;
+            let hw = await question('Masukkan nomor WhatsApp BOT (contoh awalan 62: 6281234567890): ');
+            phoneNumber = hw.replace(/[^0-9]/g, '');
+            console.log(`⏳ Sedang meminta kode pairing untuk nomor: ${phoneNumber}...`);
+            console.log(`⚠️ Jika gagal, pastikan nomor sudah benar dan belum login di tempat lain.\n`);
+        }
+        rl.close();
+    }
+
     // Buat socket WA
     const sock = makeWASocket({
         version,
         auth: state,
         logger: baileyLogger,           // silent – tidak spam terminal
-        printQRInTerminal: true,        // QR tampil di terminal untuk scan 1x
-        browser: ['Chrome (Linux)', 'Chrome', '120.0.0'],
+        printQRInTerminal: !usePairingCode, // QR tampil jika tidak pakai pairing code
+        browser: Browsers.ubuntu('Chrome'), // Browser yang wajib dipakai agar pairing code berhasil
         syncFullHistory: false,         // Tidak perlu history penuh (lebih aman)
         markOnlineOnConnect: false,     // Jangan langsung online (anti-ban)
         generateHighQualityLinkPreview: false,
@@ -188,6 +217,22 @@ async function startBot() {
             return msgCache.get(key.id) || undefined;
         },
     });
+
+    // Request Pairing Code
+    if (usePairingCode && !state.creds.registered) {
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(phoneNumber);
+                const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
+                console.log(`\n========================================================`);
+                console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
+                console.log(` 📱 Buka WhatsApp di HP > Perangkat Tautkan > Tautkan dengan Nomor Telepon`);
+                console.log(`========================================================\n`);
+            } catch (err) {
+                logger.error('❌ Gagal mendapatkan pairing code: ' + err.message);
+            }
+        }, 3000); // delay sejenak agar websocket tersambung
+    }
 
     // ============================================================
     // EVENT: Update koneksi
@@ -214,7 +259,14 @@ async function startBot() {
                 logger.info(`🔄 Mencoba reconnect dalam ${delay}ms...`);
                 setTimeout(startBot, delay);
             } else {
-                logger.error('🚫 Session logout. Hapus folder "session" dan scan QR ulang.');
+                logger.error('🚫 Session logout. Auto-clean folder "session"...');
+                try {
+                    fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+                    logger.info('✅ Folder session usang telah dihapus otomatis. SIlakan jalankan bot kembali!');
+                } catch (e) {
+                    logger.error('Gagal hapus session otomatis: ' + e.message);
+                }
+                process.exit(1);
             }
         }
 
@@ -1153,6 +1205,57 @@ async function startBot() {
                 }
 
                 // -----------------------------------------------
+                // FITUR: INSTAGRAM DOWNLOADER
+                // Perintah: .ig <url> atau .instagram <url>
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'ig') || textContent.startsWith(PREFIX + 'instagram')) {
+                    const args = textContent.split(' ');
+                    const url = args[1];
+
+                    if (!url || !url.includes('instagram.com')) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format salah! Gunakan: *${PREFIX}ig <link_instagram>*` }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1500);
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mendownload media Instagram, tunggu bentar ya...' }, { quoted: msg });
+
+                    try {
+                        const mediaList = await getInstagramMedia(url);
+                        
+                        if (!mediaList || mediaList.length === 0) {
+                            throw new Error('Tidak ada media yang ditemukan atau link tidak valid/private.');
+                        }
+
+                        // IG bisa mengirim balik array berisi video/foto jika itu carousel
+                        for (const media of mediaList) {
+                            // Cek tipe media secara sederhana melalui ext (mp4 = video, jpg/png = image)
+                            // Jika objek memuat url
+                            const mediaUrl = media._url || media.url;
+                            if (mediaUrl.includes('.mp4')) {
+                                await sock.sendMessage(remoteJid, {
+                                    video: { url: mediaUrl },
+                                    caption: `🎬 Instagram Video`,
+                                    mimetype: 'video/mp4'
+                                }, { quoted: msg });
+                            } else {
+                                await sock.sendMessage(remoteJid, {
+                                    image: { url: mediaUrl },
+                                    caption: `📸 Instagram Foto`,
+                                    mimetype: 'image/jpeg'
+                                }, { quoted: msg });
+                            }
+                            await randomDelay(1000, 2000); // jeda sedikit agar tidak spam limit wa
+                        }
+
+                        logger.info(`✅ Instagram media dikirim ke ${remoteJid}`);
+                    } catch (error) {
+                        await sock.sendMessage(remoteJid, { text: `${error.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
                 // FITUR: REMOVE BACKGROUND GAMBAR — .rmbg
                 // Kirim/quote gambar + ketik .rmbg → sticker transparan
                 // -----------------------------------------------
@@ -1367,6 +1470,64 @@ async function startBot() {
                 }
 
                 // -----------------------------------------------
+                // FITUR: CONVERT STICKER KE FOTO / VIDEO
+                // Perintah: .toimg atau .tovid (reply sticker)
+                // -----------------------------------------------
+                if (textContent === PREFIX + 'toimg' || textContent === PREFIX + 'tovid' || textContent === PREFIX + 'tofoto') {
+                    const quotedCtx = message.extendedTextMessage?.contextInfo;
+                    const quotedSticker = quotedCtx?.quotedMessage?.stickerMessage;
+
+                    if (!quotedSticker) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ *Reply* sticker yang ingin diubah menjadi gambar/video, lalu ketik *${PREFIX}toimg*`,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1000);
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mengekstrak sticker...' }, { quoted: msg });
+
+                    const quotedMsgObj = {
+                        key: {
+                            remoteJid: remoteJid,
+                            id: quotedCtx.stanzaId,
+                            fromMe: quotedCtx.participant === sock.user?.id,
+                            participant: quotedCtx.participant,
+                        },
+                        message: quotedCtx.quotedMessage,
+                    };
+
+                    try {
+                        const stickerBuf = await downloadMediaMessage(
+                            quotedMsgObj, 'buffer', {},
+                            { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                        );
+
+                        if (!stickerBuf) throw new Error('Gagal download sticker');
+
+                        if (quotedSticker.isAnimated) {
+                            const mp4Buf = await stickerToVideo(stickerBuf);
+                            await sock.sendMessage(remoteJid, {
+                                video: mp4Buf,
+                                mimetype: 'video/mp4',
+                                caption: '✅ Berhasil ekstrak ke video'
+                            }, { quoted: msg });
+                        } else {
+                            const pngBuf = await stickerToImage(stickerBuf);
+                            await sock.sendMessage(remoteJid, {
+                                image: pngBuf,
+                                mimetype: 'image/png',
+                                caption: '✅ Berhasil ekstrak ke gambar'
+                            }, { quoted: msg });
+                        }
+                    } catch (err) {
+                        logger.error(`❌ toimg error: ${err.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal ekstrak sticker: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
                 // BANTUAN: .help atau .menu
                 // -----------------------------------------------
                 if (
@@ -1386,6 +1547,7 @@ async function startBot() {
 Kirim/quote foto atau video + ketik:
   \`${PREFIX}sticker\` → sticker biasa / animasi
   \`${PREFIX}sticker teksmu\` → sticker + teks
+  \`${PREFIX}toimg\` / \`${PREFIX}tovid\` → ubah sticker ke foto/video (reply sticker)
 
 ━━━━━━━━━━━━━━━━━━━
 ✂️ *REMOVE BACKGROUND*
@@ -1409,10 +1571,11 @@ Kirim/quote foto atau video + ketik:
   \`${PREFIX}brat tulisanmu\` → sticker gaya (putih, Arial Narrow, lowercase)
 
 ━━━━━━━━━━━━━━━━━━━
-🎬 *TIKTOK DOWNLOADER*
+🎬 *VIDEO DOWNLOADER*
 ━━━━━━━━━━━━━━━━━━━
   \`${PREFIX}tiktok <link>\` → download video tanpa watermark
   \`${PREFIX}ttaudio <link>\` → ekstrak audio/musik
+  \`${PREFIX}ig <link>\` → download foto/video/reels Instagram
 
 ━━━━━━━━━━━━━━━━━━━
 📡 *SALURAN / CHANNEL*

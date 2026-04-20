@@ -13,3 +13,9 @@ test_output.mp3
 *.mp3
 
 session_backup*/
+*
+*.mp4
+*.gif
+*.webp
+*.jpg
+*.png
