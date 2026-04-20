@@ -1,7 +1,6 @@
 node_modules/
 auth_info/
 session/
-.env
 *.log
 
 # Folder temp (hasil konversi sementara)
@@ -14,5 +13,3 @@ test_output.mp3
 *.mp3
 
 session_backup*/
-
-data/
