@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 
 const {
     default: makeWASocket,
@@ -10,6 +10,7 @@ const {
 
 const { logger, baileyLogger } = require('./src/utils/logger');
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
+const cfg = require('./src/utils/config');
 const { convertToSticker, createStickerWithText, createAnimatedSticker, createAnimatedStickerWithText } = require('./src/features/sticker');
 const { removeBackgroundImage, removeBackgroundVideo, removeBackgroundVideoAI, detectDominantBgColor, checkRemoveBgCredits, resetRemoveBgStatus } = require('./src/features/removebg');
 const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
@@ -22,10 +23,10 @@ const fs = require('fs');
 // ============================================================
 // KONFIGURASI
 // ============================================================
-const CHANNEL_JID   = process.env.CHANNEL_JID   || '';
-const OWNER_NUMBER  = process.env.OWNER_NUMBER   || '';
-const BOT_NAME      = process.env.BOT_NAME       || 'Robby Bot';
-const PREFIX        = process.env.PREFIX         || '.';
+const CHANNEL_JID = process.env.CHANNEL_JID || '';
+const OWNER_NUMBER = process.env.OWNER_NUMBER || '';
+const BOT_NAME = process.env.BOT_NAME || 'Robby Bot';
+const PREFIX = process.env.PREFIX || '.';
 
 // Folder penyimpanan sesi (cookie / auth) - akan di-persist untuk login 1x
 const SESSION_DIR = path.join(__dirname, 'session');
@@ -44,11 +45,11 @@ const { randomBytes: _rb } = require('crypto');
 
 async function extractFirstFrame(videoBuffer) {
     const { randomBytes } = require('crypto');
-    const tempId  = randomBytes(6).toString('hex');
+    const tempId = randomBytes(6).toString('hex');
     const tempDir = path.join(__dirname, 'temp');
     if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-    const inPath  = path.join(tempDir, `ff_in_${tempId}.mp4`);
+    const inPath = path.join(tempDir, `ff_in_${tempId}.mp4`);
     const outPath = path.join(tempDir, `ff_out_${tempId}.png`);
 
     return new Promise((resolve, reject) => {
@@ -60,19 +61,19 @@ async function extractFirstFrame(videoBuffer) {
                 .on('end', () => {
                     try {
                         const buf = fs.readFileSync(outPath);
-                        try { fs.unlinkSync(inPath); } catch (_) {}
-                        try { fs.unlinkSync(outPath); } catch (_) {}
+                        try { fs.unlinkSync(inPath); } catch (_) { }
+                        try { fs.unlinkSync(outPath); } catch (_) { }
                         resolve(buf);
                     } catch (e) { reject(e); }
                 })
                 .on('error', (err) => {
-                    try { fs.unlinkSync(inPath); } catch (_) {}
-                    try { fs.unlinkSync(outPath); } catch (_) {}
+                    try { fs.unlinkSync(inPath); } catch (_) { }
+                    try { fs.unlinkSync(outPath); } catch (_) { }
                     reject(err);
                 })
                 .save(outPath);
         } catch (e) {
-            try { fs.unlinkSync(inPath); } catch (_) {}
+            try { fs.unlinkSync(inPath); } catch (_) { }
             reject(e);
         }
     });
@@ -84,10 +85,17 @@ async function extractFirstFrame(videoBuffer) {
 async function addExifToWebp(webpBuffer) {
     try {
         const webp = require('node-webpmux');
+        // Baca nama sticker dari config (bisa diubah via .owner setsticker)
+        const { stickerPackName, stickerPackAuthor, botName: _bn } = cfg.getConfig();
         const img = new webp.Image();
         await img.load(webpBuffer);
-        const json = { 'sticker-pack-id': 'robby-bot', 'sticker-pack-name': 'Robby Bot', 'sticker-pack-publisher': 'Robby Bot', 'emojis': ['🎬'] };
-        const exifAttr = Buffer.from([0x49,0x49,0x2A,0x00,0x08,0x00,0x00,0x00,0x01,0x00,0x41,0x57,0x07,0x00,0x00,0x00,0x00,0x00,0x16,0x00,0x00,0x00]);
+        const json = {
+            'sticker-pack-id': 'robby-bot',
+            'sticker-pack-name': stickerPackName || 'Robby Bot',
+            'sticker-pack-publisher': stickerPackAuthor || 'Robby Bot',
+            'emojis': ['🎬']
+        };
+        const exifAttr = Buffer.from([0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00]);
         const jsonBuff = Buffer.from(JSON.stringify(json), 'utf-8');
         const exif = Buffer.concat([exifAttr, jsonBuff]);
         exif.writeUIntLE(jsonBuff.length, 14, 4);
@@ -123,9 +131,9 @@ async function addTextToRmbgSticker(pngBuffer, text) {
         .replace(/>/g, '&gt;')
         .slice(0, 60); // maks 60 karakter
 
-    const fontSize   = Math.max(24, Math.min(48, Math.floor(480 / safeText.length)));
-    const bannerH    = fontSize + 24;
-    const bannerY    = 512 - bannerH - 8; // teks di bawah gambar
+    const fontSize = Math.max(24, Math.min(48, Math.floor(480 / safeText.length)));
+    const bannerH = fontSize + 24;
+    const bannerY = 512 - bannerH - 8; // teks di bawah gambar
 
     // Banner putih semi-transparan dengan teks hitam tebal
     const svgBanner = Buffer.from(`
@@ -151,6 +159,15 @@ async function addTextToRmbgSticker(pngBuffer, text) {
 async function startBot() {
     // Muat state auth dari folder session (cookie otomatis disimpan di sini)
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+    // Init config (merge .env defaults + data/config.json)
+    cfg.initConfig({
+        botName:           process.env.BOT_NAME       || 'Robby Bot',
+        stickerPackName:   process.env.BOT_NAME       || 'Robby Bot',
+        stickerPackAuthor: process.env.BOT_NAME       || 'Robby Bot',
+        ownerNumber:       process.env.OWNER_NUMBER   || '',
+        channelJid:        process.env.CHANNEL_JID    || '',
+        prefix:            process.env.PREFIX         || '.',
+    });
 
     // Ambil versi Baileys terbaru
     const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -241,7 +258,7 @@ async function startBot() {
                 }
 
                 const remoteJid = msg.key.remoteJid;
-                const message   = msg.message;
+                const message = msg.message;
 
                 if (!message) {
                     console.log(`[MSG-SKIP] message=null`);
@@ -261,10 +278,138 @@ async function startBot() {
                     message.extendedTextMessage?.text ||
                     '';
 
+                // ── Gunakan config dinamis (bisa diubah via .owner) ──────────────
+                const activeCfg   = cfg.getConfig();
+                const ACTIVE_NAME = activeCfg.botName || BOT_NAME;
+
+                // ── Ekstrak nomor pengirim & cek akses ───────────────────────────
+                // Grup: pengirim dari msg.key.participant; DM: dari remoteJid
+                const senderJid    = msg.key.participant || msg.key.remoteJid || '';
+                const senderIsOwner = cfg.isOwner(senderJid);
+                const senderIsAdmin = cfg.isAdmin(senderJid);
+
+                // Jika bukan owner dan bukan admin → abaikan pesan ini
+                if (!senderIsOwner && !senderIsAdmin) {
+                    continue; // diam, jangan balas
+                }
+
+                // ── Handler .owner (KHUSUS OWNER) ────────────────────────────────
+                if (textContent.startsWith(PREFIX + 'owner')) {
+                    if (!senderIsOwner) {
+                        // Bukan owner: diam saja
+                        continue;
+                    }
+
+                    const ownerArgs  = textContent.trim().split(/\s+/);
+                    const ownerCmd   = ownerArgs[1]?.toLowerCase() || '';
+                    const ownerVal   = ownerArgs.slice(2).join(' ').trim();
+
+                    await simulateTyping(sock, remoteJid, 600);
+
+                    // Tampilkan menu utama .owner
+                    if (!ownerCmd) {
+                        const cur = cfg.getConfig();
+                        await sock.sendMessage(remoteJid, { text:
+`⚙️ *Owner Settings Panel*
+
+📛 *Bot & Sticker*
+  \`${PREFIX}owner setname [nama]\` → ubah nama bot
+  \`${PREFIX}owner setsticker [nama]\` → ubah nama sticker pack
+  \`${PREFIX}owner setauthor [nama]\` → ubah author sticker
+
+👥 *Admin*
+  \`${PREFIX}owner addadmin [nomor]\` → tambah admin
+  \`${PREFIX}owner deladmin [nomor]\` → hapus admin
+  \`${PREFIX}owner listadmin\` → daftar admin
+
+📊 *Settingan Saat Ini:*
+  • Nama bot: *${cur.botName}*
+  • Sticker pack: *${cur.stickerPackName}*
+  • Sticker author: *${cur.stickerPackAuthor}*
+  • Jumlah admin: *${cur.admins.length} orang*
+  • Owner: *${cur.ownerNumber}*`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // --- .owner setname ---
+                    if (ownerCmd === 'setname') {
+                        if (!ownerVal) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setname NamaBot*` }, { quoted: msg });
+                        } else {
+                            cfg.update('botName', ownerVal);
+                            await sock.sendMessage(remoteJid, { text: `✅ Nama bot diubah menjadi: *${ownerVal}*` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner setsticker ---
+                    if (ownerCmd === 'setsticker') {
+                        if (!ownerVal) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setsticker NamaPackSticker*` }, { quoted: msg });
+                        } else {
+                            cfg.update('stickerPackName', ownerVal);
+                            await sock.sendMessage(remoteJid, { text: `✅ Nama sticker pack: *${ownerVal}*\n📌 Berlaku untuk sticker baru (sticker lama tidak berubah)` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner setauthor ---
+                    if (ownerCmd === 'setauthor') {
+                        if (!ownerVal) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setauthor NamaCopyrightMu*` }, { quoted: msg });
+                        } else {
+                            cfg.update('stickerPackAuthor', ownerVal);
+                            await sock.sendMessage(remoteJid, { text: `✅ Author sticker: *${ownerVal}*` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner addadmin ---
+                    if (ownerCmd === 'addadmin') {
+                        const num = ownerArgs[2] || '';
+                        if (!num) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner addadmin 6281234567890*` }, { quoted: msg });
+                        } else {
+                            const admins = cfg.addAdmin(num);
+                            await sock.sendMessage(remoteJid, { text: `✅ *${cfg.cleanNumber(num)}* ditambahkan sebagai admin!\n👥 Total admin: ${admins.length}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner deladmin ---
+                    if (ownerCmd === 'deladmin') {
+                        const num = ownerArgs[2] || '';
+                        if (!num) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner deladmin 6281234567890*` }, { quoted: msg });
+                        } else {
+                            const admins = cfg.removeAdmin(num);
+                            await sock.sendMessage(remoteJid, { text: `✅ *${cfg.cleanNumber(num)}* dihapus dari admin.\n👥 Sisa admin: ${admins.length}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner listadmin ---
+                    if (ownerCmd === 'listadmin') {
+                        const admins = cfg.getConfig().admins;
+                        if (admins.length === 0) {
+                            await sock.sendMessage(remoteJid, { text: `👥 Belum ada admin.\nGunakan *${PREFIX}owner addadmin [nomor]* untuk menambah.` }, { quoted: msg });
+                        } else {
+                            const list = admins.map((n, i) => `  ${i + 1}. ${n}`).join('\n');
+                            await sock.sendMessage(remoteJid, { text: `👥 *Daftar Admin (${admins.length} orang):*\n${list}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // Default: perintah tidak dikenal
+                    await sock.sendMessage(remoteJid, { text: `❓ Perintah tidak dikenal.\nKetik *${PREFIX}owner* untuk melihat menu.` }, { quoted: msg });
+                    continue;
+                }
+
                 if (textContent.startsWith(PREFIX + 'kirim')) {
                     // Ambil JID target dari argumen, atau pakai default dari .env
-                    const parts       = textContent.trim().split(/\s+/);
-                    const targetJid   = parts[1]?.trim() || CHANNEL_JID;
+                    const parts = textContent.trim().split(/\s+/);
+                    const targetJid = parts[1]?.trim() || CHANNEL_JID;
 
                     if (!targetJid) {
                         await sock.sendMessage(remoteJid, {
@@ -337,12 +482,12 @@ async function startBot() {
                             ptt: true,
                             waveform: generateWaveform(),
                         });
-                        
+
                     } else if (quotedSticker) {
                         // PENGIRIMAN STIKER KE CHANNEL
                         await sock.sendMessage(remoteJid, { text: '⏳ Mengirim stiker ke channel...' }, { quoted: msg });
                         logger.info(`📡 Mengirim stiker ke channel: ${targetJid}`);
-                        
+
                         await sock.sendMessage(targetJid, {
                             sticker: mediaBuffer
                         });
@@ -364,13 +509,13 @@ async function startBot() {
 
                 if (textContent.startsWith(PREFIX + 'sticker') || textContent.startsWith(PREFIX + 's')) {
                     // Ambil teks opsional setelah command
-                    const cmdParts   = textContent.split(' ');
+                    const cmdParts = textContent.split(' ');
                     const stickerText = cmdParts.slice(1).join(' ').trim();
 
                     // Cek ketersediaan media (gambar atau video)
                     const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const mediaMsg  = message.imageMessage || message.videoMessage || quotedMsg?.imageMessage || quotedMsg?.videoMessage;
-                    
+                    const mediaMsg = message.imageMessage || message.videoMessage || quotedMsg?.imageMessage || quotedMsg?.videoMessage;
+
                     const isVideo = message.videoMessage || quotedMsg?.videoMessage;
 
                     if (!mediaMsg) {
@@ -380,7 +525,7 @@ async function startBot() {
                         }, { quoted: msg });
                         continue;
                     }
-                    
+
                     // Batasi durasi jika video (mencegah rendering yang terlalu lama)
                     const videoDuration = isVideo?.seconds || 0;
                     if (isVideo && videoDuration > 10) {
@@ -394,13 +539,13 @@ async function startBot() {
                     if (message.imageMessage || message.videoMessage) {
                         downloadKey = msg;
                     } else if (quotedMsg?.imageMessage || quotedMsg?.videoMessage) {
-                        downloadKey = { 
-                            message: quotedMsg, 
-                            key: { 
-                                remoteJid: msg.key.remoteJid, 
-                                id: message.extendedTextMessage.contextInfo.stanzaId, 
-                                participant: message.extendedTextMessage.contextInfo.participant 
-                            } 
+                        downloadKey = {
+                            message: quotedMsg,
+                            key: {
+                                remoteJid: msg.key.remoteJid,
+                                id: message.extendedTextMessage.contextInfo.stanzaId,
+                                participant: message.extendedTextMessage.contextInfo.participant
+                            }
                         };
                     }
 
@@ -448,7 +593,7 @@ async function startBot() {
                     } catch (error) {
                         await sock.sendMessage(remoteJid, { text: '❌ Terjadi kesalahan saat memproses sticker' }, { quoted: msg });
                     }
-                    
+
                     continue;
                 }
 
@@ -462,10 +607,10 @@ async function startBot() {
 
                     // --- Sticker via caption ---
                     if (caption.startsWith(PREFIX + 'sticker') || caption.startsWith(PREFIX + 's')) {
-                        const cmdParts    = caption.split(' ');
+                        const cmdParts = caption.split(' ');
                         const stickerText = cmdParts.slice(1).join(' ').trim();
                         const isVideo = !!message.videoMessage;
-                        
+
                         const videoDuration = message.videoMessage?.seconds || 0;
                         if (isVideo && videoDuration > 10) {
                             await sock.sendMessage(remoteJid, { text: '❌ Durasi video maksimal 10 detik untuk dijadikan sticker gerak.' }, { quoted: msg });
@@ -516,10 +661,10 @@ async function startBot() {
                     if (
                         message.imageMessage &&
                         (caption.startsWith(PREFIX + 'rmbg') &&
-                        !caption.startsWith(PREFIX + 'rmbgv'))
+                            !caption.startsWith(PREFIX + 'rmbgv'))
                     ) {
                         // Parse teks dari caption: ".rmbg Hello World" → stickerText = "Hello World"
-                        const capParts   = caption.trim().split(/\s+/);
+                        const capParts = caption.trim().split(/\s+/);
                         const stickerText = capParts.slice(1).join(' ').trim();
 
                         await simulateTyping(sock, remoteJid, 800);
@@ -845,16 +990,16 @@ async function startBot() {
 
                     await simulateTyping(sock, remoteJid, 1500);
                     await sock.sendMessage(remoteJid, { text: '⏳ Sedang mendownload video TikTok, tunggu bentar ya...' }, { quoted: msg });
-                    
+
                     try {
                         const tiktokData = await getTikTokVideo(url);
-                        
+
                         await sock.sendMessage(remoteJid, {
                             video: tiktokData.buffer,
                             caption: `🎬 *${tiktokData.title}*\n👤 *${tiktokData.author}*`,
                             mimetype: 'video/mp4'
                         }, { quoted: msg });
-                        
+
                         logger.info(`✅ Video TikTok dikirim ke ${remoteJid}`);
                     } catch (error) {
                         await sock.sendMessage(remoteJid, { text: `❌ Gagal memproses video: ${error.message}` }, { quoted: msg });
@@ -867,14 +1012,14 @@ async function startBot() {
                 // Kirim/quote gambar + ketik .rmbg → sticker transparan
                 // -----------------------------------------------
                 if (
-                    textContent.startsWith(PREFIX + 'rmbg') && 
+                    textContent.startsWith(PREFIX + 'rmbg') &&
                     !textContent.startsWith(PREFIX + 'rmbgv') &&
                     !textContent.startsWith(PREFIX + 'rmbgstatus') &&
                     !textContent.startsWith(PREFIX + 'rmbgreset')
                 ) {
                     // Cek apakah ada gambar
                     const quotedMsg2 = message.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const imageMsg   = message.imageMessage || quotedMsg2?.imageMessage;
+                    const imageMsg = message.imageMessage || quotedMsg2?.imageMessage;
 
                     if (!imageMsg) {
                         await sock.sendMessage(remoteJid, {
@@ -920,7 +1065,7 @@ async function startBot() {
 
                         // Konversi PNG transparan → WebP sticker 512x512
                         const finalBuffer2 = stickerText ? await addTextToRmbgSticker(noBgBuffer, stickerText) : noBgBuffer;
-                         const stickerBuffer = await convertToSticker(finalBuffer2);
+                        const stickerBuffer = await convertToSticker(finalBuffer2);
 
                         await randomDelay(500, 1000);
                         await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
@@ -958,12 +1103,12 @@ async function startBot() {
                     (message.videoMessage && (message.videoMessage.caption || '').startsWith(PREFIX + 'rmbgv'))
                 ) {
                     const cmdText = textContent || message.videoMessage?.caption || '';
-                    const args    = cmdText.trim().split(/\s+/);
+                    const args = cmdText.trim().split(/\s+/);
                     // Warna bg dari argumen (hex tanpa #), misal: ffffff, 00ff00
                     const bgColorArg = args[1] ? args[1].replace('#', '').toLowerCase() : null;
 
                     const quotedMsg3 = message.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const videoMsg   = message.videoMessage || quotedMsg3?.videoMessage;
+                    const videoMsg = message.videoMessage || quotedMsg3?.videoMessage;
 
                     if (!videoMsg) {
                         await sock.sendMessage(remoteJid, {
@@ -1053,13 +1198,13 @@ async function startBot() {
                     } else {
                         statusText += `🔑 Terdaftar: *${status.keys.length} API Key*\n`;
                         statusText += `🤖 Mode saat ini: *${status.allExhausted ? 'AI Lokal (karena semua key habis/mati)' : `API (Key #${status.activeKeyIndex + 1})`}*\n\n`;
-                        
+
                         statusText += `*Detail API Keys:*\n`;
                         status.keys.forEach((api, index) => {
                             const isCurrent = index === status.activeKeyIndex && !status.allExhausted;
                             const statusLabel = api.exhausted ? '❌ Habis/Mati' : (isCurrent ? '🔄 Sedang dipakai' : '⏳ Menunggu');
                             statusText += `[${index + 1}] ${api.key.substring(0, 5)}... → ${statusLabel}\n`;
-                            
+
                             // Tampilkan jika pernah dipakai bot di sesi ini dan kreditnya diketahui
                             if (api.creditsLeft !== null) {
                                 statusText += `    └ Sisa Kredit: ${api.creditsLeft}\n`;
@@ -1079,39 +1224,64 @@ async function startBot() {
                 // -----------------------------------------------
                 // BANTUAN: .help atau .menu
                 // -----------------------------------------------
-                if (textContent === PREFIX + 'help' || textContent === PREFIX + 'menu') {
+                if (
+                    textContent === PREFIX + 'help' ||
+                    textContent === PREFIX + 'menu' ||
+                    textContent === PREFIX + 'main'
+                ) {
                     await simulateTyping(sock, remoteJid, 1000);
                     await randomDelay(500, 1200);
 
-                    const helpText = `🤖 *${BOT_NAME}* - Daftar Perintah\n\n` +
-                        `📌 *Sticker*\n` +
-                        `  • Kirim/quote gambar atau video + ketik:\n` +
-                        `    \`${PREFIX}sticker\` → sticker biasa / gerak\n` +
-                        `    \`${PREFIX}sticker teksmu\` → sticker + teks di atas\n\n` +
-                        `✂️ *Remove Background → Sticker*\n` +
-                        `  • Hapus background gambar (AI) → sticker transparan:\n` +
-                        `    \`${PREFIX}rmbg\` → kirim/quote gambar + ketik ini\n` +
-                        `  • Cek status/kredit remove.bg:\n` +
-                        `    \`${PREFIX}rmbgstatus\` atau \`${PREFIX}rmbgreset\`\n` +
-                        `  • Hapus background video (warna solid) → animated sticker:\n` +
-                        `    \`${PREFIX}rmbgv\` → auto-deteksi warna background\n` +
-                        `    \`${PREFIX}rmbgv ffffff\` → hapus bg putih\n` +
-                        `    \`${PREFIX}rmbgv 00ff00\` → green screen\n\n` +
-                        `🎵 *Kirim Audio/Stiker ke Saluran*\n` +
-                        `  • Reply pesan voice note ATAU stiker, lalu ketik:\n` +
-                        `    \`${PREFIX}kirim\` → kirim ke channel default (${CHANNEL_JID || 'belum diatur'})\n` +
-                        `    \`${PREFIX}kirim 628xxx@newsletter\` → kirim ke channel pilihan\n\n` +
-                        `🎬 *TikTok Downloader*\n` +
-                        `  • Download video TikTok tanpa watermark:\n` +
-                        `    \`${PREFIX}tiktok <link_tiktok>\`\n` +
-                        `  • Ekstrak sound/music dari TikTok:\n` +
-                        `    \`${PREFIX}ttaudio <link_tiktok>\`\n\n` +
-                        `📡 *Cek JID Saluran*\n` +
-                        `  • Forward postingan dari saluran ke sini, lalu ketik:\n` +
-                        `    \`${PREFIX}cekjid\` → tampilkan JID saluran tersebut\n\n` +
-                        `ℹ️ *Info*\n` +
-                        `  • Bot berjalan 24/7 dengan session tersimpan\n` +
-                        `  • Owner: ${OWNER_NUMBER || 'belum diatur'}`;
+                    const helpText =
+                        `🤖 *${BOT_NAME}* — Daftar Perintah
+
+━━━━━━━━━━━━━━━━━━━
+📌 *STICKER*
+━━━━━━━━━━━━━━━━━━━
+Kirim/quote foto atau video + ketik:
+  \`${PREFIX}sticker\` → sticker biasa / animasi
+  \`${PREFIX}sticker teksmu\` → sticker + teks
+
+━━━━━━━━━━━━━━━━━━━
+✂️ *REMOVE BACKGROUND*
+━━━━━━━━━━━━━━━━━━━
+🖼️ *Gambar → Sticker transparan (AI):*
+  \`${PREFIX}rmbg\` → hapus bg (tanpa teks)
+  \`${PREFIX}rmbg Kata-kata\` → hapus bg + teks di sticker
+  \`${PREFIX}rmbgstatus\` → cek status/sisa kredit API
+  \`${PREFIX}rmbgreset\` → reset status API key
+
+🎬 *Video → Animated sticker (AI):*
+  \`${PREFIX}rmbgv\` → hapus bg otomatis dengan AI
+  \`${PREFIX}rmbgv ffffff\` → chromakey bg putih solid
+  \`${PREFIX}rmbgv 00ff00\` → chromakey green screen
+
+━━━━━━━━━━━━━━━━━━━
+🖊️ *TEKS → GAMBAR / STICKER*
+━━━━━━━━━━━━━━━━━━━
+  \`${PREFIX}teks tulisanmu\` → gambar quote card (justified)
+  \`${PREFIX}quote tulisanmu\` → sama dengan .teks
+  \`${PREFIX}brat tulisanmu\` → sticker gaya (putih, Arial Narrow, lowercase)
+
+━━━━━━━━━━━━━━━━━━━
+🎬 *TIKTOK DOWNLOADER*
+━━━━━━━━━━━━━━━━━━━
+  \`${PREFIX}tiktok <link>\` → download video tanpa watermark
+  \`${PREFIX}ttaudio <link>\` → ekstrak audio/musik
+
+━━━━━━━━━━━━━━━━━━━
+📡 *SALURAN / CHANNEL*
+━━━━━━━━━━━━━━━━━━━
+  \`${PREFIX}kirim\` → reply voice note/stiker → kirim ke channel
+  \`${PREFIX}kirim 628xxx@newsletter\` → kirim ke channel lain
+  \`${PREFIX}cekjid\` → cek JID saluran (forward postingan dulu)
+
+━━━━━━━━━━━━━━━━━━━
+ℹ️ *INFO*
+━━━━━━━━━━━━━━━━━━━
+  • Bot 24/7 dengan session tersimpan
+  • Prefix: *${PREFIX}*
+  • Owner: ${OWNER_NUMBER || 'belum diatur'}`;
 
                     await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
                 }
