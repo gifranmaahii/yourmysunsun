@@ -13,3 +13,4 @@ test_output.mp3
 *.mp3
 
 session_backup*/
+.env

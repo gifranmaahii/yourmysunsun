@@ -6,6 +6,7 @@ const {
     DisconnectReason,
     fetchLatestBaileysVersion,
     downloadMediaMessage,
+    downloadContentFromMessage,
     Browsers,
 } = require('@whiskeysockets/baileys');
 
@@ -19,6 +20,7 @@ const { getInstagramMedia } = require('./src/features/instagram');
 const { generateTextImage, generateBratImage } = require('./src/features/textImage');
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
+const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -1474,8 +1476,222 @@ async function startBot() {
                 // Perintah: .toimg atau .tovid (reply sticker)
                 // -----------------------------------------------
                 if (textContent === PREFIX + 'toimg' || textContent === PREFIX + 'tovid' || textContent === PREFIX + 'tofoto') {
-                    const quotedCtx = message.extendedTextMessage?.contextInfo;
-                    const quotedSticker = quotedCtx?.quotedMessage?.stickerMessage;
+                    // Cari contextInfo dari semua kemungkinan lokasi di struktur pesan Baileys
+                    const quotedCtx =
+                        message.extendedTextMessage?.contextInfo ||
+                        message.imageMessage?.contextInfo ||
+                        message.videoMessage?.contextInfo ||
+                        message.audioMessage?.contextInfo ||
+                        message.documentMessage?.contextInfo ||
+                        message.stickerMessage?.contextInfo ||
+                        (message.conversation && msg.message?.extendedTextMessage?.contextInfo) ||
+                        null;
+
+                    const qMsg = quotedCtx?.quotedMessage;
+
+                    // Handle Lottie sticker (animasi vector JSON — format WhatsApp/Telegram)
+                    if (qMsg?.lottieStickerMessage) {
+                        await simulateTyping(sock, remoteJid, 1000);
+                        await sock.sendMessage(remoteJid, { text: '⏳ Memproses Lottie sticker, harap tunggu...' }, { quoted: msg });
+
+                        const lottieQuotedObj = {
+                            key: {
+                                remoteJid  : remoteJid,
+                                id         : quotedCtx.stanzaId,
+                                fromMe     : quotedCtx.participant === sock.user?.id,
+                                participant: quotedCtx.participant,
+                            },
+                            message: qMsg,
+                        };
+
+                        // ── Coba download full Lottie (3-layer fallback) ──────────────────
+                        let lottieBuf = null;
+                        let usedThumbnail = false;
+                        
+                        // Cek apakah original message ada di cache memori (bila sticker baru diforward)
+                        const cachedMsg = msgCache.get(quotedCtx.stanzaId);
+                        const baseLottieMsg = cachedMsg?.lottieStickerMessage || qMsg.lottieStickerMessage;
+                        
+                        // KUNCI: WA bungkus Lottie ke dalam "FutureProofMessage"
+                        // Jadi isinya ada di lottieStickerMessage.message.stickerMessage !
+                        const lottieRawMsg = baseLottieMsg?.message?.stickerMessage 
+                                            || baseLottieMsg?.message?.documentMessage 
+                                            || baseLottieMsg;
+                        
+                        logger.info(`[LOTTIE-DEBUG] raw fields: ${Object.keys(lottieRawMsg).join(', ')}`);
+                        if (lottieRawMsg.mediaKey) logger.info('[LOTTIE-DEBUG] Has mediaKey (unwrap sukses)');
+
+                        // Layer 1A: Jika mediaKey belum ada, samarkan sebagai stickerMessage
+                        // lalu updateMediaMessage → refresh URL/key dari server WA by message ID
+                        let lottieMediaMsg = { ...lottieRawMsg };
+                        if (!lottieMediaMsg.mediaKey || lottieMediaMsg.mediaKey.length === 0) {
+                            try {
+                                const masqueradeObj = {
+                                    key: {
+                                        remoteJid  : remoteJid,
+                                        id         : quotedCtx.stanzaId,
+                                        fromMe     : quotedCtx.participant === sock.user?.id,
+                                        participant: quotedCtx.participant,
+                                    },
+                                    // Samarkan sebagai stickerMessage — field-nya identik
+                                    message: { stickerMessage: { ...lottieRawMsg } },
+                                };
+                                const refreshed = await sock.updateMediaMessage(masqueradeObj);
+                                const freshSticker = refreshed?.message?.stickerMessage;
+                                if (freshSticker?.mediaKey?.length > 0) {
+                                    lottieMediaMsg = freshSticker;
+                                    logger.info('[LOTTIE] Media key berhasil di-refresh via masquerade');
+                                }
+                            } catch (refreshErr) {
+                                logger.warn(`[LOTTIE] updateMedia masquerade gagal: ${refreshErr.message}`);
+                            }
+                        }
+
+                        // Layer 1B: Download stream dengan key yang tersedia
+                        if (lottieMediaMsg?.mediaKey?.length > 0) {
+                            try {
+                                const stream = await downloadContentFromMessage(lottieMediaMsg, 'sticker');
+                                const chunks = [];
+                                for await (const chunk of stream) chunks.push(chunk);
+                                if (chunks.length > 0) lottieBuf = Buffer.concat(chunks);
+                                logger.info(`[LOTTIE] Download berhasil: ${lottieBuf?.length} bytes`);
+                                
+                                // DEBUG MAGIC BYTES
+                                if (lottieBuf) {
+                                    const head = lottieBuf.subarray(0, 16).toString('hex');
+                                    const headStr = lottieBuf.subarray(0, 16).toString('utf-8').replace(/[^a-zA-Z0-9_-]/g, '.');
+                                    logger.info(`[LOTTIE-DEBUG] File Header HEX: ${head}`);
+                                    logger.info(`[LOTTIE-DEBUG] File Header STR: ${headStr}`);
+                                }
+                            } catch (dlErr) {
+                                logger.warn(`[LOTTIE] download stream gagal: ${dlErr.message}`);
+                            }
+                        }
+
+                        // Layer 1C: Direct HTTP download dari URL (tanpa decrypt — beberapa sticker publik)
+                        if (!lottieBuf && lottieRawMsg?.url) {
+                            try {
+                                const https = require('https');
+                                const http  = require('http');
+                                const targetUrl = lottieRawMsg.url;
+                                const httpLib = targetUrl.startsWith('https') ? https : http;
+                                lottieBuf = await new Promise((res, rej) => {
+                                    httpLib.get(targetUrl, (response) => {
+                                        const chunks = [];
+                                        response.on('data', c => chunks.push(c));
+                                        response.on('end',  () => res(Buffer.concat(chunks)));
+                                        response.on('error', rej);
+                                    }).on('error', rej);
+                                });
+                                if (lottieBuf?.length < 50) lottieBuf = null; // terlalu kecil = gagal
+                                else logger.info(`[LOTTIE] HTTP download berhasil: ${lottieBuf?.length} bytes`);
+                            } catch (httpErr) {
+                                logger.warn(`[LOTTIE] HTTP download gagal: ${httpErr.message}`);
+                                lottieBuf = null;
+                            }
+                        }
+
+                        // Layer 2: Fallback ke thumbnail yang tersimpan di quoted message
+                        if (!lottieBuf) {
+                            const rawThumb = lottieRawMsg?.pngThumbnail || lottieRawMsg?.jpegThumbnail;
+
+                            if (rawThumb && rawThumb.length > 0) {
+                                usedThumbnail = true;
+                                const thumbBuf = Buffer.isBuffer(rawThumb) ? rawThumb : Buffer.from(rawThumb);
+                                const sharp = require('sharp');
+                                lottieBuf = await sharp(thumbBuf)
+                                    .resize(512, 512, { kernel: 'nearest', fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+                                    .png()
+                                    .toBuffer();
+                                logger.info('[LOTTIE] Menggunakan thumbnail sebagai fallback');
+                            }
+                        }
+
+
+                        // Layer 3: Tidak ada data sama sekali
+                        if (!lottieBuf) {
+                            await sock.sendMessage(remoteJid, {
+                                text: '❌ Tidak dapat mengunduh Lottie sticker ini.\n\n💡 Coba forward sticker ke bot lalu reply dengan .toimg'
+                            }, { quoted: msg });
+                            continue;
+                        }
+
+                        // ── Proses & kirim hasil ──────────────────────────────────────────
+                        try {
+                            if (usedThumbnail) {
+                                // Thumbnail sudah jadi PNG
+                                await sock.sendMessage(remoteJid, {
+                                    image: lottieBuf,
+                                    mimetype: 'image/png',
+                                    caption: '✅ Berhasil ekstrak Lottie sticker (dari thumbnail)'
+                                }, { quoted: msg });
+                            } else if (textContent === PREFIX + 'tovid') {
+                                try {
+                                    const mp4Buf = await lottieToVideo(lottieBuf);
+                                    await sock.sendMessage(remoteJid, {
+                                        video: mp4Buf,
+                                        mimetype: 'video/mp4',
+                                        caption: '✅ Berhasil ekstrak Lottie sticker ke video'
+                                    }, { quoted: msg });
+                                } catch (e) {
+                                    if (e.message.includes('Bukan file TGS')) {
+                                        logger.info('[LOTTIE] File terdeteksi sebagai WebP biasa (animasi), melakukan konversi WebP...');
+                                        const mp4Buf = await stickerToVideo(lottieBuf);
+                                        await sock.sendMessage(remoteJid, {
+                                            video: mp4Buf,
+                                            mimetype: 'video/mp4',
+                                            caption: '✅ Berhasil ekstrak Lottie (WebP) ke video'
+                                        }, { quoted: msg });
+                                    } else throw e;
+                                }
+                            } else {
+                                try {
+                                    const pngBuf = await lottieToImage(lottieBuf);
+                                    await sock.sendMessage(remoteJid, {
+                                        image: pngBuf,
+                                        mimetype: 'image/png',
+                                        caption: '✅ Berhasil ekstrak Lottie sticker ke gambar'
+                                    }, { quoted: msg });
+                                } catch (e) {
+                                    if (e.message.includes('Bukan file TGS')) {
+                                        logger.info('[LOTTIE] File terdeteksi sebagai WebP biasa, melakukan konversi WebP...');
+                                        const pngBuf = await stickerToImage(lottieBuf);
+                                        await sock.sendMessage(remoteJid, {
+                                            image: pngBuf,
+                                            mimetype: 'image/png',
+                                            caption: '✅ Berhasil ekstrak Lottie (WebP) ke gambar'
+                                        }, { quoted: msg });
+                                    } else throw e;
+                                }
+                            }
+                        } catch (renderErr) {
+                            logger.error(`❌ Lottie render error: ${renderErr.message}`);
+                            await sock.sendMessage(remoteJid, {
+                                text: `❌ Gagal render Lottie sticker: ${renderErr.message}`
+                            }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+
+                    // Helper: unwrap semua jenis wrapper sticker di quotedMessage
+                    // WA punya banyak tipe: biasa, viewOnce, viewOnceV2, ephemeral, documentWithCaption
+                    const unwrapSticker = (q) => {
+                        if (!q) return null;
+                        return q.stickerMessage ||
+                            q.viewOnceMessage?.message?.stickerMessage ||
+                            q.viewOnceMessageV2?.message?.stickerMessage ||
+                            q.viewOnceMessageV2Extension?.message?.stickerMessage ||
+                            q.ephemeralMessage?.message?.stickerMessage ||
+                            q.documentWithCaptionMessage?.message?.stickerMessage ||
+                            q.editedMessage?.message?.stickerMessage ||
+                            // Lottie juga bisa terbungkus dalam wrapper
+                            q.viewOnceMessage?.message?.lottieStickerMessage ||
+                            q.ephemeralMessage?.message?.lottieStickerMessage ||
+                            null;
+                    };
+
+                    const quotedSticker = unwrapSticker(qMsg);
 
                     if (!quotedSticker) {
                         await sock.sendMessage(remoteJid, {
@@ -1487,6 +1703,8 @@ async function startBot() {
                     await simulateTyping(sock, remoteJid, 1000);
                     await sock.sendMessage(remoteJid, { text: '⏳ Sedang mengekstrak sticker...' }, { quoted: msg });
 
+                    // Untuk download, kita tetap pakai quotedMessage asli (bukan unwrapped)
+                    // agar Baileys bisa menemukan media key yang benar
                     const quotedMsgObj = {
                         key: {
                             remoteJid: remoteJid,
