@@ -357,6 +357,23 @@ async function startBot() {
 
         for (const msg of upsert.messages) {
             try {
+                // ── AUTO-DETECT NEWSLETTER/SALURAN JID ──────────────────────
+                // Log semua pesan dari saluran SEBELUM filter apapun
+                // agar kamu bisa lihat JID saluran di terminal
+                const _remoteJid = msg.key.remoteJid || '';
+                if (_remoteJid.endsWith('@newsletter')) {
+                    const pushName = msg.pushName || '(tanpa nama)';
+                    console.log('\n📢 ═══════════════════════════════════════════════');
+                    console.log(`📢 PESAN DARI SALURAN/NEWSLETTER TERDETEKSI!`);
+                    console.log(`📢 Nama     : ${pushName}`);
+                    console.log(`📢 JID      : ${_remoteJid}`);
+                    console.log(`📢 ─────────────────────────────────────────────`);
+                    console.log(`📢 Salin JID di atas ke .env → CHANNEL_JID=${_remoteJid}`);
+                    console.log('📢 ═══════════════════════════════════════════════\n');
+                    // Jangan proses lebih lanjut (newsletter bukan pesan user)
+                    continue;
+                }
+
                 // --- Filter dasar (anti-ban & keamanan) ---
                 if (!shouldProcess(msg, sock)) {
                     continue;
@@ -420,6 +437,131 @@ async function startBot() {
                             `🔑 ID/LID : *${cleanJidForMyId}*\n` +
                             `📋 Raw JID: ${rawJidForMyId}`
                     }, { quoted: msg });
+                    continue;
+                }
+
+                // ── Spesial: .ceksaluran [link] — Cek/Resolve JID saluran ──
+                if (textContent.trim().startsWith(PREFIX + 'ceksaluran')) {
+                    await simulateTyping(sock, remoteJid, 800);
+
+                    // Cek apakah ada link invite saluran di pesan
+                    const cekArgs = textContent.trim().split(/\s+/).slice(1).join(' ');
+                    const inviteLinkMatch = cekArgs.match(/https?:\/\/(?:www\.)?whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+
+                    // === MODE 1: Resolve dari link invite ===
+                    if (inviteLinkMatch) {
+                        const inviteCode = inviteLinkMatch[1];
+                        await sock.sendMessage(remoteJid, { text: '⏳ Mengambil info saluran...' }, { quoted: msg });
+
+                        try {
+                            // Coba newsletterMetadata dengan invite code
+                            const metadata = await sock.newsletterMetadata('invite', inviteCode);
+                            if (metadata && metadata.id) {
+                                const channelName = metadata.name || metadata.subject || '(tanpa nama)';
+                                const channelJid = metadata.id;
+                                const desc = metadata.description || '(tanpa deskripsi)';
+                                const subscribers = metadata.subscribers || metadata.subscriberCount || '?';
+
+                                await sock.sendMessage(remoteJid, {
+                                    text:
+                                        `📢 *Saluran Ditemukan!*\n\n` +
+                                        `📛 Nama : *${channelName}*\n` +
+                                        `🆔 JID  : \`${channelJid}\`\n` +
+                                        `👥 Subscriber: ${subscribers}\n` +
+                                        `📝 Deskripsi: ${desc}\n\n` +
+                                        `✅ *Copy JID di atas ke .env:*\n` +
+                                        `\`CHANNEL_JID=${channelJid}\`\n\n` +
+                                        `💡 Setelah isi .env, restart bot agar aktif.`
+                                }, { quoted: msg });
+                            } else {
+                                throw new Error('Metadata saluran kosong');
+                            }
+                        } catch (err) {
+                            logger.error('❌ Gagal resolve saluran: ' + err.message);
+                            await sock.sendMessage(remoteJid, {
+                                text:
+                                    `❌ Gagal resolve link saluran: ${err.message}\n\n` +
+                                    `💡 *Alternatif:*\n` +
+                                    `1. Buka saluran di HP → kirim/baca pesan\n` +
+                                    `2. Lihat terminal bot → JID muncul otomatis\n` +
+                                    `3. Copy JID ke .env → \`CHANNEL_JID=xxx@newsletter\``
+                            }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // === MODE 2: List semua saluran yang di-follow ===
+                    try {
+                        let newsletters = [];
+
+                        // Coba berbagai metode Baileys untuk ambil daftar saluran
+                        const methods = [
+                            { name: 'newsletterSubscriptions', fn: () => sock.newsletterSubscriptions?.() },
+                            { name: 'newsletterGetSubscribed', fn: () => sock.newsletterGetSubscribed?.() },
+                            { name: 'newsletterFollowedChannels', fn: () => sock.newsletterFollowedChannels?.() },
+                        ];
+
+                        for (const method of methods) {
+                            if (newsletters.length > 0) break;
+                            try {
+                                const result = await method.fn();
+                                if (result && Array.isArray(result) && result.length > 0) {
+                                    newsletters = result;
+                                    logger.info(`✅ Metode ${method.name} berhasil: ${result.length} saluran`);
+                                }
+                            } catch (e) {
+                                logger.debug(`⚠️ ${method.name}: ${e.message}`);
+                            }
+                        }
+
+                        // Fallback: cari di contacts
+                        if (newsletters.length === 0) {
+                            const allContacts = Object.entries(sock.contacts || {});
+                            for (const [cJid, cData] of allContacts) {
+                                if (cJid.endsWith('@newsletter')) {
+                                    newsletters.push({
+                                        id: cJid,
+                                        name: cData.name || cData.notify || cData.subject || '(tanpa nama)',
+                                    });
+                                }
+                            }
+                        }
+
+                        if (newsletters.length === 0) {
+                            await sock.sendMessage(remoteJid, {
+                                text:
+                                    `📢 *Belum ada saluran terdeteksi*\n\n` +
+                                    `🔥 *Cara paling gampang:*\n\n` +
+                                    `1️⃣ Buka saluran target di HP\n` +
+                                    `2️⃣ Copy link invite saluran (⋮ → Info → Link undangan)\n` +
+                                    `3️⃣ Ketik: \`${PREFIX}ceksaluran https://whatsapp.com/channel/xxx\`\n` +
+                                    `4️⃣ Bot akan langsung kasih JID-nya!\n\n` +
+                                    `📌 *Alternatif:* Kirim pesan di saluran → lihat terminal bot`
+                            }, { quoted: msg });
+                        } else {
+                            let list = newsletters.map((n, i) => {
+                                const name = n.name || n.subject || '(tanpa nama)';
+                                const jid = n.id || n.jid || '(unknown)';
+                                return `  ${i + 1}. *${name}*\n     📋 \`${jid}\``;
+                            }).join('\n\n');
+
+                            await sock.sendMessage(remoteJid, {
+                                text:
+                                    `📢 *Daftar Saluran/Newsletter (${newsletters.length})*\n\n` +
+                                    `${list}\n\n` +
+                                    `💡 Copy JID yang diinginkan ke \`.env\`:\n` +
+                                    `\`CHANNEL_JID=JID_SALURAN\``
+                            }, { quoted: msg });
+                        }
+                    } catch (err) {
+                        logger.error('❌ Gagal cek saluran: ' + err.message);
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `❌ Gagal mengambil daftar saluran: ${err.message}\n\n` +
+                                `💡 *Coba pakai link:*\n` +
+                                `\`${PREFIX}ceksaluran https://whatsapp.com/channel/xxx\``
+                        }, { quoted: msg });
+                    }
                     continue;
                 }
 
@@ -506,6 +648,9 @@ async function startBot() {
 
 🔒 *Akses Fitur*
   \`${PREFIX}owner public\` → toggle akses .help (publik/admin only)
+  
+🧹 *Maintenance*
+  \`${PREFIX}owner clearsession\` → hapus session error/corrupt (bot otomatis restart)
 
 ⏰ *Jadwal Kirim*
   \`${PREFIX}jadwal 18:00\` → jadwal kirim sekali
@@ -664,6 +809,37 @@ async function startBot() {
                         await sock.sendMessage(remoteJid, {
                             text: `${statusEmoji} *Akses .help diubah!*\n\nStatus: *${statusText}*\n\n💡 Ketik \`${PREFIX}owner public\` lagi untuk toggle.`
                         }, { quoted: msg });
+                        continue;
+                    }
+
+                    // --- .owner clearsession (Hapus session corrupt) ---
+                    if (ownerCmd === 'clearsession') {
+                        await sock.sendMessage(remoteJid, {
+                            text: `🧹 *Membersihkan session yang error/corrupt...*\n\n⚠️ Bot akan dimatikan otomatis. Silakan jalankan \`npm start\` lagi setelah ini (tidak perlu scan QR ulang).`
+                        }, { quoted: msg });
+                        
+                        try {
+                            const files = fs.readdirSync(SESSION_DIR);
+                            let deleted = 0;
+                            for (const file of files) {
+                                // JANGAN hapus creds.json (master login)
+                                if (file !== 'creds.json') {
+                                    fs.unlinkSync(path.join(SESSION_DIR, file));
+                                    deleted++;
+                                }
+                            }
+                            logger.info(`🧹 Berhasil menghapus ${deleted} file session lama/corrupt.`);
+                            
+                            // Tunggu pesan terkirim lalu exit
+                            setTimeout(() => {
+                                process.exit(0);
+                            }, 2000);
+                        } catch (err) {
+                            logger.error('❌ Gagal hapus session: ' + err.message);
+                            await sock.sendMessage(remoteJid, {
+                                text: `❌ Gagal membersihkan session: ${err.message}`
+                            }, { quoted: msg });
+                        }
                         continue;
                     }
 
