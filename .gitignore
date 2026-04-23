@@ -1,6 +1,4 @@
 node_modules/
-auth_info/
-session/
 *.log
 
 # Folder temp (hasil konversi sementara)
@@ -12,11 +10,9 @@ test_output.mp3
 *.ogg
 *.mp3
 
-session_backup*/
-.env
-
 debug_sticker.json
 dino.was
 dino_extracted/
 download_dino.js
 test_send.js
+
