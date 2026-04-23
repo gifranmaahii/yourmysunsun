@@ -24,6 +24,7 @@ let _cfg = {
     ownerLid:          '',   // @lid owner (diisi otomatis oleh bot dari log)
     channelJid:        '',
     prefix:            '.',
+    helpRestricted:   true, // true = .help hanya untuk admin/owner
     admins:            [],   // array campuran: nomor HP (628xx) dan/atau @lid
 };
 

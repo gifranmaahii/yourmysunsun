@@ -8,6 +8,7 @@ const {
     downloadMediaMessage,
     downloadContentFromMessage,
     Browsers,
+    generateWAMessageContent,
 } = require('@whiskeysockets/baileys');
 
 const { logger, baileyLogger } = require('./src/utils/logger');
@@ -21,6 +22,8 @@ const { generateTextImage, generateBratImage } = require('./src/features/textIma
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
 const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter');
+const { createLottieSticker, getTemplateList } = require('./src/features/lottieSticker');
+const scheduler = require('./src/features/scheduler');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -39,8 +42,9 @@ if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
 }
 
-// Cache pesan sederhana (untuk getMessage fallback)
+// Cache pesan sederhana (untuk getMessage fallback) - Dibatasi maksimal 200 pesan agar tidak memakan RAM
 const msgCache = new Map();
+const MAX_CACHE_SIZE = 200;
 
 // ============================================================
 // HELPER: Ekstrak frame pertama dari video (untuk auto-detect bg color)
@@ -161,6 +165,33 @@ async function addTextToRmbgSticker(pngBuffer, text) {
 // ============================================================
 // START BOT
 // ============================================================
+
+// Cleanup temp folder secara periodik setiap 1 jam untuk menghemat penyimpanan
+setInterval(() => {
+    try {
+        const tempDir = path.join(__dirname, 'temp');
+        if (fs.existsSync(tempDir)) {
+            const files = fs.readdirSync(tempDir);
+            let deletedCount = 0;
+            const now = Date.now();
+            for (const file of files) {
+                const filePath = path.join(tempDir, file);
+                const stats = fs.statSync(filePath);
+                // Hapus file yang lebih tua dari 1 jam
+                if (now - stats.mtimeMs > 60 * 60 * 1000) {
+                    fs.unlinkSync(filePath);
+                    deletedCount++;
+                }
+            }
+            if (deletedCount > 0) {
+                logger.info(`🧹 Membersihkan ${deletedCount} file usang di folder temp.`);
+            }
+        }
+    } catch (e) {
+        logger.error('Gagal membersihkan temp folder: ' + e.message);
+    }
+}, 60 * 60 * 1000);
+
 async function startBot() {
     // Muat state auth dari folder session (cookie otomatis disimpan di sini)
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -276,6 +307,9 @@ async function startBot() {
             logger.info(`✅ ${BOT_NAME} berhasil terhubung ke WhatsApp!`);
             logger.info(`📡 Channel target: ${CHANNEL_JID || '(belum diatur)'}`);
             logger.info(`👤 Owner: ${OWNER_NUMBER}`);
+
+            // Start scheduler untuk jadwal kirim otomatis
+            scheduler.startScheduler(sock);
         }
     });
 
@@ -323,17 +357,8 @@ async function startBot() {
 
         for (const msg of upsert.messages) {
             try {
-                // [DEBUG] Log setiap pesan masuk sebelum difilter
-                const _dbgFrom = msg.key?.remoteJid || 'unknown';
-                const _dbgFromMe = msg.key?.fromMe;
-                const _dbgTs = msg.messageTimestamp;
-                const _dbgNow = Math.floor(Date.now() / 1000);
-                const _dbgAge = _dbgNow - parseInt(_dbgTs?.toString() || '0');
-                console.log(`[MSG-IN] from=${_dbgFrom} fromMe=${_dbgFromMe} age=${_dbgAge}s type=${upsert.type}`);
-
                 // --- Filter dasar (anti-ban & keamanan) ---
                 if (!shouldProcess(msg, sock)) {
-                    console.log(`[MSG-SKIP] shouldProcess=false`);
                     continue;
                 }
                 if (!rateLimiter.canProceed()) {
@@ -344,13 +369,28 @@ async function startBot() {
                 const remoteJid = msg.key.remoteJid;
                 const message = msg.message;
 
+                // --- DEBUG STICKER ---
+                if (message?.stickerMessage || message?.documentMessage || message?.lottieStickerMessage) {
+                    try {
+                        const fs = require('fs');
+                        fs.writeFileSync('./debug_sticker.json', JSON.stringify(message, null, 2));
+                        console.log('✅ Sticker payload saved to debug_sticker.json');
+                    } catch (e) {}
+                }
+
                 if (!message) {
-                    console.log(`[MSG-SKIP] message=null`);
                     continue;
                 }
 
-                // Cache pesan untuk getMessage fallback
-                if (msg.key.id) msgCache.set(msg.key.id, message);
+                // Cache pesan untuk getMessage fallback dengan pembatasan ukuran memori
+                if (msg.key.id) {
+                    msgCache.set(msg.key.id, message);
+                    if (msgCache.size > MAX_CACHE_SIZE) {
+                        // Hapus elemen pertama (paling lama) jika melebihi batas
+                        const firstKey = msgCache.keys().next().value;
+                        msgCache.delete(firstKey);
+                    }
+                }
 
                 // -----------------------------------------------
                 // FITUR 1: FORWARD AUDIO MANUAL — .kirim [JID_channel]
@@ -414,21 +454,21 @@ async function startBot() {
                     }
                 }
 
-                const senderIsOwner = cfg.isOwner(rawSenderJid);
-                const senderIsAdmin = cfg.isAdmin(rawSenderJid);
-
-                // Log singkat untuk diagnosa
-                const senderNum = cfg.cleanNumber(rawSenderJid);
-                const adminList = cfg.getConfig().admins;
-                console.log(`[AUTH] raw=${originalRaw} → ${senderNum} | owner=${senderIsOwner} admin=${senderIsAdmin} | admins=[${adminList.join(',')}]`);
+                // Cek owner/admin dengan KEDUA format: resolved JID DAN raw asli
+                // Karena OWNER_NUMBER bisa dalam format @lid (152xxx) atau HP (628xxx)
+                const senderIsOwner = cfg.isOwner(rawSenderJid) || cfg.isOwner(originalRaw);
+                const senderIsAdmin = cfg.isAdmin(rawSenderJid) || cfg.isAdmin(originalRaw);
 
                 // Jika bukan owner dan bukan admin → abaikan pesan ini
                 if (!senderIsOwner && !senderIsAdmin) {
-                    console.log(`[AUTH-BLOCK] ❌ ${senderNum} (${originalRaw}) tidak ada di daftar admin.`);
-                    continue; // diam saja
+                    const cfgCurrent = cfg.getConfig();
+                    const isHelpCmd = [PREFIX + 'help', PREFIX + 'menu', PREFIX + 'main'].includes(textContent.trim());
+                    if (isHelpCmd && !cfgCurrent.helpRestricted) {
+                        // .help allowed for public when restriction off
+                    } else {
+                        continue; // block
+                    }
                 }
-
-                console.log(`[AUTH-OK] ✅ ${senderNum} diizinkan`);
 
                 // ── Shortcut: senderJid untuk backward compat ────────────────────
                 const senderJid = rawSenderJid;
@@ -464,6 +504,16 @@ async function startBot() {
   \`${PREFIX}owner deladmin [nomor]\` → hapus admin
   \`${PREFIX}owner listadmin\` → daftar admin
 
+🔒 *Akses Fitur*
+  \`${PREFIX}owner public\` → toggle akses .help (publik/admin only)
+
+⏰ *Jadwal Kirim*
+  \`${PREFIX}jadwal 18:00\` → jadwal kirim sekali
+  \`${PREFIX}jadwal 18:00 harian\` → kirim setiap hari
+  \`${PREFIX}jadwal 18:00 senin\` → kirim tiap Senin
+  \`${PREFIX}jadwal list\` → lihat semua jadwal
+  \`${PREFIX}jadwal hapus [id]\` → hapus jadwal
+
 🔍 *Utilitas*
   \`${PREFIX}owner lid [nomor_hp]\` → cari @lid dari nomor HP
 
@@ -472,7 +522,9 @@ async function startBot() {
   • Sticker pack: *${cur.stickerPackName}*
   • Sticker author: *${cur.stickerPackAuthor}*
   • Jumlah admin: *${cur.admins.length} orang*
-  • Owner: *${cur.ownerNumber}*`
+  • Owner: *${cur.ownerNumber}*
+  • Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner saja' : '🌐 Semua orang (publik)'}*
+  • Jadwal aktif: *${scheduler.getSchedules().length} jadwal*`
                         }, { quoted: msg });
                         continue;
                     }
@@ -600,8 +652,182 @@ async function startBot() {
                         continue;
                     }
 
+                    // --- .owner public (toggle akses .help) ---
+                    if (ownerCmd === 'public') {
+                        const currentVal = cfg.getConfig().helpRestricted;
+                        const newVal = !currentVal;
+                        cfg.update('helpRestricted', newVal);
+                        const statusEmoji = newVal ? '🔒' : '🌐';
+                        const statusText = newVal
+                            ? 'Admin/Owner saja yang bisa akses .help'
+                            : 'Semua orang bisa akses .help (publik)';
+                        await sock.sendMessage(remoteJid, {
+                            text: `${statusEmoji} *Akses .help diubah!*\n\nStatus: *${statusText}*\n\n💡 Ketik \`${PREFIX}owner public\` lagi untuk toggle.`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
                     // Default: perintah tidak dikenal
                     await sock.sendMessage(remoteJid, { text: `❓ Perintah tidak dikenal.\nKetik *${PREFIX}owner* untuk melihat menu.` }, { quoted: msg });
+                    continue;
+                }
+
+                // ── Handler .jadwal (KHUSUS OWNER) ──────────────────────────────
+                if (textContent.startsWith(PREFIX + 'jadwal')) {
+                    if (!senderIsOwner) {
+                        continue; // diam saja
+                    }
+
+                    const jadwalArgs = textContent.trim().split(/\s+/);
+                    const jadwalCmd = jadwalArgs[1]?.toLowerCase() || '';
+                    const wibNow = scheduler.getWIBString();
+
+                    await simulateTyping(sock, remoteJid, 500);
+
+                    // --- .jadwal list ---
+                    if (jadwalCmd === 'list') {
+                        const schedules = scheduler.getSchedules();
+                        if (schedules.length === 0) {
+                            await sock.sendMessage(remoteJid, {
+                                text: `⏰ *Tidak ada jadwal aktif*\n\n🕐 Waktu sekarang: *${wibNow.full}*\n\n💡 Buat jadwal:\n\`${PREFIX}jadwal 18:00\` (reply audio/stiker)\n\`${PREFIX}jadwal 18:00 harian Teks pesan\``
+                            }, { quoted: msg });
+                        } else {
+                            const list = schedules.map((s, i) => scheduler.formatSchedule(s, i + 1)).join('\n\n');
+                            await sock.sendMessage(remoteJid, {
+                                text: `⏰ *Daftar Jadwal Aktif (${schedules.length})*\n🕐 Sekarang: *${wibNow.full}*\n\n${list}\n\n💡 Hapus: \`${PREFIX}jadwal hapus [id]\``
+                            }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .jadwal hapus [id/semua] ---
+                    if (jadwalCmd === 'hapus') {
+                        const target = jadwalArgs[2]?.toLowerCase() || '';
+                        if (target === 'semua') {
+                            const count = scheduler.getSchedules().length;
+                            scheduler.removeAllSchedules();
+                            await sock.sendMessage(remoteJid, {
+                                text: `✅ *${count} jadwal* berhasil dihapus semua.`
+                            }, { quoted: msg });
+                        } else if (target) {
+                            const before = scheduler.getSchedules().length;
+                            scheduler.removeSchedule(target);
+                            const after = scheduler.getSchedules().length;
+                            if (after < before) {
+                                await sock.sendMessage(remoteJid, {
+                                    text: `✅ Jadwal \`${target}\` berhasil dihapus.\n📋 Sisa jadwal: ${after}`
+                                }, { quoted: msg });
+                            } else {
+                                await sock.sendMessage(remoteJid, {
+                                    text: `❌ Jadwal \`${target}\` tidak ditemukan.\nKetik \`${PREFIX}jadwal list\` untuk lihat daftar.`
+                                }, { quoted: msg });
+                            }
+                        } else {
+                            await sock.sendMessage(remoteJid, {
+                                text: `❌ Format: \`${PREFIX}jadwal hapus [id]\` atau \`${PREFIX}jadwal hapus semua\``
+                            }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .jadwal HH:MM [opsi...] ---
+                    const timeMatch = jadwalCmd.match(/^(\d{1,2}):(\d{2})$/);
+                    if (!timeMatch) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `⏰ *Cara Pakai Jadwal*\n\n🕐 Waktu sekarang: *${wibNow.full}*\n\n*Reply audio/stiker* lalu ketik:\n  \`${PREFIX}jadwal 18:00\` → kirim sekali\n  \`${PREFIX}jadwal 18:00 harian\` → tiap hari\n  \`${PREFIX}jadwal 18:00 senin\` → tiap Senin\n\n*Jadwal teks* (tanpa reply):\n  \`${PREFIX}jadwal 18:00 harian Halo!\`\n\n*Kelola:*\n  \`${PREFIX}jadwal list\` → daftar\n  \`${PREFIX}jadwal hapus [id]\` → hapus`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    const schedHH = String(parseInt(timeMatch[1])).padStart(2, '0');
+                    const schedMM = timeMatch[2];
+                    const schedTime = `${schedHH}:${schedMM}`;
+
+                    // Parse opsi: tipe, hari, channel, teks
+                    const restArgs = jadwalArgs.slice(2);
+                    const parsed = scheduler.parseScheduleArgs(restArgs);
+                    const targetChannel = parsed.channelJid || CHANNEL_JID;
+
+                    if (!targetChannel) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Channel belum diatur.\nGunakan: \`${PREFIX}jadwal ${schedTime} [tipe] [JID_channel]\`\nAtau set CHANNEL_JID di .env`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Cek media dari reply
+                    const jadwalQuotedCtx = message.extendedTextMessage?.contextInfo;
+                    const jadwalQuotedAudio = jadwalQuotedCtx?.quotedMessage?.audioMessage;
+                    const jadwalQuotedSticker = jadwalQuotedCtx?.quotedMessage?.stickerMessage;
+
+                    let schedMediaType, schedMediaBuffer, schedText;
+
+                    if (jadwalQuotedAudio || jadwalQuotedSticker) {
+                        // Download media yang di-reply
+                        const jadwalQuotedObj = {
+                            key: {
+                                remoteJid: remoteJid,
+                                id: jadwalQuotedCtx.stanzaId,
+                                fromMe: jadwalQuotedCtx.participant === sock.user?.id,
+                                participant: jadwalQuotedCtx.participant,
+                            },
+                            message: jadwalQuotedCtx.quotedMessage,
+                        };
+
+                        await sock.sendMessage(remoteJid, { text: '⏳ Mendownload media...' }, { quoted: msg });
+
+                        schedMediaBuffer = await downloadMediaMessage(
+                            jadwalQuotedObj, 'buffer', {},
+                            { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                        );
+
+                        if (!schedMediaBuffer) {
+                            await sock.sendMessage(remoteJid, { text: '❌ Gagal download media.' }, { quoted: msg });
+                            continue;
+                        }
+
+                        if (jadwalQuotedAudio) {
+                            schedMediaType = 'audio';
+                            // Konversi ke OGG Opus
+                            try {
+                                schedMediaBuffer = await convertToOggOpus(schedMediaBuffer);
+                            } catch (convErr) {
+                                logger.warn('⚠️ Gagal konversi audio jadwal: ' + convErr.message);
+                            }
+                        } else {
+                            schedMediaType = 'sticker';
+                        }
+                    } else if (parsed.textParts.length > 0) {
+                        // Jadwal teks
+                        schedMediaType = 'text';
+                        schedText = parsed.textParts.join(' ');
+                    } else {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ *Reply* audio/stiker, atau tulis teks setelah waktu.\n\nContoh:\n  Reply audio + \`${PREFIX}jadwal 18:00 harian\`\n  \`${PREFIX}jadwal 18:00 harian Selamat pagi!\``
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Simpan jadwal
+                    const newSched = scheduler.addSchedule({
+                        type: parsed.type,
+                        time: schedTime,
+                        day: parsed.day,
+                        channelJid: targetChannel,
+                        mediaType: schedMediaType,
+                        mediaBuffer: schedMediaBuffer,
+                        scheduledText: schedText,
+                    });
+
+                    const typeLabel = parsed.type === 'mingguan'
+                        ? `Mingguan (${scheduler.HARI[parsed.day]?.charAt(0).toUpperCase() + scheduler.HARI[parsed.day]?.slice(1)})`
+                        : parsed.type === 'harian' ? 'Harian' : 'Sekali';
+                    const mediaLabel = schedMediaType === 'audio' ? '🎵 Audio'
+                        : schedMediaType === 'sticker' ? '🖼️ Stiker' : '💬 Teks';
+
+                    await sock.sendMessage(remoteJid, {
+                        text: `✅ *Jadwal Berhasil Dibuat!*\n\n🆔 ID: \`${newSched.id}\`\n📋 Tipe: *${typeLabel}*\n⏰ Jam: *${schedTime} WIB*\n📡 Channel: \`${targetChannel}\`\n${mediaLabel}\n\n🕐 Sekarang: *${wibNow.full}*\n\n💡 Lihat semua: \`${PREFIX}jadwal list\`\n🗑️ Hapus: \`${PREFIX}jadwal hapus ${newSched.id}\``
+                    }, { quoted: msg });
                     continue;
                 }
 
@@ -698,6 +924,108 @@ async function startBot() {
                     }, { quoted: msg });
 
                     logger.info(`📤 Media berhasil dikirim ke saluran: ${targetJid}`);
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: LOTTIE ANIMATED STICKER
+                // Perintah: .lottie [template] (reply/kirim gambar)
+                // Mengubah gambar jadi sticker gerak (spin, zoom, bounce, shake, fade)
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'lottie')) {
+                    // Parse template dari argumen
+                    const cmdParts = textContent.split(' ');
+                    const templateArg = cmdParts[1]?.toLowerCase() || 'spin';
+                    const validTemplates = getTemplateList();
+
+                    // Cek ketersediaan gambar (reply atau langsung)
+                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const imageMsg = quotedMsg?.imageMessage;
+
+                    if (!imageMsg) {
+                        await randomDelay(500, 1500);
+                        const templateList = validTemplates.map(t => `  • \`${PREFIX}lottie ${t}\``).join('\n');
+                        await sock.sendMessage(remoteJid, {
+                            text: `✨ *Lottie Animated Sticker*\n\n` +
+                                `Ubah gambar jadi sticker gerak yang muncul gede!\n\n` +
+                                `📌 *Cara pakai:*\n` +
+                                `Reply gambar lalu ketik perintah, atau kirim gambar dengan caption.\n\n` +
+                                `🎨 *Template animasi:*\n${templateList}\n\n` +
+                                `Contoh: reply gambar + \`${PREFIX}lottie bounce\``,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    if (!validTemplates.includes(templateArg)) {
+                        const templateList = validTemplates.map(t => `  • \`${t}\``).join('\n');
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Template "${templateArg}" tidak dikenal.\n\n🎨 Template tersedia:\n${templateList}`,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Download gambar
+                    let downloadKey;
+                    if (quotedMsg?.imageMessage) {
+                        downloadKey = {
+                            message: quotedMsg,
+                            key: {
+                                remoteJid: msg.key.remoteJid,
+                                id: message.extendedTextMessage.contextInfo.stanzaId,
+                                participant: message.extendedTextMessage.contextInfo.participant,
+                            },
+                        };
+                    }
+
+                    const mediaBuffer = await downloadMediaMessage(
+                        downloadKey,
+                        'buffer',
+                        {},
+                        { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                    );
+
+                    if (!mediaBuffer) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal download gambar' }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1500);
+                    await sock.sendMessage(remoteJid, {
+                        text: `⏳ Membuat Lottie sticker (efek: *${templateArg}*), tunggu sebentar...`,
+                    }, { quoted: msg });
+                    await randomDelay(500, 1000);
+
+                    try {
+                        const wasBuffer = await createLottieSticker(mediaBuffer, templateArg);
+                        
+                        // Generate content & upload
+                        const content = await generateWAMessageContent(
+                            { sticker: wasBuffer },
+                            { upload: sock.waUploadToServer }
+                        );
+                        
+                        if (content && content.stickerMessage) {
+                            content.stickerMessage.mimetype = 'application/was';
+                            content.stickerMessage.isLottie = true;
+                            content.stickerMessage.isAnimated = true;
+
+                            await sock.relayMessage(remoteJid, {
+                                lottieStickerMessage: {
+                                    message: {
+                                        stickerMessage: content.stickerMessage
+                                    }
+                                }
+                            }, { quoted: msg });
+                        }
+                        
+                        logger.info(`✨ Lottie sticker (${templateArg}) dikirim ke ${remoteJid}`);
+                    } catch (error) {
+                        logger.error(`❌ Gagal buat Lottie sticker: ${error.message}`);
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Gagal membuat Lottie sticker: ${error.message}`,
+                        }, { quoted: msg });
+                    }
+
                     continue;
                 }
 
@@ -803,6 +1131,69 @@ async function startBot() {
                 if (message.imageMessage || message.videoMessage) {
                     const mediaMessageDetails = message.imageMessage || message.videoMessage;
                     const caption = mediaMessageDetails.caption || '';
+
+                    // --- Lottie sticker via caption (.lottie pada gambar) ---
+                    if (message.imageMessage && caption.startsWith(PREFIX + 'lottie')) {
+                        const cmdParts = caption.split(' ');
+                        const templateArg = cmdParts[1]?.toLowerCase() || 'spin';
+                        const validTemplates = getTemplateList();
+
+                        if (!validTemplates.includes(templateArg)) {
+                            const templateList = validTemplates.map(t => `  • \`${t}\``).join('\n');
+                            await sock.sendMessage(remoteJid, {
+                                text: `❌ Template "${templateArg}" tidak dikenal.\n\n🎨 Template tersedia:\n${templateList}`,
+                            }, { quoted: msg });
+                            continue;
+                        }
+
+                        const mediaBuffer = await downloadMediaMessage(
+                            msg, 'buffer', {},
+                            { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                        );
+
+                        if (!mediaBuffer) {
+                            await sock.sendMessage(remoteJid, { text: '❌ Gagal download gambar' }, { quoted: msg });
+                            continue;
+                        }
+
+                        await simulateTyping(sock, remoteJid, 1500);
+                        await sock.sendMessage(remoteJid, {
+                            text: `⏳ Membuat Lottie sticker (efek: *${templateArg}*), tunggu sebentar...`,
+                        }, { quoted: msg });
+                        await randomDelay(500, 1000);
+
+                        try {
+                            const wasBuffer = await createLottieSticker(mediaBuffer, templateArg);
+                            
+                            // Generate content & upload
+                            const content = await generateWAMessageContent(
+                                { sticker: wasBuffer },
+                                { upload: sock.waUploadToServer }
+                            );
+                            
+                            if (content && content.stickerMessage) {
+                                content.stickerMessage.mimetype = 'application/was';
+                                content.stickerMessage.isLottie = true;
+                                content.stickerMessage.isAnimated = true;
+
+                                await sock.relayMessage(remoteJid, {
+                                    lottieStickerMessage: {
+                                        message: {
+                                            stickerMessage: content.stickerMessage
+                                        }
+                                    }
+                                }, { quoted: msg });
+                            }
+                            
+                            logger.info(`✨ Lottie sticker (${templateArg}) via caption dikirim ke ${remoteJid}`);
+                        } catch (error) {
+                            logger.error(`❌ Gagal buat Lottie sticker: ${error.message}`);
+                            await sock.sendMessage(remoteJid, {
+                                text: `❌ Gagal membuat Lottie sticker: ${error.message}`,
+                            }, { quoted: msg });
+                        }
+                        continue;
+                    }
 
                     // --- Sticker via caption ---
                     if (caption.startsWith(PREFIX + 'sticker') || caption.startsWith(PREFIX + 's')) {
@@ -1766,6 +2157,14 @@ Kirim/quote foto atau video + ketik:
   \`${PREFIX}sticker\` → sticker biasa / animasi
   \`${PREFIX}sticker teksmu\` → sticker + teks
   \`${PREFIX}toimg\` / \`${PREFIX}tovid\` → ubah sticker ke foto/video (reply sticker)
+
+━━━━━━━━━━━━━━━━━━━
+✨ *LOTTIE STICKER (GEDE & GERAK)*
+━━━━━━━━━━━━━━━━━━━
+Kirim/reply foto + ketik:
+  \`${PREFIX}lottie\` → sticker gede efek expand (default)
+  \`${PREFIX}lottie expand\` → 💥 muncul membesar (meledak)
+  \`${PREFIX}lottie spin\` → 🔄 berputar terus
 
 ━━━━━━━━━━━━━━━━━━━
 ✂️ *REMOVE BACKGROUND*

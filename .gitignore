@@ -14,3 +14,9 @@ test_output.mp3
 
 session_backup*/
 .env
+
+debug_sticker.json
+dino.was
+dino_extracted/
+download_dino.js
+test_send.js

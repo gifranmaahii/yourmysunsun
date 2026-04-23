@@ -1,11 +1,12 @@
 {
   "botName": "Rizz",
-  "stickerPackName": "stiker milik @callmerizzceo",
-  "stickerPackAuthor": "botmilikrizz",
+  "stickerPackName": "robby",
+  "stickerPackAuthor": "bosrobby",
   "ownerNumber": "152188357705821",
   "ownerLid": "",
   "channelJid": "",
   "prefix": ".",
+  "helpRestricted": false,
   "admins": [
     "152188357705821",
     "249928542642268",
