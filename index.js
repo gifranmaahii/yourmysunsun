@@ -23,6 +23,7 @@ const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConvert
 const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
 const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter');
 const { createLottieSticker, getTemplateList } = require('./src/features/lottieSticker');
+const { enhanceImageHD, enhanceVideoHD } = require('./src/features/hdEnhancer');
 const scheduler = require('./src/features/scheduler');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
@@ -1441,6 +1442,85 @@ async function startBot() {
                 }
 
                 // -----------------------------------------------
+                // FITUR: HD ENHANCER — .hd (reply foto/video)
+                // Tingkatkan kualitas foto/video menjadi HD
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'hd')) {
+                    // Cek ketersediaan media (gambar atau video)
+                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const mediaMsg = message.imageMessage || message.videoMessage || quotedMsg?.imageMessage || quotedMsg?.videoMessage;
+                    const isVideo = !!(message.videoMessage || quotedMsg?.videoMessage);
+
+                    if (!mediaMsg) {
+                        await randomDelay(500, 1500);
+                        await sock.sendMessage(remoteJid, {
+                            text: `📸 *HD Enhancer*\n\nTingkatkan kualitas foto/video menjadi HD!\n\n📌 *Cara pakai:*\n  • Kirim foto/video dengan caption \`${PREFIX}hd\`\n  • Atau reply foto/video lalu ketik \`${PREFIX}hd\`\n\n✨ Foto: upscale + sharpen + denoise + color enhance\n🎬 Video: upscale + sharpen + denoise (maks 60 detik)`,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Download media
+                    let downloadKey;
+                    if (message.imageMessage || message.videoMessage) {
+                        downloadKey = msg;
+                    } else if (quotedMsg?.imageMessage || quotedMsg?.videoMessage) {
+                        downloadKey = {
+                            message: quotedMsg,
+                            key: {
+                                remoteJid: msg.key.remoteJid,
+                                id: message.extendedTextMessage.contextInfo.stanzaId,
+                                participant: message.extendedTextMessage.contextInfo.participant
+                            }
+                        };
+                    }
+
+                    const mediaBuffer = await downloadMediaMessage(
+                        downloadKey, 'buffer', {},
+                        { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                    );
+
+                    if (!mediaBuffer) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal download media' }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1500);
+                    await sock.sendMessage(remoteJid, {
+                        text: isVideo
+                            ? '⏳ Sedang memproses video HD, mohon tunggu...\n(Proses bisa 30-120 detik tergantung durasi)'
+                            : '⏳ Sedang memproses foto HD, tunggu sebentar...',
+                    }, { quoted: msg });
+                    await randomDelay(500, 1000);
+
+                    try {
+                        if (isVideo) {
+                            // HD Video
+                            const result = await enhanceVideoHD(mediaBuffer);
+                            await sock.sendMessage(remoteJid, {
+                                video: result.buffer,
+                                caption: `✅ *Video HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.outputWidth}x${result.outputHeight}*\n⏱️ Durasi: ${result.duration} detik\n🎬 Codec: H.264 High Profile\n🎨 Filter: Upscale + Sharpen + Denoise + Color Enhance`,
+                            }, { quoted: msg });
+                            logger.info(`🎬 Video HD dikirim ke ${remoteJid} (${result.outputWidth}x${result.outputHeight})`);
+                        } else {
+                            // HD Image
+                            const result = await enhanceImageHD(mediaBuffer);
+                            await sock.sendMessage(remoteJid, {
+                                image: result.buffer,
+                                caption: `✅ *Foto HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.width}x${result.height}*\n🎨 Filter: Upscale Lanczos3 + Sharpen + Denoise + Color Enhance`,
+                            }, { quoted: msg });
+                            logger.info(`📸 Foto HD dikirim ke ${remoteJid} (${result.width}x${result.height})`);
+                        }
+                    } catch (error) {
+                        logger.error(`❌ HD error: ${error.message}`);
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Gagal memproses HD: ${error.message}`,
+                        }, { quoted: msg });
+                    }
+
+                    continue;
+                }
+
+                // -----------------------------------------------
                 // FITUR: LOTTIE ANIMATED STICKER
                 // Perintah: .lottie [template] (reply/kirim gambar)
                 // Mengubah gambar jadi sticker gerak (spin, zoom, bounce, shake, fade)
@@ -1838,6 +1918,53 @@ async function startBot() {
                         } catch (err) {
                             logger.error(`❌ rmbgv caption error: ${err.message}`);
                             await sock.sendMessage(remoteJid, { text: `❌ Gagal hapus background video: ${err.message}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- HD Enhance via caption (.hd) ---
+                    if (caption.startsWith(PREFIX + 'hd')) {
+                        const isVideo = !!message.videoMessage;
+
+                        await simulateTyping(sock, remoteJid, 1500);
+                        await sock.sendMessage(remoteJid, {
+                            text: isVideo
+                                ? '⏳ Sedang memproses video HD, mohon tunggu...\n(Proses bisa 30-120 detik tergantung durasi)'
+                                : '⏳ Sedang memproses foto HD, tunggu sebentar...',
+                        }, { quoted: msg });
+
+                        try {
+                            const mediaBuf = await downloadMediaMessage(
+                                msg, 'buffer', {},
+                                { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                            );
+                            if (!mediaBuf) throw new Error('Gagal download media');
+
+                            if (isVideo) {
+                                // Cek durasi video
+                                const vidDuration = message.videoMessage?.seconds || 0;
+                                if (vidDuration > 60) {
+                                    await sock.sendMessage(remoteJid, { text: '❌ Durasi video maksimal 60 detik untuk fitur HD.' }, { quoted: msg });
+                                    continue;
+                                }
+
+                                const result = await enhanceVideoHD(mediaBuf);
+                                await sock.sendMessage(remoteJid, {
+                                    video: result.buffer,
+                                    caption: `✅ *Video HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.outputWidth}x${result.outputHeight}*\n⏱️ Durasi: ${result.duration} detik\n🎬 Codec: H.264 High Profile\n🎨 Filter: Upscale + Sharpen + Denoise + Color Enhance`,
+                                }, { quoted: msg });
+                                logger.info(`🎬 Video HD (caption) dikirim ke ${remoteJid}`);
+                            } else {
+                                const result = await enhanceImageHD(mediaBuf);
+                                await sock.sendMessage(remoteJid, {
+                                    image: result.buffer,
+                                    caption: `✅ *Foto HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.width}x${result.height}*\n🎨 Filter: Upscale Lanczos3 + Sharpen + Denoise + Color Enhance`,
+                                }, { quoted: msg });
+                                logger.info(`📸 Foto HD (caption) dikirim ke ${remoteJid}`);
+                            }
+                        } catch (err) {
+                            logger.error(`❌ HD caption error: ${err.message}`);
+                            await sock.sendMessage(remoteJid, { text: `❌ Gagal memproses HD: ${err.message}` }, { quoted: msg });
                         }
                         continue;
                     }
@@ -2699,6 +2826,14 @@ Kirim/reply foto + ketik:
   \`${PREFIX}teks tulisanmu\` → gambar quote card (justified)
   \`${PREFIX}quote tulisanmu\` → sama dengan .teks
   \`${PREFIX}brat tulisanmu\` → sticker gaya (putih, Arial Narrow, lowercase)
+
+━━━━━━━━━━━━━━━━━━━
+📸 *HD ENHANCER*
+━━━━━━━━━━━━━━━━━━━
+Kirim/reply foto atau video + ketik:
+  \`${PREFIX}hd\` → tingkatkan kualitas jadi HD
+  ✨ Foto: upscale + sharpen + denoise
+  🎬 Video: upscale + sharpen + denoise (maks 60 dtk)
 
 ━━━━━━━━━━━━━━━━━━━
 🎬 *VIDEO DOWNLOADER*
