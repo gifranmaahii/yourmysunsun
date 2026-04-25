@@ -297,9 +297,10 @@ async function startBot() {
     // Ambil versi Baileys terbaru (dengan timeout)
     let version = [2, 3000, 1015901307];
     let isLatest = false;
+    let versionTimeout;
     try {
         const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Timeout fetch version')), 5000);
+            versionTimeout = setTimeout(() => reject(new Error('Timeout fetch version')), 5000);
         });
         const res = await Promise.race([
             fetchLatestBaileysVersion(),
@@ -309,6 +310,8 @@ async function startBot() {
         isLatest = res.isLatest;
     } catch (err) {
         logger.warn(`⚠️ Gagal fetch versi Baileys, memakai fallback. Error: ${err.message}`);
+    } finally {
+        if (versionTimeout) clearTimeout(versionTimeout);
     }
     logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version.join('.')} (latest: ${isLatest})`);
 
