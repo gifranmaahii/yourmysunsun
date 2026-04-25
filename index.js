@@ -96,7 +96,11 @@ function startKeepalive(sock) {
                         logger.info(`🔄 Force reconnect dalam ${delay}ms (attempt #${reconnectAttempts})...`);
                         setTimeout(() => {
                             isRestarting = false;
-                            startBot();
+                            if (currentSock) {
+                                try { currentSock.ws?.close(); } catch (_) {}
+                                currentSock = null;
+                            }
+                            startBot().catch(e => logger.error(`💥 Reconnect gagal: ${e.message}`));
                         }, delay);
                     }
                 }
@@ -112,7 +116,11 @@ function startKeepalive(sock) {
                 reconnectAttempts++;
                 setTimeout(() => {
                     isRestarting = false;
-                    startBot();
+                    if (currentSock) {
+                        try { currentSock.ws?.close(); } catch (_) {}
+                        currentSock = null;
+                    }
+                    startBot().catch(e => logger.error(`💥 Reconnect gagal: ${e.message}`));
                 }, delay);
             }
         }
@@ -286,9 +294,23 @@ async function startBot() {
         prefix: process.env.PREFIX || '.',
     });
 
-    // Ambil versi Baileys terbaru
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version} (latest: ${isLatest})`);
+    // Ambil versi Baileys terbaru (dengan timeout)
+    let version = [2, 3000, 1015901307];
+    let isLatest = false;
+    try {
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout fetch version')), 5000);
+        });
+        const res = await Promise.race([
+            fetchLatestBaileysVersion(),
+            timeoutPromise
+        ]);
+        version = res.version;
+        isLatest = res.isLatest;
+    } catch (err) {
+        logger.warn(`⚠️ Gagal fetch versi Baileys, memakai fallback. Error: ${err.message}`);
+    }
+    logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version.join('.')} (latest: ${isLatest})`);
 
     let usePairingCode = false;
     let phoneNumber = '';
@@ -383,7 +405,11 @@ async function startBot() {
                     logger.error(`🔴 Sudah ${MAX_RECONNECT_ATTEMPTS}x percobaan reconnect gagal!`);
                     logger.info('🔄 Reset counter dan coba lagi dari awal setelah 30 detik...');
                     reconnectAttempts = 0;
-                    setTimeout(startBot, 30000);
+                    if (currentSock) {
+                        try { currentSock.ws?.close(); } catch (_) {}
+                        currentSock = null;
+                    }
+                    setTimeout(() => startBot().catch(e => logger.error(`💥 Reconnect gagal: ${e.message}`)), 30000);
                 } else if (!isRestarting) {
                     isRestarting = true;
                     const delay = getReconnectDelay(reconnectAttempts);
@@ -407,7 +433,11 @@ async function startBot() {
                     
                     setTimeout(() => {
                         isRestarting = false;
-                        startBot();
+                        if (currentSock) {
+                            try { currentSock.ws?.close(); } catch (_) {}
+                            currentSock = null;
+                        }
+                        startBot().catch(e => logger.error(`💥 Reconnect gagal: ${e.message}`));
                     }, delay);
                 }
             } else {
