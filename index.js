@@ -316,10 +316,24 @@ async function startBot() {
     }
     logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version.join('.')} (latest: ${isLatest})`);
 
+    const credsPath = path.join(SESSION_DIR, 'creds.json');
+    let hasSession = false;
+    try {
+        if (fs.existsSync(credsPath)) {
+            const stat = fs.statSync(credsPath);
+            if (stat.size > 50) {
+                const credsContent = fs.readFileSync(credsPath, 'utf8');
+                if (credsContent.includes('"me"')) {
+                    hasSession = true;
+                }
+            }
+        }
+    } catch (e) {}
+
     let usePairingCode = false;
     let phoneNumber = '';
 
-    if (!state.creds.registered) {
+    if (!hasSession && !state.creds.registered) {
         const readline = require('readline');
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
         const question = (text) => new Promise((resolve) => rl.question(text, resolve));
@@ -330,7 +344,12 @@ async function startBot() {
         console.log(` 1. Scan QR Code (Arahkan kamera HP Anda)`);
         console.log(` 2. Pairing Code (Login memasukkan kode angka di HP)`);
         console.log(`========================================================`);
-        const answer = await question('Pilih metode login (1/2): ');
+        
+        // Timeout untuk pertanyaan jika tidak dijawab (misal saat restart otomatis tapi file session corrupt)
+        const answerPromise = question('Pilih metode login (1/2): ');
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('1'), 60000));
+        
+        const answer = await Promise.race([answerPromise, timeoutPromise]);
 
         if (answer.trim() === '2') {
             usePairingCode = true;
@@ -340,6 +359,8 @@ async function startBot() {
             console.log(`⚠️ Jika gagal, pastikan nomor sudah benar dan belum login di tempat lain.\n`);
         }
         rl.close();
+    } else {
+        logger.info('🔑 Sesi ditemukan. Melanjutkan login otomatis...');
     }
 
     // Buat socket WA dengan timeout yang lebih besar agar tidak mudah "Timed Out"
@@ -368,7 +389,7 @@ async function startBot() {
     currentSock = sock;
 
     // Request Pairing Code
-    if (usePairingCode && !state.creds.registered) {
+    if (usePairingCode && !hasSession && !state.creds.registered) {
         setTimeout(async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
