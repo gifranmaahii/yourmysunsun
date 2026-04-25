@@ -26,6 +26,7 @@ const { createLottieSticker, getTemplateList } = require('./src/features/lottieS
 const scheduler = require('./src/features/scheduler');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
+const { EventEmitter } = require('events');
 const fs = require('fs');
 
 // ============================================================
@@ -45,6 +46,86 @@ if (!fs.existsSync(SESSION_DIR)) {
 // Cache pesan sederhana (untuk getMessage fallback) - Dibatasi maksimal 200 pesan agar tidak memakan RAM
 const msgCache = new Map();
 const MAX_CACHE_SIZE = 200;
+
+// ============================================================
+// RECONNECT & KEEPALIVE SYSTEM
+// Bot otomatis reconnect ketika koneksi terputus (RDP lag, dsb)
+// ============================================================
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 50; // Batas percobaan sebelum restart total
+let currentSock = null; // Referensi socket aktif saat ini
+let keepaliveInterval = null; // Interval keepalive
+let isRestarting = false; // Flag untuk mencegah multiple restart
+
+/**
+ * Hitung delay reconnect dengan exponential backoff
+ * Attempt 1: 3-5 detik, Attempt 2: 6-10 detik, dst. Max 60 detik.
+ */
+function getReconnectDelay(attempt) {
+    const baseDelay = 3000;
+    const maxDelay = 60000;
+    const delay = Math.min(baseDelay * Math.pow(1.5, attempt), maxDelay);
+    const jitter = Math.floor(Math.random() * 2000); // random jitter 0-2 detik
+    return delay + jitter;
+}
+
+/**
+ * Keepalive: kirim ping WA berkala supaya koneksi tidak dianggap idle.
+ * Jika ping gagal 3x berturut-turut, paksa reconnect.
+ */
+let keepaliveFailCount = 0;
+function startKeepalive(sock) {
+    stopKeepalive();
+    keepaliveFailCount = 0;
+    keepaliveInterval = setInterval(async () => {
+        try {
+            if (sock?.ws?.readyState === sock?.ws?.OPEN) {
+                // Baileys internal: send presence update as keepalive
+                await sock.sendPresenceUpdate('available');
+                keepaliveFailCount = 0;
+            } else {
+                keepaliveFailCount++;
+                logger.warn(`⚠️ Keepalive: WebSocket tidak OPEN (fail #${keepaliveFailCount})`);
+                if (keepaliveFailCount >= 3) {
+                    logger.error('🔴 Keepalive gagal 3x berturut! Memaksa reconnect...');
+                    stopKeepalive();
+                    if (!isRestarting) {
+                        isRestarting = true;
+                        const delay = getReconnectDelay(reconnectAttempts);
+                        reconnectAttempts++;
+                        logger.info(`🔄 Force reconnect dalam ${delay}ms (attempt #${reconnectAttempts})...`);
+                        setTimeout(() => {
+                            isRestarting = false;
+                            startBot();
+                        }, delay);
+                    }
+                }
+            }
+        } catch (err) {
+            keepaliveFailCount++;
+            logger.warn(`⚠️ Keepalive error (fail #${keepaliveFailCount}): ${err.message}`);
+            if (keepaliveFailCount >= 3 && !isRestarting) {
+                logger.error('🔴 Keepalive error 3x! Memaksa reconnect...');
+                stopKeepalive();
+                isRestarting = true;
+                const delay = getReconnectDelay(reconnectAttempts);
+                reconnectAttempts++;
+                setTimeout(() => {
+                    isRestarting = false;
+                    startBot();
+                }, delay);
+            }
+        }
+    }, 30000); // cek setiap 30 detik
+    logger.info('💓 Keepalive system aktif (interval 30 detik)');
+}
+
+function stopKeepalive() {
+    if (keepaliveInterval) {
+        clearInterval(keepaliveInterval);
+        keepaliveInterval = null;
+    }
+}
 
 // ============================================================
 // HELPER: Ekstrak frame pertama dari video (untuk auto-detect bg color)
@@ -235,7 +316,7 @@ async function startBot() {
         rl.close();
     }
 
-    // Buat socket WA
+    // Buat socket WA dengan timeout yang lebih besar agar tidak mudah "Timed Out"
     const sock = makeWASocket({
         version,
         auth: state,
@@ -245,11 +326,20 @@ async function startBot() {
         syncFullHistory: false,         // Tidak perlu history penuh (lebih aman)
         markOnlineOnConnect: false,     // Jangan langsung online (anti-ban)
         generateHighQualityLinkPreview: false,
+        connectTimeoutMs: 60000,        // Timeout koneksi: 60 detik (default 20 detik)
+        retryRequestDelayMs: 350,       // Delay antar retry request internal
+        defaultQueryTimeoutMs: 60000,   // Timeout query WA: 60 detik
+        keepAliveIntervalMs: 15000,     // Kirim keepalive setiap 15 detik (default 30s)
+        qrTimeout: 40000,              // Timeout QR code 40 detik
+        emitOwnEvents: true,           // Emit event sendiri
         getMessage: async (key) => {
             // Fallback dari cache sederhana
             return msgCache.get(key.id) || undefined;
         },
     });
+
+    // Simpan referensi socket aktif
+    currentSock = sock;
 
     // Request Pairing Code
     if (usePairingCode && !state.creds.registered) {
@@ -281,16 +371,45 @@ async function startBot() {
         }
 
         if (connection === 'close') {
+            stopKeepalive();
             const code = lastDisconnect?.error?.output?.statusCode;
+            const errorMsg = lastDisconnect?.error?.message || 'Unknown';
             const shouldReconnect = code !== DisconnectReason.loggedOut;
 
-            logger.warn(`⚠️ Koneksi terputus (kode: ${code}). Reconnect: ${shouldReconnect}`);
+            logger.warn(`⚠️ Koneksi terputus (kode: ${code}, error: ${errorMsg}). Reconnect: ${shouldReconnect}`);
 
             if (shouldReconnect) {
-                // Reconnect dengan delay supaya tidak terlalu agresif (anti-ban)
-                const delay = Math.floor(Math.random() * 5000) + 3000;
-                logger.info(`🔄 Mencoba reconnect dalam ${delay}ms...`);
-                setTimeout(startBot, delay);
+                if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                    logger.error(`🔴 Sudah ${MAX_RECONNECT_ATTEMPTS}x percobaan reconnect gagal!`);
+                    logger.info('🔄 Reset counter dan coba lagi dari awal setelah 30 detik...');
+                    reconnectAttempts = 0;
+                    setTimeout(startBot, 30000);
+                } else if (!isRestarting) {
+                    isRestarting = true;
+                    const delay = getReconnectDelay(reconnectAttempts);
+                    reconnectAttempts++;
+                    logger.info(`🔄 Reconnect attempt #${reconnectAttempts} dalam ${Math.round(delay/1000)} detik...`);
+                    
+                    // Khusus untuk error timeout/lag: bersihkan session corrupt
+                    if (errorMsg.includes('Timed Out') || errorMsg.includes('timed out') || code === 408 || code === 503) {
+                        logger.info('⏱️ Error timeout terdeteksi — membersihkan cache session yang mungkin corrupt...');
+                        try {
+                            const sessionFiles = fs.readdirSync(SESSION_DIR);
+                            for (const file of sessionFiles) {
+                                // Hapus pre-key & sender-key cache yang bisa menyebabkan timeout
+                                // JANGAN hapus creds.json (master login)
+                                if (file.startsWith('pre-key-') || file.startsWith('sender-key-')) {
+                                    fs.unlinkSync(path.join(SESSION_DIR, file));
+                                }
+                            }
+                        } catch (_) {}
+                    }
+                    
+                    setTimeout(() => {
+                        isRestarting = false;
+                        startBot();
+                    }, delay);
+                }
             } else {
                 logger.error('🚫 Session logout. Auto-clean folder "session"...');
                 try {
@@ -304,9 +423,15 @@ async function startBot() {
         }
 
         if (connection === 'open') {
+            // Reset counter reconnect karena berhasil tersambung
+            reconnectAttempts = 0;
+            isRestarting = false;
             logger.info(`✅ ${BOT_NAME} berhasil terhubung ke WhatsApp!`);
             logger.info(`📡 Channel target: ${CHANNEL_JID || '(belum diatur)'}`);
             logger.info(`👤 Owner: ${OWNER_NUMBER}`);
+
+            // Aktifkan keepalive system agar koneksi tetap hidup
+            startKeepalive(sock);
 
             // Start scheduler untuk jadwal kirim otomatis
             scheduler.startScheduler(sock);
@@ -362,15 +487,7 @@ async function startBot() {
                 // agar kamu bisa lihat JID saluran di terminal
                 const _remoteJid = msg.key.remoteJid || '';
                 if (_remoteJid.endsWith('@newsletter')) {
-                    const pushName = msg.pushName || '(tanpa nama)';
-                    console.log('\n📢 ═══════════════════════════════════════════════');
-                    console.log(`📢 PESAN DARI SALURAN/NEWSLETTER TERDETEKSI!`);
-                    console.log(`📢 Nama     : ${pushName}`);
-                    console.log(`📢 JID      : ${_remoteJid}`);
-                    console.log(`📢 ─────────────────────────────────────────────`);
-                    console.log(`📢 Salin JID di atas ke .env → CHANNEL_JID=${_remoteJid}`);
-                    console.log('📢 ═══════════════════════════════════════════════\n');
-                    // Jangan proses lebih lanjut (newsletter bukan pesan user)
+                    // Skip pesan dari saluran/newsletter (bukan pesan user)
                     continue;
                 }
 
@@ -384,7 +501,60 @@ async function startBot() {
                 }
 
                 const remoteJid = msg.key.remoteJid;
-                const message = msg.message;
+
+                // ── UNWRAP MESSAGE ──────────────────────────────────────────
+                // Android WhatsApp sering membungkus pesan dalam layer tambahan:
+                //   ephemeralMessage (disappearing messages)
+                //   viewOnceMessage / viewOnceMessageV2
+                //   documentWithCaptionMessage
+                // Kode ini mengekstrak pesan asli dari wrapper tersebut
+                // sehingga bot bisa memproses pesan dari iPhone DAN Android.
+                // ────────────────────────────────────────────────────────────
+                let message = msg.message;
+                let unwrappedFrom = null; // track apa yang di-unwrap
+
+                // Log raw message keys untuk debug
+                const rawKeys = message ? Object.keys(message) : [];
+                
+                // Layer 1: ephemeralMessage (disappearing messages — Android grup)
+                if (message?.ephemeralMessage?.message) {
+                    unwrappedFrom = 'ephemeralMessage';
+                    message = message.ephemeralMessage.message;
+                }
+                // Layer 2: viewOnceMessage
+                if (message?.viewOnceMessage?.message) {
+                    unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'viewOnceMessage';
+                    message = message.viewOnceMessage.message;
+                }
+                // Layer 3: viewOnceMessageV2
+                if (message?.viewOnceMessageV2?.message) {
+                    unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'viewOnceMessageV2';
+                    message = message.viewOnceMessageV2.message;
+                }
+                // Layer 4: documentWithCaptionMessage
+                if (message?.documentWithCaptionMessage?.message) {
+                    unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'documentWithCaptionMessage';
+                    message = message.documentWithCaptionMessage.message;
+                }
+                // Layer 5: editedMessage (pesan yang sudah diedit)
+                if (message?.editedMessage?.message?.protocolMessage?.editedMessage) {
+                    unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'editedMessage';
+                    message = message.editedMessage.message.protocolMessage.editedMessage;
+                }
+
+                // ── DEBUG LOG: setiap pesan masuk ──────────────────────────
+                const finalKeys = message ? Object.keys(message) : [];
+                const senderForLog = msg.key.participant || msg.key.remoteJid || '?';
+                const pushNameLog = msg.pushName || '?';
+                console.log(`\n📩 ═══ PESAN MASUK ═══════════════════════════════`);
+                console.log(`📩 Dari     : ${pushNameLog} (${senderForLog})`);
+                console.log(`📩 Chat     : ${msg.key.remoteJid}`);
+                console.log(`📩 Raw keys : [${rawKeys.join(', ')}]`);
+                if (unwrappedFrom) {
+                    console.log(`📩 Unwrap   : ${unwrappedFrom}`);
+                    console.log(`📩 Final keys: [${finalKeys.join(', ')}]`);
+                }
+                // ───────────────────────────────────────────────────────────
 
                 // --- DEBUG STICKER ---
                 if (message?.stickerMessage || message?.documentMessage || message?.lottieStickerMessage) {
@@ -396,6 +566,8 @@ async function startBot() {
                 }
 
                 if (!message) {
+                    console.log(`📩 ❌ Message kosong setelah unwrap — SKIP`);
+                    console.log(`📩 ═══════════════════════════════════════════════\n`);
                     continue;
                 }
 
@@ -417,7 +589,17 @@ async function startBot() {
                 const textContent =
                     message.conversation ||
                     message.extendedTextMessage?.text ||
+                    message.imageMessage?.caption ||
+                    message.videoMessage?.caption ||
                     '';
+
+                // Log textContent yang terdeteksi
+                if (textContent) {
+                    console.log(`📩 Text     : "${textContent.substring(0, 100)}"`);
+                } else {
+                    console.log(`📩 Text     : (kosong — bukan pesan teks)`);
+                }
+                console.log(`📩 ═══════════════════════════════════════════════\n`);
 
                 // ── Gunakan config dinamis (bisa diubah via .owner) ──────────────
                 const activeCfg = cfg.getConfig();
@@ -601,15 +783,28 @@ async function startBot() {
                 const senderIsOwner = cfg.isOwner(rawSenderJid) || cfg.isOwner(originalRaw);
                 const senderIsAdmin = cfg.isAdmin(rawSenderJid) || cfg.isAdmin(originalRaw);
 
-                // Jika bukan owner dan bukan admin → abaikan pesan ini
+                // ── DEBUG: log identitas sender ──
+                const cleanSender = cfg.cleanNumber(rawSenderJid);
+                const cleanOriginal = cfg.cleanNumber(originalRaw);
+                console.log(`🔐 Sender   : raw=${originalRaw} → resolved=${rawSenderJid}`);
+                console.log(`🔐 Clean    : original=${cleanOriginal}, resolved=${cleanSender}`);
+                console.log(`🔐 Status   : owner=${senderIsOwner}, admin=${senderIsAdmin}`);
+
+                // Jika bukan owner dan bukan admin → cek apakah mode publik aktif
                 if (!senderIsOwner && !senderIsAdmin) {
                     const cfgCurrent = cfg.getConfig();
-                    const isHelpCmd = [PREFIX + 'help', PREFIX + 'menu', PREFIX + 'main'].includes(textContent.trim());
-                    if (isHelpCmd && !cfgCurrent.helpRestricted) {
-                        // .help allowed for public when restriction off
+                    
+                    if (!cfgCurrent.helpRestricted) {
+                        // Mode PUBLIK: semua fitur bisa diakses siapa saja
+                        // (kecuali .owner dan .jadwal yang punya guard sendiri di dalam handler-nya)
+                        console.log(`🔐 ✅ DIIZINKAN: mode publik aktif — semua fitur terbuka`);
                     } else {
+                        // Mode PRIVATE: hanya admin/owner yang bisa akses
+                        console.log(`🔐 ❌ DIBLOKIR: bukan owner/admin — pesan diabaikan (mode: admin-only)`);
                         continue; // block
                     }
+                } else {
+                    console.log(`🔐 ✅ DIIZINKAN: ${senderIsOwner ? 'OWNER' : 'ADMIN'}`);
                 }
 
                 // ── Shortcut: senderJid untuk backward compat ────────────────────
@@ -644,6 +839,7 @@ async function startBot() {
 👥 *Admin*
   \`${PREFIX}owner addadmin [nomor]\` → tambah admin
   \`${PREFIX}owner deladmin [nomor]\` → hapus admin
+  \`${PREFIX}owner delalladmin\` → 🗑️ hapus SEMUA admin sekaligus
   \`${PREFIX}owner listadmin\` → daftar admin
 
 🔒 *Akses Fitur*
@@ -669,7 +865,8 @@ async function startBot() {
   • Jumlah admin: *${cur.admins.length} orang*
   • Owner: *${cur.ownerNumber}*
   • Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner saja' : '🌐 Semua orang (publik)'}*
-  • Jadwal aktif: *${scheduler.getSchedules().length} jadwal*`
+  • Jadwal aktif: *${scheduler.getSchedules().length} jadwal*
+  • Reconnect attempts: *${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}*`
                         }, { quoted: msg });
                         continue;
                     }
@@ -727,6 +924,27 @@ async function startBot() {
                         } else {
                             const admins = cfg.removeAdmin(num);
                             await sock.sendMessage(remoteJid, { text: `✅ *${cfg.cleanNumber(num)}* dihapus dari admin.\n👥 Sisa admin: ${admins.length}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner delalladmin (hapus SEMUA admin) ---
+                    if (ownerCmd === 'delalladmin') {
+                        const admins = cfg.getConfig().admins;
+                        if (admins.length === 0) {
+                            await sock.sendMessage(remoteJid, {
+                                text: `👥 Tidak ada admin untuk dihapus.`
+                            }, { quoted: msg });
+                        } else {
+                            const count = admins.length;
+                            const listBackup = admins.map((n, i) => `  ${i + 1}. ${n}`).join('\n');
+                            cfg.update('admins', []);
+                            await sock.sendMessage(remoteJid, {
+                                text:
+                                    `🗑️ *Semua Admin Telah Dihapus!*\n\n` +
+                                    `❌ *${count} admin* berhasil dihapus:\n${listBackup}\n\n` +
+                                    `💡 Gunakan \`${PREFIX}owner addadmin [nomor]\` untuk menambah kembali.`
+                            }, { quoted: msg });
                         }
                         continue;
                     }
@@ -1044,54 +1262,140 @@ async function startBot() {
 
                     await simulateTyping(sock, remoteJid, 800);
 
-                    logger.info(`⬇️ Mulai download media yang di-reply untuk dikirim ke ${targetJid}`);
+                    logger.info(`⬇️ [KIRIM] Step 1: Download media untuk ${targetJid}`);
 
-                    const mediaBuffer = await downloadMediaMessage(
-                        quotedMsgObj,
-                        'buffer',
-                        {},
-                        { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
-                    );
-
-                    if (!mediaBuffer) {
+                    let mediaBuffer;
+                    try {
+                        mediaBuffer = await downloadMediaMessage(
+                            quotedMsgObj,
+                            'buffer',
+                            {},
+                            { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                        );
+                    } catch (dlErr) {
+                        logger.error(`❌ [KIRIM] Download gagal: ${dlErr.message}`);
                         await sock.sendMessage(remoteJid, {
-                            text: '❌ Gagal download media. Coba lagi.',
+                            text: `❌ Gagal download media: ${dlErr.message}`,
                         }, { quoted: msg });
                         continue;
                     }
 
+                    if (!mediaBuffer || mediaBuffer.length === 0) {
+                        await sock.sendMessage(remoteJid, {
+                            text: '❌ Gagal download media (buffer kosong). Coba lagi.',
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    logger.info(`✅ [KIRIM] Step 1 selesai: ${mediaBuffer.length} bytes downloaded`);
                     await randomDelay(500, 1500);
 
+                    // Helper: sendMessage dengan timeout agar tidak hang selamanya
+                    const sendWithTimeout = (jid, content, timeoutMs = 60000) => {
+                        return new Promise((resolve, reject) => {
+                            const timer = setTimeout(() => {
+                                reject(new Error(`Timeout ${timeoutMs/1000}s — pesan mungkin tidak terkirim`));
+                            }, timeoutMs);
+
+                            sock.sendMessage(jid, content)
+                                .then((result) => {
+                                    clearTimeout(timer);
+                                    resolve(result);
+                                })
+                                .catch((err) => {
+                                    clearTimeout(timer);
+                                    reject(err);
+                                });
+                        });
+                    };
+
                     if (quotedAudio) {
-                        // PENGIRIMAN AUDIO KE CHANNEL
+                        // === PENGIRIMAN AUDIO KE CHANNEL ===
                         await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio untuk channel...' }, { quoted: msg });
-                        logger.info('🔄 Mengkonversi audio ke OGG Opus Mono untuk channel...');
+                        logger.info('🔄 [KIRIM] Step 2: Konversi audio ke OGG Opus Mono...');
 
                         let channelAudioBuffer;
                         try {
                             channelAudioBuffer = await convertToOggOpus(mediaBuffer);
-                            logger.info(`✅ Konversi OGG Opus Mono berhasil: ${channelAudioBuffer.length} bytes`);
+                            logger.info(`✅ [KIRIM] Step 2 selesai: OGG Opus ${channelAudioBuffer.length} bytes`);
                         } catch (convErr) {
-                            logger.warn(`⚠️ Gagal konversi OGG Opus, kirim buffer asli: ${convErr.message}`);
+                            logger.warn(`⚠️ [KIRIM] Gagal konversi OGG Opus: ${convErr.message}`);
                             channelAudioBuffer = mediaBuffer;
                         }
 
-                        logger.info(`📡 Mengirim OGG Opus ke channel: ${targetJid}`);
-                        await sock.sendMessage(targetJid, {
-                            audio: channelAudioBuffer,
-                            mimetype: 'audio/ogg; codecs=opus',
-                            ptt: true,
-                            waveform: generateWaveform(),
-                        });
+                        // === Attempt 1: Kirim sebagai PTT (voice note) OGG Opus ===
+                        logger.info(`📡 [KIRIM] Step 3: Mengirim audio ke ${targetJid} (attempt 1: OGG PTT)...`);
+                        try {
+                            const result = await sendWithTimeout(targetJid, {
+                                audio: channelAudioBuffer,
+                                mimetype: 'audio/ogg; codecs=opus',
+                                ptt: true,
+                                waveform: generateWaveform(),
+                            }, 60000);
+                            logger.info(`✅ [KIRIM] Audio berhasil terkirim! Result: ${JSON.stringify(result?.key || 'ok')}`);
+                        } catch (sendErr1) {
+                            logger.error(`❌ [KIRIM] Attempt 1 gagal: ${sendErr1.message}`);
+                            
+                            // === Attempt 2: Kirim sebagai audio document (bukan PTT) ===
+                            logger.info(`🔄 [KIRIM] Retry attempt 2: kirim sebagai audio document...`);
+                            try {
+                                const result2 = await sendWithTimeout(targetJid, {
+                                    audio: channelAudioBuffer,
+                                    mimetype: 'audio/ogg; codecs=opus',
+                                    ptt: false,
+                                }, 60000);
+                                logger.info(`✅ [KIRIM] Attempt 2 berhasil! Result: ${JSON.stringify(result2?.key || 'ok')}`);
+                            } catch (sendErr2) {
+                                logger.error(`❌ [KIRIM] Attempt 2 gagal: ${sendErr2.message}`);
+                                
+                                // === Attempt 3: Konversi ke MP3 lalu kirim ===
+                                logger.info(`🔄 [KIRIM] Retry attempt 3: konversi ke MP3 lalu kirim...`);
+                                try {
+                                    const { convertToMp3 } = require('./src/utils/audioConverter');
+                                    const mp3Buffer = await convertToMp3(mediaBuffer);
+                                    const result3 = await sendWithTimeout(targetJid, {
+                                        audio: mp3Buffer,
+                                        mimetype: 'audio/mpeg',
+                                        ptt: false,
+                                    }, 60000);
+                                    logger.info(`✅ [KIRIM] Attempt 3 (MP3) berhasil! Result: ${JSON.stringify(result3?.key || 'ok')}`);
+                                } catch (sendErr3) {
+                                    logger.error(`❌ [KIRIM] Semua attempt gagal! Error terakhir: ${sendErr3.message}`);
+                                    await sock.sendMessage(remoteJid, {
+                                        text: `❌ *Gagal mengirim audio ke channel!*\n\n` +
+                                              `📍 Target: \`${targetJid}\`\n` +
+                                              `💬 Error: ${sendErr3.message}\n\n` +
+                                              `💡 *Kemungkinan penyebab:*\n` +
+                                              `• JID channel salah (pastikan format: xxx@newsletter)\n` +
+                                              `• Bot belum follow/join channel tersebut\n` +
+                                              `• Channel tidak mengizinkan audio\n` +
+                                              `• Koneksi WhatsApp sedang tidak stabil`,
+                                    }, { quoted: msg });
+                                    continue;
+                                }
+                            }
+                        }
 
                     } else if (quotedSticker) {
-                        // PENGIRIMAN STIKER KE CHANNEL
+                        // === PENGIRIMAN STIKER KE CHANNEL ===
                         await sock.sendMessage(remoteJid, { text: '⏳ Mengirim stiker ke channel...' }, { quoted: msg });
-                        logger.info(`📡 Mengirim stiker ke channel: ${targetJid}`);
+                        logger.info(`📡 [KIRIM] Step 3: Mengirim stiker ke ${targetJid}...`);
 
-                        await sock.sendMessage(targetJid, {
-                            sticker: mediaBuffer
-                        });
+                        try {
+                            const result = await sendWithTimeout(targetJid, {
+                                sticker: mediaBuffer
+                            }, 60000);
+                            logger.info(`✅ [KIRIM] Stiker berhasil terkirim! Result: ${JSON.stringify(result?.key || 'ok')}`);
+                        } catch (stickerErr) {
+                            logger.error(`❌ [KIRIM] Gagal kirim stiker: ${stickerErr.message}`);
+                            await sock.sendMessage(remoteJid, {
+                                text: `❌ *Gagal mengirim stiker ke channel!*\n\n` +
+                                      `📍 Target: \`${targetJid}\`\n` +
+                                      `💬 Error: ${stickerErr.message}\n\n` +
+                                      `💡 *Tips:* Pastikan JID benar dan bot sudah follow channel.`,
+                            }, { quoted: msg });
+                            continue;
+                        }
                     }
 
                     // Konfirmasi ke pengirim
@@ -1099,7 +1403,7 @@ async function startBot() {
                         text: `✅ ${quotedAudio ? 'Audio' : 'Stiker'} berhasil dikirim ke saluran:\n\`${targetJid}\``,
                     }, { quoted: msg });
 
-                    logger.info(`📤 Media berhasil dikirim ke saluran: ${targetJid}`);
+                    logger.info(`📤 [KIRIM] Media berhasil dikirim ke saluran: ${targetJid}`);
                     continue;
                 }
 
@@ -2382,7 +2686,7 @@ Kirim/reply foto + ketik:
 ━━━━━━━━━━━━━━━━━━━
   • Bot 24/7 dengan session tersimpan
   • Prefix: *${PREFIX}*
-  • Owner: ${OWNER_NUMBER || 'belum diatur'}`;
+  • Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
 
                     await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
                 }
@@ -2405,17 +2709,46 @@ Kirim/reply foto + ketik:
 process.on('uncaughtException', (err) => {
     logger.error(`💥 uncaughtException: ${err.message}`);
     logger.error(err.stack || '');
-    // Restart bot setelah 5 detik
-    logger.info('🔄 Restart otomatis dalam 5 detik...');
-    setTimeout(() => {
-        startBot().catch((e) => logger.error(`💥 Restart gagal: ${e.message}`));
-    }, 5000);
+    
+    // Jika error Timed Out dari Baileys, jangan crash — biarkan reconnect handle
+    if (err.message && (err.message.includes('Timed Out') || err.message.includes('timed out'))) {
+        logger.warn('⏱️ Error timeout dari Baileys — menunggu reconnect otomatis...');
+        return; // Jangan restart, biarkan connection.update yang handle
+    }
+    
+    // Untuk error lain: restart bot setelah 5 detik
+    if (!isRestarting) {
+        isRestarting = true;
+        logger.info('🔄 Restart otomatis dalam 5 detik...');
+        setTimeout(() => {
+            isRestarting = false;
+            startBot().catch((e) => logger.error(`💥 Restart gagal: ${e.message}`));
+        }, 5000);
+    }
 });
 
 process.on('unhandledRejection', (reason) => {
     const msg = reason instanceof Error ? reason.message : String(reason);
     logger.error(`💥 unhandledRejection: ${msg}`);
+    
+    // Jika rejection karena timeout, jangan panic
+    if (msg.includes('Timed Out') || msg.includes('timed out') || msg.includes('ETIMEDOUT')) {
+        logger.warn('⏱️ Timeout rejection — menunggu reconnect otomatis...');
+        return;
+    }
     // Tidak crash — biarkan reconnect logic Baileys yang handle
+});
+
+// Graceful shutdown: bersihkan keepalive saat SIGINT/SIGTERM
+process.on('SIGINT', () => {
+    logger.info('👋 SIGINT diterima, mematikan bot...');
+    stopKeepalive();
+    process.exit(0);
+});
+process.on('SIGTERM', () => {
+    logger.info('👋 SIGTERM diterima, mematikan bot...');
+    stopKeepalive();
+    process.exit(0);
 });
 
 startBot().catch((err) => {

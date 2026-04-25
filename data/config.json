@@ -2,17 +2,10 @@
   "botName": "Rizz",
   "stickerPackName": "robby",
   "stickerPackAuthor": "bosrobby",
-  "ownerNumber": "152188357705821",
+  "ownerNumber": "122372644438088,152188357705821",
   "ownerLid": "",
   "channelJid": "",
   "prefix": ".",
   "helpRestricted": false,
-  "admins": [
-    "152188357705821",
-    "249928542642268",
-    "6281285841105",
-    "6282312867226",
-    "79749506437229",
-    "156444821291192"
-  ]
+  "admins": []
 }

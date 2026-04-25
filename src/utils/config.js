@@ -125,15 +125,19 @@ function removeAdmin(numberRaw) {
 
 /**
  * Cek apakah senderJid adalah owner.
- * Mendukung dua format: nomor HP (628xx) dan @lid.
+ * Mendukung multi-owner: OWNER_NUMBER bisa berisi beberapa nomor dipisahkan koma.
+ * Contoh: OWNER_NUMBER=152188357705821,122372644438088
+ * Mendukung format: nomor HP (628xx) dan @lid.
  */
 function isOwner(senderJid) {
     const sn = cleanNumber(senderJid);
     if (!sn) return false;
 
-    // Cek dengan ownerNumber (nomor HP dari .env)
-    const on = cleanNumber(_cfg.ownerNumber);
-    if (on && sn === on) return true;
+    // Cek dengan ownerNumber (bisa multi, dipisah koma)
+    const ownerNumbers = String(_cfg.ownerNumber || '').split(',').map(n => cleanNumber(n.trim())).filter(Boolean);
+    for (const on of ownerNumbers) {
+        if (sn === on) return true;
+    }
 
     // Cek dengan ownerLid (nomor @lid yang bisa di-set otomatis)
     if (_cfg.ownerLid) {
@@ -142,6 +146,15 @@ function isOwner(senderJid) {
     }
 
     return false;
+}
+
+/**
+ * Ambil nomor owner pertama untuk ditampilkan di .menu / .help
+ * Owner ke-2 dst TIDAK ditampilkan (hidden owner).
+ */
+function getDisplayOwner() {
+    const owners = String(_cfg.ownerNumber || '').split(',').map(n => n.trim()).filter(Boolean);
+    return owners[0] || '';
 }
 
 /**
@@ -169,4 +182,5 @@ module.exports = {
     isAdmin,
     isAuthorized,
     cleanNumber,
+    getDisplayOwner,
 };
