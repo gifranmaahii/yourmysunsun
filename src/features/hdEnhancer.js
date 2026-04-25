@@ -36,8 +36,8 @@ if (!fs.existsSync(TEMP_DIR)) {
  */
 async function enhanceImageHD(imageBuffer, options = {}) {
     const {
-        targetSize = 2048,
-        quality = 95,
+        targetSize = 3840, // Paksa resolusi tinggi (4K) agar WhatsApp memunculkan logo HD
+        quality = 100,     // Kualitas maksimal
         asPng = false,
     } = options;
 
@@ -52,10 +52,10 @@ async function enhanceImageHD(imageBuffer, options = {}) {
 
     // Hitung skala upscale
     const longestSide = Math.max(originalWidth, originalHeight);
-    // Minimal target 2048px, atau 2x dari asli jika asli sangat kecil
+    // Minimal target 3840px (4K) agar kedeteksi HD oleh WhatsApp
     const effectiveTarget = Math.max(targetSize, longestSide * 2);
-    // Tapi batasi maksimal 4096px agar tidak terlalu besar
-    const finalTarget = Math.min(effectiveTarget, 4096);
+    // Batasi maksimal 6000px
+    const finalTarget = Math.min(effectiveTarget, 6000);
 
     let pipeline = sharp(imageBuffer);
 
@@ -136,8 +136,8 @@ async function enhanceImageHD(imageBuffer, options = {}) {
  */
 async function enhanceVideoHD(videoBuffer, options = {}) {
     const {
-        targetWidth = 1920,
-        crf = 18,
+        targetWidth = 2560, // Paksa ke 2K resolusi
+        crf = 16, // Kualitas sangat tinggi
     } = options;
 
     const tempId = randomBytes(6).toString('hex');
@@ -171,15 +171,15 @@ async function enhanceVideoHD(videoBuffer, options = {}) {
                 return reject(new Error('Durasi video maksimal 60 detik untuk fitur HD'));
             }
 
-            // Hitung resolusi output
+            // Hitung resolusi output (maks 2560 agar 2K / 1440p)
             let outW, outH;
             if (origW >= origH) {
                 // Landscape
-                outW = Math.max(origW, Math.min(targetWidth, 1920));
+                outW = Math.max(origW, Math.min(targetWidth, 2560));
                 outH = Math.round(outW * (origH / origW));
             } else {
                 // Portrait
-                outH = Math.max(origH, Math.min(targetWidth, 1920));
+                outH = Math.max(origH, Math.min(targetWidth, 2560));
                 outW = Math.round(outH * (origW / origH));
             }
             // Pastikan genap (requirement H.264)
@@ -203,9 +203,11 @@ async function enhanceVideoHD(videoBuffer, options = {}) {
                 .outputOptions([
                     '-c:v', 'libx264',
                     '-preset', 'slow',       // Slower preset = better quality
-                    '-crf', String(crf),      // CRF 18 = visually lossless
+                    '-crf', String(crf),      // CRF rendah = kualitas tinggi
+                    '-maxrate', '8M',         // Paksa bitrate tinggi agar file cukup besar untuk diakui HD
+                    '-bufsize', '16M',
                     '-profile:v', 'high',     // High profile untuk kualitas terbaik
-                    '-level', '4.1',
+                    '-level', '4.2',
                     '-pix_fmt', 'yuv420p',    // Kompatibilitas maksimal
                     '-movflags', '+faststart', // Quick playback start
                     '-c:a', 'aac',            // Audio AAC
