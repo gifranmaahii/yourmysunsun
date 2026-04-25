@@ -1497,16 +1497,20 @@ async function startBot() {
                             // HD Video
                             const result = await enhanceVideoHD(mediaBuffer);
                             await sock.sendMessage(remoteJid, {
-                                video: result.buffer,
-                                caption: `✅ *Video HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.outputWidth}x${result.outputHeight}*\n⏱️ Durasi: ${result.duration} detik\n🎬 Codec: H.264 High Profile\n🎨 Filter: Upscale + Sharpen + Denoise + Color Enhance`,
+                                document: result.buffer,
+                                mimetype: 'video/mp4',
+                                fileName: `HD_Video_${Date.now()}.mp4`,
+                                caption: `✅ *Video HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.outputWidth}x${result.outputHeight}*\n⏱️ Durasi: ${result.duration} detik\n🎬 Codec: H.264 High Profile\n🎨 Filter: Upscale + Sharpen + Denoise + Color Enhance\n\n*(Dikirim sebagai dokumen agar kualitas HD tidak turun/dikompres oleh WhatsApp)*`,
                             }, { quoted: msg });
                             logger.info(`🎬 Video HD dikirim ke ${remoteJid} (${result.outputWidth}x${result.outputHeight})`);
                         } else {
                             // HD Image
                             const result = await enhanceImageHD(mediaBuffer);
                             await sock.sendMessage(remoteJid, {
-                                image: result.buffer,
-                                caption: `✅ *Foto HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.width}x${result.height}*\n🎨 Filter: Upscale Lanczos3 + Sharpen + Denoise + Color Enhance`,
+                                document: result.buffer,
+                                mimetype: 'image/jpeg',
+                                fileName: `HD_Photo_${Date.now()}.jpg`,
+                                caption: `✅ *Foto HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.width}x${result.height}*\n🎨 Filter: Upscale Lanczos3 + Sharpen + Denoise + Color Enhance\n\n*(Dikirim sebagai dokumen agar kualitas HD tidak turun/dikompres oleh WhatsApp)*`,
                             }, { quoted: msg });
                             logger.info(`📸 Foto HD dikirim ke ${remoteJid} (${result.width}x${result.height})`);
                         }
@@ -1950,15 +1954,19 @@ async function startBot() {
 
                                 const result = await enhanceVideoHD(mediaBuf);
                                 await sock.sendMessage(remoteJid, {
-                                    video: result.buffer,
-                                    caption: `✅ *Video HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.outputWidth}x${result.outputHeight}*\n⏱️ Durasi: ${result.duration} detik\n🎬 Codec: H.264 High Profile\n🎨 Filter: Upscale + Sharpen + Denoise + Color Enhance`,
+                                    document: result.buffer,
+                                    mimetype: 'video/mp4',
+                                    fileName: `HD_Video_${Date.now()}.mp4`,
+                                    caption: `✅ *Video HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.outputWidth}x${result.outputHeight}*\n⏱️ Durasi: ${result.duration} detik\n🎬 Codec: H.264 High Profile\n🎨 Filter: Upscale + Sharpen + Denoise + Color Enhance\n\n*(Dikirim sebagai dokumen agar kualitas HD tidak turun/dikompres oleh WhatsApp)*`,
                                 }, { quoted: msg });
                                 logger.info(`🎬 Video HD (caption) dikirim ke ${remoteJid}`);
                             } else {
                                 const result = await enhanceImageHD(mediaBuf);
                                 await sock.sendMessage(remoteJid, {
-                                    image: result.buffer,
-                                    caption: `✅ *Foto HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.width}x${result.height}*\n🎨 Filter: Upscale Lanczos3 + Sharpen + Denoise + Color Enhance`,
+                                    document: result.buffer,
+                                    mimetype: 'image/jpeg',
+                                    fileName: `HD_Photo_${Date.now()}.jpg`,
+                                    caption: `✅ *Foto HD Berhasil!*\n\n📐 Resolusi: ${result.originalWidth}x${result.originalHeight} → *${result.width}x${result.height}*\n🎨 Filter: Upscale Lanczos3 + Sharpen + Denoise + Color Enhance\n\n*(Dikirim sebagai dokumen agar kualitas HD tidak turun/dikompres oleh WhatsApp)*`,
                                 }, { quoted: msg });
                                 logger.info(`📸 Foto HD (caption) dikirim ke ${remoteJid}`);
                             }
