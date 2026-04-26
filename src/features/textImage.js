@@ -3,9 +3,13 @@
 const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
-// ── Register Arial Narrow dan Segoe UI Emoji dari system fonts Windows ────────
-// Font ini yang dipakai bratgenerator.com (font-family: arial_narrowregular)
+// ── Register fonts ────────────────────────────────────────────────────────────
+// Arial Narrow: font resmi bratgenerator.com
+// Noto Color Emoji: emoji full-color kualitas Android/iPhone (bukan monokrom)
+const FONTS_DIR = path.join(__dirname, '..', '..', 'assets', 'fonts');
+
 try {
+    // Arial Narrow dari system fonts Windows
     GlobalFonts.registerFromPath(
         path.join('C:\\Windows\\Fonts\\ARIALN.TTF'),
         'Arial Narrow'
@@ -14,12 +18,27 @@ try {
         path.join('C:\\Windows\\Fonts\\ARIALNB.TTF'),
         'Arial Narrow Bold'
     );
-    GlobalFonts.registerFromPath(
-        path.join('C:\\Windows\\Fonts\\seguiemj.ttf'),
-        'Segoe UI Emoji'
-    );
 } catch (_) {
     // Fallback jika tidak ada di sistem
+}
+
+try {
+    // ★ Noto Color Emoji — emoji warna HD dari Google (mirip Android)
+    // File: assets/fonts/NotoColorEmoji.ttf
+    GlobalFonts.registerFromPath(
+        path.join(FONTS_DIR, 'NotoColorEmoji.ttf'),
+        'Noto Color Emoji'
+    );
+    console.log('✅ Noto Color Emoji font loaded successfully');
+} catch (e) {
+    console.warn('⚠️ Noto Color Emoji not found, falling back to Segoe UI Emoji');
+    // Fallback ke Segoe UI Emoji Windows
+    try {
+        GlobalFonts.registerFromPath(
+            path.join('C:\\Windows\\Fonts\\seguiemj.ttf'),
+            'Segoe UI Emoji'
+        );
+    } catch (_) {}
 }
 
 // ============================================================
@@ -58,7 +77,7 @@ function generateTextImage(text, opts = {}) {
     const wordCount  = text.trim().split(/\s+/).length;
     const fontSize   = wordCount > 30 ? 34 : wordCount > 20 ? 40 : wordCount > 12 ? 46 : 52;
     const lineHeight = fontSize + 24;
-    const font       = `bold ${fontSize}px Arial, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+    const font       = `bold ${fontSize}px Arial, "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
     const maxW       = width - 2 * padding;
 
     const tmp    = createCanvas(width, 100);
@@ -126,7 +145,8 @@ function generateBratImage(text) {
     const lineH    = Math.round(fontSize * 1.22);
 
     // Arial Narrow — font resmi bratgenerator.com
-    const font = `500 ${fontSize}px "Arial Narrow", "Arial Narrow Bold", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", Arial, sans-serif`;
+    // ★ Noto Color Emoji di posisi pertama setelah Arial Narrow supaya emoji tampil warna penuh
+    const font = `500 ${fontSize}px "Arial Narrow", "Arial Narrow Bold", "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", Arial, sans-serif`;
 
     // ── Word wrap ─────────────────────────────────────────────
     const tmp    = createCanvas(SIZE, 100);
