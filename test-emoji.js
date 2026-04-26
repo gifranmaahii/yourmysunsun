@@ -1,0 +1,11 @@
+const { createCanvas } = require('@napi-rs/canvas');
+const fs = require('fs');
+const canvas = createCanvas(200, 200);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = 'white';
+ctx.fillRect(0, 0, 200, 200);
+ctx.font = '30px "Arial Narrow", "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif';
+ctx.fillStyle = 'black';
+ctx.fillText('hello 😭❤️', 50, 100);
+fs.writeFileSync('test_emoji.png', canvas.toBuffer('image/png'));
+console.log('done');

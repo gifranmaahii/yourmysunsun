@@ -3,7 +3,7 @@
 const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 const path = require('path');
 
-// ── Register Arial Narrow dari system fonts Windows ────────────────────────
+// ── Register Arial Narrow dan Segoe UI Emoji dari system fonts Windows ────────
 // Font ini yang dipakai bratgenerator.com (font-family: arial_narrowregular)
 try {
     GlobalFonts.registerFromPath(
@@ -13,6 +13,10 @@ try {
     GlobalFonts.registerFromPath(
         path.join('C:\\Windows\\Fonts\\ARIALNB.TTF'),
         'Arial Narrow Bold'
+    );
+    GlobalFonts.registerFromPath(
+        path.join('C:\\Windows\\Fonts\\seguiemj.ttf'),
+        'Segoe UI Emoji'
     );
 } catch (_) {
     // Fallback jika tidak ada di sistem
@@ -54,7 +58,7 @@ function generateTextImage(text, opts = {}) {
     const wordCount  = text.trim().split(/\s+/).length;
     const fontSize   = wordCount > 30 ? 34 : wordCount > 20 ? 40 : wordCount > 12 ? 46 : 52;
     const lineHeight = fontSize + 24;
-    const font       = `bold ${fontSize}px Arial`;
+    const font       = `bold ${fontSize}px Arial, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
     const maxW       = width - 2 * padding;
 
     const tmp    = createCanvas(width, 100);
@@ -122,7 +126,7 @@ function generateBratImage(text) {
     const lineH    = Math.round(fontSize * 1.22);
 
     // Arial Narrow — font resmi bratgenerator.com
-    const font = `500 ${fontSize}px "Arial Narrow", "Arial Narrow Bold", Arial, sans-serif`;
+    const font = `500 ${fontSize}px "Arial Narrow", "Arial Narrow Bold", "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", Arial, sans-serif`;
 
     // ── Word wrap ─────────────────────────────────────────────
     const tmp    = createCanvas(SIZE, 100);
