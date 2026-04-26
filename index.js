@@ -546,6 +546,8 @@ async function startBot() {
                     continue;
                 }
 
+
+
                 // --- Filter dasar (anti-ban & keamanan) ---
                 if (!shouldProcess(msg, sock)) {
                     continue;
@@ -961,45 +963,7 @@ async function startBot() {
                 // ── Shortcut: senderJid untuk backward compat ────────────────────
                 const senderJid = rawSenderJid;
 
-                // ── Handler .join (Admin/Owner) ──────────────────────────────────
-                if (textContent.startsWith(PREFIX + 'join')) {
-                    if (!senderIsOwner && !senderIsAdmin) {
-                        await sock.sendMessage(remoteJid, { text: `❌ Hanya admin/owner yang bisa menggunakan perintah ini.` }, { quoted: msg });
-                        continue;
-                    }
 
-                    const args = textContent.trim().split(/\s+/);
-                    const link = args[1] || '';
-                    
-                    const inviteLinkMatch = link.match(/https?:\/\/(?:www\.)?whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
-                    
-                    if (!inviteLinkMatch) {
-                        await sock.sendMessage(remoteJid, { text: `❌ Format salah.\nGunakan: *${PREFIX}join https://whatsapp.com/channel/...*` }, { quoted: msg });
-                        continue;
-                    }
-
-                    const inviteCode = inviteLinkMatch[1];
-                    await simulateTyping(sock, remoteJid, 800);
-                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mencoba bergabung ke saluran...' }, { quoted: msg });
-
-                    try {
-                        // Dapatkan metadata dari invite code
-                        const metadata = await sock.newsletterMetadata('invite', inviteCode);
-                        if (metadata && metadata.id) {
-                            // Join/follow saluran
-                            await sock.newsletterFollow(metadata.id);
-                            await sock.sendMessage(remoteJid, { 
-                                text: `✅ *Berhasil Bergabung!*\n\n📛 Nama: *${metadata.name || '(tanpa nama)'}*\n🆔 JID: \`${metadata.id}\`\n\n💡 Sekarang bot sudah bisa menerima dan mengirim ke saluran ini.` 
-                            }, { quoted: msg });
-                        } else {
-                            throw new Error('Metadata saluran kosong atau tidak valid.');
-                        }
-                    } catch (err) {
-                        logger.error('❌ Gagal join saluran: ' + err.message);
-                        await sock.sendMessage(remoteJid, { text: `❌ Gagal bergabung ke saluran: ${err.message}` }, { quoted: msg });
-                    }
-                    continue;
-                }
 
                 // ── Handler .owner (KHUSUS OWNER) ────────────────────────────────
                 if (textContent.startsWith(PREFIX + 'owner')) {
@@ -1031,7 +995,6 @@ async function startBot() {
   \`${PREFIX}owner deladmin [nomor]\` → hapus admin
   \`${PREFIX}owner delalladmin\` → 🗑️ hapus SEMUA admin sekaligus
   \`${PREFIX}owner listadmin\` → daftar admin
-  \`${PREFIX}join [link_saluran]\` → bot gabung saluran
 
 🔒 *Akses Fitur*
   \`${PREFIX}owner public\` → toggle akses .help (publik/admin only)

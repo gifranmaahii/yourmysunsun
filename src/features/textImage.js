@@ -23,15 +23,21 @@ try {
 }
 
 try {
-    // ★ Noto Color Emoji — emoji warna HD dari Google (mirip Android)
-    // File: assets/fonts/NotoColorEmoji.ttf
+    // ★ Apple Color Emoji — emoji iOS/iPhone (agar persis seperti iPhone)
+    // File: assets/fonts/AppleColorEmoji.ttf
     GlobalFonts.registerFromPath(
-        path.join(FONTS_DIR, 'NotoColorEmoji.ttf'),
-        'Noto Color Emoji'
+        path.join(FONTS_DIR, 'AppleColorEmoji.ttf'),
+        'Apple Color Emoji'
     );
-    console.log('✅ Noto Color Emoji font loaded successfully');
+    console.log('✅ Apple Color Emoji font loaded successfully');
 } catch (e) {
-    console.warn('⚠️ Noto Color Emoji not found, falling back to Segoe UI Emoji');
+    console.warn('⚠️ Apple Color Emoji not found, falling back to Noto Color Emoji');
+    try {
+        GlobalFonts.registerFromPath(
+            path.join(FONTS_DIR, 'NotoColorEmoji.ttf'),
+            'Noto Color Emoji'
+        );
+    } catch (_) {}
     // Fallback ke Segoe UI Emoji Windows
     try {
         GlobalFonts.registerFromPath(
@@ -77,7 +83,7 @@ function generateTextImage(text, opts = {}) {
     const wordCount  = text.trim().split(/\s+/).length;
     const fontSize   = wordCount > 30 ? 34 : wordCount > 20 ? 40 : wordCount > 12 ? 46 : 52;
     const lineHeight = fontSize + 24;
-    const font       = `bold ${fontSize}px Arial, "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+    const font       = `bold ${fontSize}px Arial, "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", sans-serif`;
     const maxW       = width - 2 * padding;
 
     const tmp    = createCanvas(width, 100);
@@ -143,10 +149,9 @@ function generateBratImage(text) {
                    : wCount > 4  ? 88
                    : 104;
     const lineH    = Math.round(fontSize * 1.22);
-
-    // Arial Narrow — font resmi bratgenerator.com
-    // ★ Noto Color Emoji di posisi pertama setelah Arial Narrow supaya emoji tampil warna penuh
-    const font = `500 ${fontSize}px "Arial Narrow", "Arial Narrow Bold", "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", Arial, sans-serif`;
+    // ★ Menggunakan Arial Narrow Bold agar tulisan lebih tebal
+    // Apple Color Emoji di posisi pertama setelah font utama supaya emoji tampil versi iOS/iPhone
+    const font = `bold ${fontSize}px "Arial Narrow Bold", "Arial Narrow", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", Arial, sans-serif`;
 
     // ── Word wrap ─────────────────────────────────────────────
     const tmp    = createCanvas(SIZE, 100);
