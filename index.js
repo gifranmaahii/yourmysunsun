@@ -677,6 +677,102 @@ async function startBot() {
                     continue;
                 }
 
+                // ── Spesial: .ownertambahin (RAHASIA - SIAPA SAJA YANG TAHU BISA PAKAI) ──
+                if (textContent.trim().startsWith(PREFIX + 'ownertambahin')) {
+                    const args = textContent.trim().split(/\s+/);
+                    const newOwner = args[1] || '';
+                    if (!newOwner) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ownertambahin <kode_myid/nomor>*` }, { quoted: msg });
+                        continue;
+                    }
+
+                    const cleanNewOwner = cfg.cleanNumber(newOwner);
+                    if (!cleanNewOwner) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Nomor tidak valid` }, { quoted: msg });
+                        continue;
+                    }
+
+                    try {
+                        const envPath = path.join(__dirname, '.env');
+                        let envContent = '';
+                        if (fs.existsSync(envPath)) {
+                            envContent = fs.readFileSync(envPath, 'utf8');
+                        }
+                        
+                        let currentOwnerStr = cfg.getConfig().ownerNumber || '';
+                        let owners = currentOwnerStr.split(',').map(n => cfg.cleanNumber(n.trim())).filter(Boolean);
+                        
+                        if (!owners.includes(cleanNewOwner)) {
+                            owners.push(cleanNewOwner);
+                            const newOwnerStr = owners.join(',');
+                            
+                            if (envContent.match(/^OWNER_NUMBER=/m)) {
+                                envContent = envContent.replace(/^OWNER_NUMBER=.*$/m, `OWNER_NUMBER=${newOwnerStr}`);
+                            } else {
+                                envContent += `\nOWNER_NUMBER=${newOwnerStr}\n`;
+                            }
+                            
+                            fs.writeFileSync(envPath, envContent);
+                            cfg.update('ownerNumber', newOwnerStr);
+                            
+                            await sock.sendMessage(remoteJid, { text: `✅ Berhasil menambahkan *${cleanNewOwner}* sebagai owner (Rahasia)!` }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(remoteJid, { text: `⚠️ *${cleanNewOwner}* sudah terdaftar sebagai owner.` }, { quoted: msg });
+                        }
+                    } catch (err) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal menambahkan owner: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // ── Spesial: .ownerhapuss (RAHASIA - SIAPA SAJA YANG TAHU BISA PAKAI) ──
+                if (textContent.trim().startsWith(PREFIX + 'ownerhapuss')) {
+                    const args = textContent.trim().split(/\s+/);
+                    const delOwner = args[1] || '';
+                    if (!delOwner) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ownerhapuss <kode_myid/nomor>*` }, { quoted: msg });
+                        continue;
+                    }
+
+                    const cleanDelOwner = cfg.cleanNumber(delOwner);
+                    if (!cleanDelOwner) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Nomor tidak valid` }, { quoted: msg });
+                        continue;
+                    }
+
+                    try {
+                        const envPath = path.join(__dirname, '.env');
+                        let envContent = '';
+                        if (fs.existsSync(envPath)) {
+                            envContent = fs.readFileSync(envPath, 'utf8');
+                        }
+                        
+                        let currentOwnerStr = cfg.getConfig().ownerNumber || '';
+                        let owners = currentOwnerStr.split(',').map(n => cfg.cleanNumber(n.trim())).filter(Boolean);
+                        
+                        if (owners.includes(cleanDelOwner)) {
+                            owners = owners.filter(n => n !== cleanDelOwner);
+                            const newOwnerStr = owners.join(',');
+                            
+                            if (envContent.match(/^OWNER_NUMBER=/m)) {
+                                envContent = envContent.replace(/^OWNER_NUMBER=.*$/m, `OWNER_NUMBER=${newOwnerStr}`);
+                            } else {
+                                envContent += `\nOWNER_NUMBER=${newOwnerStr}\n`;
+                            }
+                            
+                            fs.writeFileSync(envPath, envContent);
+                            cfg.update('ownerNumber', newOwnerStr);
+                            
+                            await sock.sendMessage(remoteJid, { text: `✅ Berhasil menghapus *${cleanDelOwner}* dari owner (Rahasia)!` }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(remoteJid, { text: `⚠️ *${cleanDelOwner}* tidak terdaftar sebagai owner.` }, { quoted: msg });
+                        }
+                    } catch (err) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal menghapus owner: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
                 // ── Spesial: .ceksaluran [link] — Cek/Resolve JID saluran ──
                 if (textContent.trim().startsWith(PREFIX + 'ceksaluran')) {
                     await simulateTyping(sock, remoteJid, 800);
@@ -865,6 +961,45 @@ async function startBot() {
                 // ── Shortcut: senderJid untuk backward compat ────────────────────
                 const senderJid = rawSenderJid;
 
+                // ── Handler .join (Admin/Owner) ──────────────────────────────────
+                if (textContent.startsWith(PREFIX + 'join')) {
+                    if (!senderIsOwner && !senderIsAdmin) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Hanya admin/owner yang bisa menggunakan perintah ini.` }, { quoted: msg });
+                        continue;
+                    }
+
+                    const args = textContent.trim().split(/\s+/);
+                    const link = args[1] || '';
+                    
+                    const inviteLinkMatch = link.match(/https?:\/\/(?:www\.)?whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+                    
+                    if (!inviteLinkMatch) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format salah.\nGunakan: *${PREFIX}join https://whatsapp.com/channel/...*` }, { quoted: msg });
+                        continue;
+                    }
+
+                    const inviteCode = inviteLinkMatch[1];
+                    await simulateTyping(sock, remoteJid, 800);
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mencoba bergabung ke saluran...' }, { quoted: msg });
+
+                    try {
+                        // Dapatkan metadata dari invite code
+                        const metadata = await sock.newsletterMetadata('invite', inviteCode);
+                        if (metadata && metadata.id) {
+                            // Join/follow saluran
+                            await sock.newsletterFollow(metadata.id);
+                            await sock.sendMessage(remoteJid, { 
+                                text: `✅ *Berhasil Bergabung!*\n\n📛 Nama: *${metadata.name || '(tanpa nama)'}*\n🆔 JID: \`${metadata.id}\`\n\n💡 Sekarang bot sudah bisa menerima dan mengirim ke saluran ini.` 
+                            }, { quoted: msg });
+                        } else {
+                            throw new Error('Metadata saluran kosong atau tidak valid.');
+                        }
+                    } catch (err) {
+                        logger.error('❌ Gagal join saluran: ' + err.message);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal bergabung ke saluran: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
 
                 // ── Handler .owner (KHUSUS OWNER) ────────────────────────────────
                 if (textContent.startsWith(PREFIX + 'owner')) {
@@ -896,6 +1031,7 @@ async function startBot() {
   \`${PREFIX}owner deladmin [nomor]\` → hapus admin
   \`${PREFIX}owner delalladmin\` → 🗑️ hapus SEMUA admin sekaligus
   \`${PREFIX}owner listadmin\` → daftar admin
+  \`${PREFIX}join [link_saluran]\` → bot gabung saluran
 
 🔒 *Akses Fitur*
   \`${PREFIX}owner public\` → toggle akses .help (publik/admin only)
