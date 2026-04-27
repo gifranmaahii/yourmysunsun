@@ -377,7 +377,7 @@ async function startBot() {
         generateHighQualityLinkPreview: false,
         connectTimeoutMs: 60000,        // Timeout koneksi: 60 detik (default 20 detik)
         retryRequestDelayMs: 350,       // Delay antar retry request internal
-        defaultQueryTimeoutMs: 60000,   // Timeout query WA: 60 detik
+        defaultQueryTimeoutMs: 120000,   // Timeout query WA: 120 detik (diperbesar agar tidak mudah timeout)
         keepAliveIntervalMs: 15000,     // Kirim keepalive setiap 15 detik (default 30s)
         qrTimeout: 40000,              // Timeout QR code 40 detik
         emitOwnEvents: true,           // Emit event sendiri
