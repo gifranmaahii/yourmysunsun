@@ -613,7 +613,6 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             saveBlacklistData();
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil menghapus target dari blacklist.` });
         }
-        }
         else if (command === prefix + 'listblacklist') {
             if (!blacklistData[remoteJid] || !blacklistData[remoteJid].length) {
                 await sock.sendMessage(remoteJid, { text: `📝 Daftar blacklist kosong.` });
