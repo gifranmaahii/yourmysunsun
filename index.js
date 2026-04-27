@@ -3363,11 +3363,18 @@ async function startBot() {
                     const { useMenuImage, menuImage } = cfg.getConfig();
                     
                     if (useMenuImage && menuImage) {
-                        await sock.sendMessage(remoteJid, {
-                            image: { url: menuImage },
-                            caption: helpText,
-                            mentions: [msg.key.participant || msg.key.remoteJid]
-                        }, { quoted: msg });
+                        try {
+                            await sock.sendMessage(remoteJid, {
+                                image: { url: menuImage },
+                                caption: helpText,
+                                mentions: [msg.key.participant || msg.key.remoteJid]
+                            }, { quoted: msg });
+                        } catch (imgErr) {
+                            logger.error(`⚠️ Gagal mengirim gambar menu (URL error): ${imgErr.message}`);
+                            // Fallback ke teks jika gambar gagal
+                            await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
+                            await sock.sendMessage(remoteJid, { text: `⚠️ *Catatan:* Gambar menu gagal dimuat (Error: ${imgErr.message}). Pastikan link gambar valid.` }, { quoted: msg });
+                        }
                     } else {
                         await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
                     }
