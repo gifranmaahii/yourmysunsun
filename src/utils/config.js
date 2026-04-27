@@ -26,6 +26,8 @@ let _cfg = {
     prefix:            '.',
     helpRestricted:   true, // true = .help hanya untuk admin/owner
     admins:            [],   // array campuran: nomor HP (628xx) dan/atau @lid
+    menuImage:         '',   // URL atau path gambar untuk menu
+    useMenuImage:      false, // true = menu pakai gambar, false = teks saja
 };
 
 // ── Persist ke file ───────────────────────────────────────────────────────────

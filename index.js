@@ -1030,6 +1030,8 @@ async function startBot() {
                                 `┏━『 *MAINTENANCE* 』\n` +
                                 `┃\n` +
                                 `┣⌬ ${PREFIX}owner public\n` +
+                                `┣⌬ ${PREFIX}owner setmenuimg [url]\n` +
+                                `┣⌬ ${PREFIX}owner usemenuimg [on/off]\n` +
                                 `┣⌬ ${PREFIX}owner clearsession\n` +
                                 `┣⌬ ${PREFIX}owner lid [nomor_hp]\n` +
                                 `┗━━━━━━━◧\n\n` +
@@ -1037,6 +1039,8 @@ async function startBot() {
                                 `• Nama bot: *${cur.botName}*\n` +
                                 `• Sticker pack: *${cur.stickerPackName}*\n` +
                                 `• Sticker author: *${cur.stickerPackAuthor}*\n` +
+                                `• Menu gambar: *${cur.useMenuImage ? '✅ Aktif' : '❌ Mati'}*\n` +
+                                `• URL Menu: ${cur.menuImage ? cur.menuImage.substring(0, 30) + '...' : '-(belum ada)-'}\n` +
                                 `• Jumlah admin: *${cur.admins.length} orang*\n` +
                                 `• Owner: *${cur.ownerNumber}*\n` +
                                 `• Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner saja' : '🌐 Semua orang (publik)'}*\n` +
@@ -1202,6 +1206,30 @@ async function startBot() {
                         await sock.sendMessage(remoteJid, {
                             text: `${statusEmoji} *Akses .help diubah!*\n\nStatus: *${statusText}*\n\n💡 Ketik \`${PREFIX}owner public\` lagi untuk toggle.`
                         }, { quoted: msg });
+                        continue;
+                    }
+                    
+                    // --- .owner setmenuimg [url] ---
+                    if (ownerCmd === 'setmenuimg') {
+                        if (!ownerVal) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setmenuimg https://link.gambar.jpg*` }, { quoted: msg });
+                        } else {
+                            cfg.update('menuImage', ownerVal);
+                            await sock.sendMessage(remoteJid, { text: `✅ Gambar menu berhasil diatur ke:\n${ownerVal}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner usemenuimg [on/off] ---
+                    if (ownerCmd === 'usemenuimg') {
+                        const val = ownerVal.toLowerCase();
+                        if (val === 'on' || val === 'off') {
+                            const newVal = (val === 'on');
+                            cfg.update('useMenuImage', newVal);
+                            await sock.sendMessage(remoteJid, { text: `✅ Menu gambar di-${newVal ? 'Aktifkan' : 'Matikan'}.` }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner usemenuimg on/off*` }, { quoted: msg });
+                        }
                         continue;
                     }
 
@@ -3324,7 +3352,17 @@ async function startBot() {
  • Bot 24/7 dengan session tersimpan
  • Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
 
-                    await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
+                    const { useMenuImage, menuImage } = cfg.getConfig();
+                    
+                    if (useMenuImage && menuImage) {
+                        await sock.sendMessage(remoteJid, {
+                            image: { url: menuImage },
+                            caption: helpText,
+                            mentions: [msg.key.participant || msg.key.remoteJid]
+                        }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
+                    }
                 }
 
             } catch (err) {
