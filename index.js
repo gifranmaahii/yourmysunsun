@@ -26,6 +26,7 @@ const { createLottieSticker, getTemplateList } = require('./src/features/lottieS
 const { enhanceImageHD, enhanceVideoHD } = require('./src/features/hdEnhancer');
 const scheduler = require('./src/features/scheduler');
 const games = require('./src/features/games');
+const groupFeatures = require('./src/features/group');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -528,6 +529,13 @@ async function startBot() {
             }
         }
     });
+    
+    // ============================================================
+    // EVENT: Update peserta grup (Welcome/Left)
+    // ============================================================
+    sock.ev.on('group-participants.update', async (update) => {
+        await groupFeatures.handleGroupParticipantsUpdate(sock, update);
+    });
 
     // ============================================================
     // EVENT: Pesan masuk
@@ -559,8 +567,9 @@ async function startBot() {
                 }
 
                 const remoteJid = msg.key.remoteJid;
+                const fromMe = msg.key.fromMe;
 
-                // ── UNWRAP MESSAGE ──────────────────────────────────────────
+                // --- UNWRAP MESSAGE ---──────────────────────────────────────────
                 // Android WhatsApp sering membungkus pesan dalam layer tambahan:
                 //   ephemeralMessage (disappearing messages)
                 //   viewOnceMessage / viewOnceMessageV2
@@ -662,6 +671,14 @@ async function startBot() {
                 // ── Gunakan config dinamis (bisa diubah via .owner) ──────────────
                 const activeCfg = cfg.getConfig();
                 const ACTIVE_NAME = activeCfg.botName || BOT_NAME;
+
+                // --- FITUR MODERASI GRUP ---
+                await groupFeatures.handleGroupModeration(sock, msg, textContent, remoteJid, fromMe);
+
+                // --- FITUR COMMAND GRUP ---
+                const isOwner = cfg.isOwner(msg.key.participant || msg.key.remoteJid);
+                const groupCmdHandled = await groupFeatures.handleGroupCommand(sock, msg, textContent, remoteJid, isOwner);
+                if (groupCmdHandled) continue;
 
                 // ── Cek apakah ada game aktif (jawaban) ──
                 if (textContent) {
@@ -3282,10 +3299,20 @@ async function startBot() {
 ┣⌬ ${PREFIX}cekjid
 ┗━━━━━━━◧
 
-┏━『 *GRUP* 』
+┏━『 *GRUP (ADMIN)* 』
 ┃
-┣⌬ ${PREFIX}tagall
-┣⌬ ${PREFIX}hidetag
+┣⌬ ${PREFIX}kick / .add
+┣⌬ ${PREFIX}promote / .demote
+┣⌬ ${PREFIX}setnamegc / .setdescgc
+┣⌬ ${PREFIX}setopen / .setclose
+┣⌬ ${PREFIX}hidetag / .tagall
+┣⌬ ${PREFIX}linkgc / .revokelink
+┣⌬ ${PREFIX}groupinfo / .leavegc
+┣⌬ ${PREFIX}welcome / .setwelcome
+┣⌬ ${PREFIX}left / .setleft
+┣⌬ ${PREFIX}antilink (kick/nokick)
+┣⌬ ${PREFIX}antibadword (kick/nokick)
+┣⌬ ${PREFIX}addbadword / .listbadword
 ┗━━━━━━━◧
 
 ┏━『 *GAMES* 』
