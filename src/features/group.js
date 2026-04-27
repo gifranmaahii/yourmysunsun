@@ -50,13 +50,35 @@ function saveGroupSettings(jid, settings) {
 }
 
 const getMentionedOrQuoted = (msg, args) => {
-    const messageType = Object.keys(msg.message)[0];
-    const mentioned = msg.message[messageType]?.contextInfo?.mentionedJid || [];
+    // Unwrapping logic (sama dengan index.js)
+    let message = msg.message;
+    if (message?.ephemeralMessage) message = message.ephemeralMessage.message;
+    if (message?.viewOnceMessage) message = message.viewOnceMessage.message;
+    if (message?.viewOnceMessageV2) message = message.viewOnceMessageV2.message;
+    if (message?.documentWithCaptionMessage) message = message.documentWithCaptionMessage.message;
+    if (message?.editedMessage?.message?.protocolMessage?.editedMessage) message = message.editedMessage.message.protocolMessage.editedMessage;
+
+    if (!message) return [];
+
+    const content = message.extendedTextMessage || message.imageMessage || message.videoMessage || message.stickerMessage || message.documentMessage || message;
+    const contextInfo = content?.contextInfo;
+
+    // 1. Dari Mentions (@)
+    const mentioned = contextInfo?.mentionedJid || [];
     if (mentioned.length > 0) return mentioned;
-    const quoted = msg.message[messageType]?.contextInfo?.participant;
+
+    // 2. Dari Quoted Message (Reply)
+    const quoted = contextInfo?.participant;
     if (quoted) return [quoted];
-    const textNum = args[1] ? args[1].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : null;
-    if (textNum && textNum !== '@s.whatsapp.net') return [textNum];
+
+    // 3. Dari Argumen Teks (Nomor HP)
+    let textNum = args[1] ? args[1].replace(/[^0-9]/g, '') : null;
+    if (textNum && textNum.length >= 9) {
+        // Normalisasi 08xx -> 628xx
+        if (textNum.startsWith('0')) textNum = '62' + textNum.slice(1);
+        return [textNum + '@s.whatsapp.net'];
+    }
+
     return [];
 };
 
@@ -225,14 +247,53 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         if (command === prefix + 'kick') {
             const users = getMentionedOrQuoted(msg, args);
             if (!users.length) return await sock.sendMessage(remoteJid, { text: '❌ Tag/reply/masukkan nomor.' });
-            await sock.groupParticipantsUpdate(remoteJid, users, "remove");
-            await sock.sendMessage(remoteJid, { text: `✅ Berhasil kick target.` });
+            
+            const response = await sock.groupParticipantsUpdate(remoteJid, users, "remove");
+            
+            // Cek status per user
+            let success = [];
+            let failed = [];
+            for (let res of response) {
+                if (res.status === '200') success.push(res.jid);
+                else failed.push(res.jid);
+            }
+            
+            if (success.length > 0) {
+                await sock.sendMessage(remoteJid, { text: `✅ Berhasil mengeluarkan ${success.length} member.` });
+            } else {
+                await sock.sendMessage(remoteJid, { text: `❌ Gagal mengeluarkan member. Status: ${response[0]?.status || 'unknown'}` });
+            }
         }
         else if (command === prefix + 'add') {
             const users = getMentionedOrQuoted(msg, args);
             if (!users.length) return await sock.sendMessage(remoteJid, { text: '❌ Masukkan nomor target.' });
-            await sock.groupParticipantsUpdate(remoteJid, users, "add");
-            await sock.sendMessage(remoteJid, { text: `✅ Berhasil mengundang target.` });
+            
+            const response = await sock.groupParticipantsUpdate(remoteJid, users, "add");
+            
+            let success = [];
+            let failed = [];
+            for (let res of response) {
+                if (res.status === '200') success.push(res.jid);
+                else failed.push({ jid: res.jid, status: res.status });
+            }
+
+            if (success.length > 0) {
+                await sock.sendMessage(remoteJid, { text: `✅ Berhasil menambahkan ${success.length} member.` });
+            }
+            
+            if (failed.length > 0) {
+                for (let f of failed) {
+                    if (f.status === '403') {
+                        await sock.sendMessage(remoteJid, { text: `⚠️ Gagal menambahkan @${f.jid.split('@')[0]} karena privasi (403).\nSilakan kirim link grup manual saja.`, mentions: [f.jid] });
+                    } else if (f.status === '408') {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal menambahkan @${f.jid.split('@')[0]}: Member baru saja keluar grup (408).`, mentions: [f.jid] });
+                    } else if (f.status === '409') {
+                        await sock.sendMessage(remoteJid, { text: `⚠️ @${f.jid.split('@')[0]} sudah ada di dalam grup ini.`, mentions: [f.jid] });
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal menambahkan @${f.jid.split('@')[0]}. Status: ${f.status}`, mentions: [f.jid] });
+                    }
+                }
+            }
         }
         else if (command === prefix + 'promote') {
             const users = getMentionedOrQuoted(msg, args);
