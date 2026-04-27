@@ -25,6 +25,7 @@ const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter
 const { createLottieSticker, getTemplateList } = require('./src/features/lottieSticker');
 const { enhanceImageHD, enhanceVideoHD } = require('./src/features/hdEnhancer');
 const scheduler = require('./src/features/scheduler');
+const games = require('./src/features/games');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -662,6 +663,12 @@ async function startBot() {
                 const activeCfg = cfg.getConfig();
                 const ACTIVE_NAME = activeCfg.botName || BOT_NAME;
 
+                // ── Cek apakah ada game aktif (jawaban) ──
+                if (textContent) {
+                    const isGameAnswered = await games.handleGameAnswer(sock, remoteJid, msg, textContent);
+                    if (isGameAnswered) continue;
+                }
+
                 // ── Spesial: .myid bisa dipakai SIAPA SAJA (termasuk non-admin) ──
                 // Berguna agar calon admin tahu @lid mereka untuk daftarkan ke owner
                 if (textContent.trim() === PREFIX + 'myid') {
@@ -983,44 +990,41 @@ async function startBot() {
                         const cur = cfg.getConfig();
                         await sock.sendMessage(remoteJid, {
                             text:
-                                `⚙️ *Owner Settings Panel*
-
-📛 *Bot & Sticker*
-  \`${PREFIX}owner setname [nama]\` → ubah nama bot
-  \`${PREFIX}owner setsticker [nama]\` → ubah nama sticker pack
-  \`${PREFIX}owner setauthor [nama]\` → ubah author sticker
-
-👥 *Admin*
-  \`${PREFIX}owner addadmin [nomor]\` → tambah admin
-  \`${PREFIX}owner deladmin [nomor]\` → hapus admin
-  \`${PREFIX}owner delalladmin\` → 🗑️ hapus SEMUA admin sekaligus
-  \`${PREFIX}owner listadmin\` → daftar admin
-
-🔒 *Akses Fitur*
-  \`${PREFIX}owner public\` → toggle akses .help (publik/admin only)
-  
-🧹 *Maintenance*
-  \`${PREFIX}owner clearsession\` → hapus session error/corrupt (bot otomatis restart)
-
-⏰ *Jadwal Kirim*
-  \`${PREFIX}jadwal 18:00\` → jadwal kirim sekali
-  \`${PREFIX}jadwal 18:00 harian\` → kirim setiap hari
-  \`${PREFIX}jadwal 18:00 senin\` → kirim tiap Senin
-  \`${PREFIX}jadwal list\` → lihat semua jadwal
-  \`${PREFIX}jadwal hapus [id]\` → hapus jadwal
-
-🔍 *Utilitas*
-  \`${PREFIX}owner lid [nomor_hp]\` → cari @lid dari nomor HP
-
-📊 *Settingan Saat Ini:*
-  • Nama bot: *${cur.botName}*
-  • Sticker pack: *${cur.stickerPackName}*
-  • Sticker author: *${cur.stickerPackAuthor}*
-  • Jumlah admin: *${cur.admins.length} orang*
-  • Owner: *${cur.ownerNumber}*
-  • Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner saja' : '🌐 Semua orang (publik)'}*
-  • Jadwal aktif: *${scheduler.getSchedules().length} jadwal*
-  • Reconnect attempts: *${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}*`
+                                `⚙️ *Owner Settings Panel*\n\n` +
+                                `┏━『 *BOT & STICKER* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}owner setname [nama]\n` +
+                                `┣⌬ ${PREFIX}owner setsticker [nama]\n` +
+                                `┣⌬ ${PREFIX}owner setauthor [nama]\n` +
+                                `┗━━━━━━━◧\n\n` +
+                                `┏━『 *ADMIN* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}owner addadmin [nomor]\n` +
+                                `┣⌬ ${PREFIX}owner deladmin [nomor]\n` +
+                                `┣⌬ ${PREFIX}owner delalladmin\n` +
+                                `┣⌬ ${PREFIX}owner listadmin\n` +
+                                `┗━━━━━━━◧\n\n` +
+                                `┏━『 *JADWAL KIRIM* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}jadwal [jam]\n` +
+                                `┣⌬ ${PREFIX}jadwal list\n` +
+                                `┣⌬ ${PREFIX}jadwal hapus [id]\n` +
+                                `┗━━━━━━━◧\n\n` +
+                                `┏━『 *MAINTENANCE* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}owner public\n` +
+                                `┣⌬ ${PREFIX}owner clearsession\n` +
+                                `┣⌬ ${PREFIX}owner lid [nomor_hp]\n` +
+                                `┗━━━━━━━◧\n\n` +
+                                `📊 *Settingan Saat Ini:*\n` +
+                                `• Nama bot: *${cur.botName}*\n` +
+                                `• Sticker pack: *${cur.stickerPackName}*\n` +
+                                `• Sticker author: *${cur.stickerPackAuthor}*\n` +
+                                `• Jumlah admin: *${cur.admins.length} orang*\n` +
+                                `• Owner: *${cur.ownerNumber}*\n` +
+                                `• Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner saja' : '🌐 Semua orang (publik)'}*\n` +
+                                `• Jadwal aktif: *${scheduler.getSchedules().length} jadwal*\n` +
+                                `• Reconnect attempts: *${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}*`
                         }, { quoted: msg });
                         continue;
                     }
@@ -1751,7 +1755,11 @@ async function startBot() {
                 // Perintah: .sticker [teks opsional]
                 // -----------------------------------------------
 
-                if (textContent.startsWith(PREFIX + 'sticker') || textContent.startsWith(PREFIX + 's')) {
+                if (
+                    textContent.startsWith(PREFIX + 'sticker') || 
+                    textContent === PREFIX + 's' || 
+                    textContent.startsWith(PREFIX + 's ')
+                ) {
                     // Ambil teks opsional setelah command
                     const cmdParts = textContent.split(' ');
                     const stickerText = cmdParts.slice(1).join(' ').trim();
@@ -2269,7 +2277,7 @@ async function startBot() {
                 // -----------------------------------------------
                 // FITUR: TIKTOK TO AUDIO — .ttaudio [link]
                 // -----------------------------------------------
-                if (textContent.startsWith(PREFIX + 'ttaudio') || textContent.startsWith(PREFIX + 'tt')) {
+                if (textContent.startsWith(PREFIX + 'ttaudio') || textContent.startsWith(PREFIX + 'ttmp3') || textContent.startsWith(PREFIX + 'tt')) {
                     const args = textContent.trim().split(/\s+/);
                     const url = args[1];
 
@@ -2365,6 +2373,24 @@ async function startBot() {
                     continue;
                 }
 
+                if (textContent.startsWith(PREFIX + 'tiktoksearch')) {
+                    const q = textContent.replace(/^\.tiktoksearch\s*/i, '').trim();
+                    if (!q) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}tiktoksearch <keyword>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Mencari di TikTok...' }, { quoted: msg });
+                    try {
+                        const dl = require('./src/features/downloader');
+                        const res = await dl.tiktokSearch(q);
+                        const list = res.slice(0, 5).map((r, i) => `*${i+1}.* ${r.title || 'Video'}\n🔗 ${r.url || r.link}`).join('\n\n');
+                        await sock.sendMessage(remoteJid, { text: `📱 *Hasil Pencarian TikTok:*\n\n${list}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
                 // -----------------------------------------------
                 // FITUR: INSTAGRAM DOWNLOADER
                 // Perintah: .ig <url> atau .instagram <url>
@@ -2412,6 +2438,221 @@ async function startBot() {
                         logger.info(`✅ Instagram media dikirim ke ${remoteJid}`);
                     } catch (error) {
                         await sock.sendMessage(remoteJid, { text: `${error.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: DOWNLOADER (YTMP3, YTMP4, SPOTIFY, FB)
+                // -----------------------------------------------
+                const dl = require('./src/features/downloader');
+                
+                if (textContent.startsWith(PREFIX + 'ytmp3') || textContent.startsWith(PREFIX + 'play')) {
+                    const query = textContent.replace(/^\.(ytmp3|play)\s*/i, '').trim();
+                    if (!query) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ytmp3 <link/judul>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses audio...' }, { quoted: msg });
+                    try {
+                        const res = await dl.ytmp3(query);
+                        await sock.sendMessage(remoteJid, {
+                            audio: { url: res.url },
+                            mimetype: 'audio/mp4',
+                            ptt: false
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'ytmp4')) {
+                    const url = textContent.replace(/^\.ytmp4\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ytmp4 <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses video...' }, { quoted: msg });
+                    try {
+                        const res = await dl.ytmp4(url);
+                        await sock.sendMessage(remoteJid, {
+                            video: { url: res.url },
+                            caption: `🎥 *${res.title}*`
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'spotify ') || textContent.startsWith(PREFIX + 'spotify\n') || textContent.trim() === PREFIX + 'spotify') {
+                    const url = textContent.replace(/^\.spotify\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}spotify <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mendownload dari Spotify...' }, { quoted: msg });
+                    try {
+                        const res = await dl.spotifyDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            audio: { url: res.url },
+                            mimetype: 'audio/mp4',
+                            ptt: false
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'spotifysearch')) {
+                    const q = textContent.replace(/^\.spotifysearch\s*/i, '').trim();
+                    if (!q) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}spotifysearch <judul>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Mencari...' }, { quoted: msg });
+                    try {
+                        const res = await dl.spotifySearch(q);
+                        const list = res.slice(0, 5).map((r, i) => `*${i+1}.* ${r.title}\n🔗 ${r.url}`).join('\n\n');
+                        await sock.sendMessage(remoteJid, { text: `🎵 *Hasil Pencarian Spotify:*\n\n${list}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'facebook') || textContent.startsWith(PREFIX + 'fb')) {
+                    const url = textContent.replace(/^\.(facebook|fb)\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}facebook <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mendownload video FB...' }, { quoted: msg });
+                    try {
+                        const res = await dl.facebookDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            video: { url: res.url },
+                            caption: `🎥 *${res.title}*`
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'twitter') || textContent.startsWith(PREFIX + 'x')) {
+                    const url = textContent.replace(/^\.(twitter|x)\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}twitter <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses Twitter/X...' }, { quoted: msg });
+                    try {
+                        const res = await dl.twitterDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            video: { url: res.url },
+                            caption: `🐦 *Twitter/X Video*`
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'thread')) {
+                    const url = textContent.replace(/^\.thread\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}thread <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses Threads...' }, { quoted: msg });
+                    try {
+                        const res = await dl.threadsDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            video: { url: res.url },
+                            caption: `🧵 *Threads Media*`
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'douyin')) {
+                    const url = textContent.replace(/^\.douyin\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}douyin <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses Douyin...' }, { quoted: msg });
+                    try {
+                        const res = await dl.douyinDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            video: { url: res.url },
+                            caption: `🏮 *Douyin Video*`
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'cocofun')) {
+                    const url = textContent.replace(/^\.cocofun\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}cocofun <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses Cocofun...' }, { quoted: msg });
+                    try {
+                        const res = await dl.cocofunDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            video: { url: res.url },
+                            caption: `🤣 *Cocofun Video*`
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'likee')) {
+                    const url = textContent.replace(/^\.likee\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}likee <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses Likee...' }, { quoted: msg });
+                    try {
+                        const res = await dl.likeeDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            video: { url: res.url },
+                            caption: `✨ *Likee Video*`
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'gdrive') || textContent.startsWith(PREFIX + 'grive')) {
+                    const url = textContent.replace(/^\.(gdrive|grive)\s*/i, '').trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}gdrive <link>*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses Google Drive...' }, { quoted: msg });
+                    try {
+                        const res = await dl.gdriveDl(url);
+                        await sock.sendMessage(remoteJid, {
+                            document: { url: res.url },
+                            fileName: res.title || 'gdrive_file',
+                            mimetype: 'application/octet-stream'
+                        }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
                     }
                     continue;
                 }
@@ -2903,6 +3144,80 @@ async function startBot() {
                     }
                     continue;
                 }
+                // -----------------------------------------------
+                // FITUR: GAME TEBAK-TEBAKAN
+                // -----------------------------------------------
+                const gameCmds = ['tebaktebakan', 'tebakkata', 'tebakbendera', 'tebakkimia', 'tebaklirik', 'tebakgambar'];
+                const triggeredGame = gameCmds.find(cmd => textContent.trim() === PREFIX + cmd);
+                if (triggeredGame) {
+                    await games.startGame(sock, remoteJid, msg, triggeredGame);
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: TAGALL & HIDETAG (KHUSUS GRUP & ADMIN)
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'tagall') || textContent.startsWith(PREFIX + 'hidetag')) {
+                    const isGroup = remoteJid.endsWith('@g.us');
+                    
+                    if (!isGroup) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Perintah ini hanya bisa digunakan di dalam grup!' }, { quoted: msg });
+                        continue;
+                    }
+                    
+                    let groupMetadata;
+                    try {
+                        groupMetadata = await sock.groupMetadata(remoteJid);
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal mengambil data grup.' }, { quoted: msg });
+                        continue;
+                    }
+
+                    const participants = groupMetadata.participants;
+                    
+                    // Cek apakah sender adalah admin grup (atau owner bot)
+                    const senderObj = participants.find(p => p.id === senderJid);
+                    const isGroupAdmin = senderObj?.admin === 'admin' || senderObj?.admin === 'superadmin';
+                    
+                    if (!isGroupAdmin && !senderIsOwner && !senderIsAdmin) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Hanya admin grup yang bisa menggunakan perintah ini!' }, { quoted: msg });
+                        continue;
+                    }
+
+                    const isHidetag = textContent.startsWith(PREFIX + 'hidetag');
+                    const args = textContent.split(' ');
+                    
+                    let messageText = args.slice(1).join(' ').trim();
+                    const quotedCtx = message.extendedTextMessage?.contextInfo;
+                    const quotedMsg = quotedCtx?.quotedMessage;
+                    
+                    if (!messageText && quotedMsg?.conversation) {
+                        messageText = quotedMsg.conversation;
+                    } else if (!messageText && quotedMsg?.extendedTextMessage?.text) {
+                        messageText = quotedMsg.extendedTextMessage.text;
+                    }
+                    
+                    const mentions = participants.map(p => p.id);
+                    
+                    let textInfo = '';
+                    
+                    if (isHidetag) {
+                        // Jika tidak ada teks tambahan, gunakan karakter kosong (invisible)
+                        textInfo = messageText || '\u200B';
+                    } else {
+                        textInfo = messageText ? `📢 *PENGUMUMAN*\n\n📝 ${messageText}\n\n` : `📢 *TAG ALL*\n\n`;
+                        textInfo += `👥 *Daftar Member (${participants.length}):*\n`;
+                        for (let i = 0; i < participants.length; i++) {
+                            textInfo += `  ${i + 1}. @${participants[i].id.split('@')[0]}\n`;
+                        }
+                    }
+                    
+                    await sock.sendMessage(remoteJid, {
+                        text: textInfo,
+                        mentions: mentions
+                    });
+                    continue;
+                }
 
                 // -----------------------------------------------
                 // BANTUAN: .help atau .menu
@@ -2918,71 +3233,81 @@ async function startBot() {
                     const helpText =
                         `🤖 *${BOT_NAME}* — Daftar Perintah
 
-━━━━━━━━━━━━━━━━━━━
-📌 *STICKER*
-━━━━━━━━━━━━━━━━━━━
-Kirim/quote foto atau video + ketik:
-  \`${PREFIX}sticker\` → sticker biasa / animasi
-  \`${PREFIX}sticker teksmu\` → sticker + teks
-  \`${PREFIX}toimg\` / \`${PREFIX}tovid\` → ubah sticker ke foto/video (reply sticker)
+┏━『 *STICKER & LOTTIE* 』
+┃
+┣⌬ ${PREFIX}sticker
+┣⌬ ${PREFIX}toimg
+┣⌬ ${PREFIX}tovid
+┣⌬ ${PREFIX}lottie
+┗━━━━━━━◧
 
-━━━━━━━━━━━━━━━━━━━
-✨ *LOTTIE STICKER (GEDE & GERAK)*
-━━━━━━━━━━━━━━━━━━━
-Kirim/reply foto + ketik:
-  \`${PREFIX}lottie\` → sticker gede efek expand (default)
-  \`${PREFIX}lottie expand\` → 💥 muncul membesar (meledak)
-  \`${PREFIX}lottie spin\` → 🔄 berputar terus
+┏━『 *EDIT & AI* 』
+┃
+┣⌬ ${PREFIX}rmbg
+┣⌬ ${PREFIX}rmbgv
+┣⌬ ${PREFIX}rmbgstatus
+┣⌬ ${PREFIX}rmbgreset
+┣⌬ ${PREFIX}teks
+┣⌬ ${PREFIX}quote
+┣⌬ ${PREFIX}brat
+┣⌬ ${PREFIX}hd
+┗━━━━━━━◧
 
-━━━━━━━━━━━━━━━━━━━
-✂️ *REMOVE BACKGROUND*
-━━━━━━━━━━━━━━━━━━━
-🖼️ *Gambar → Sticker transparan (AI):*
-  \`${PREFIX}rmbg\` → hapus bg (tanpa teks)
-  \`${PREFIX}rmbg Kata-kata\` → hapus bg + teks di sticker
-  \`${PREFIX}rmbgstatus\` → cek status/sisa kredit API
-  \`${PREFIX}rmbgreset\` → reset status API key
+┏━『 *DOWNLOADER & SEARCH* 』
+┃
+┣⌬ ${PREFIX}tiktok
+┣⌬ ${PREFIX}ttaudio
+┣⌬ ${PREFIX}tiktoksearch
+┣⌬ ${PREFIX}douyin
+┣⌬ ${PREFIX}ig / .instagram
+┣⌬ ${PREFIX}facebook
+┣⌬ ${PREFIX}thread
+┣⌬ ${PREFIX}x / .twitter
+┣⌬ ${PREFIX}cocofun
+┣⌬ ${PREFIX}likee
+┣⌬ ${PREFIX}play (YouTube Audio)
+┣⌬ ${PREFIX}ytmp3
+┣⌬ ${PREFIX}ytmp4
+┣⌬ ${PREFIX}spotify
+┣⌬ ${PREFIX}spotifysearch
+┣⌬ ${PREFIX}gdrive
+┣⌬ ${PREFIX}dropbox
+┣⌬ ${PREFIX}mediafire
+┣⌬ ${PREFIX}github
+┗━━━━━━━◧
 
-🎬 *Video → Animated sticker (AI):*
-  \`${PREFIX}rmbgv\` → hapus bg otomatis dengan AI
-  \`${PREFIX}rmbgv ffffff\` → chromakey bg putih solid
-  \`${PREFIX}rmbgv 00ff00\` → chromakey green screen
+┏━『 *SALURAN / CHANNEL* 』
+┃
+┣⌬ ${PREFIX}kirim
+┣⌬ ${PREFIX}cekjid
+┗━━━━━━━◧
 
-━━━━━━━━━━━━━━━━━━━
-🖊️ *TEKS → GAMBAR / STICKER*
-━━━━━━━━━━━━━━━━━━━
-  \`${PREFIX}teks tulisanmu\` → gambar quote card (justified)
-  \`${PREFIX}quote tulisanmu\` → sama dengan .teks
-  \`${PREFIX}brat tulisanmu\` → sticker gaya (putih, Arial Narrow, lowercase)
+┏━『 *GRUP* 』
+┃
+┣⌬ ${PREFIX}tagall
+┣⌬ ${PREFIX}hidetag
+┗━━━━━━━◧
 
-━━━━━━━━━━━━━━━━━━━
-📸 *HD ENHANCER*
-━━━━━━━━━━━━━━━━━━━
-Kirim/reply foto atau video + ketik:
-  \`${PREFIX}hd\` → tingkatkan kualitas jadi HD
-  ✨ Foto: upscale + sharpen + denoise
-  🎬 Video: upscale + sharpen + denoise (maks 60 dtk)
+┏━『 *GAMES* 』
+┃
+┣⌬ ${PREFIX}tebakgambar
+┣⌬ ${PREFIX}tebaktebakan
+┣⌬ ${PREFIX}tebakkata
+┣⌬ ${PREFIX}tebakbendera
+┣⌬ ${PREFIX}tebakkimia
+┣⌬ ${PREFIX}tebaklirik
+┗━━━━━━━◧
 
-━━━━━━━━━━━━━━━━━━━
-🎬 *VIDEO DOWNLOADER*
-━━━━━━━━━━━━━━━━━━━
-  \`${PREFIX}tiktok <link>\` → download video tanpa watermark
-  \`${PREFIX}ttaudio <link>\` → ekstrak audio/musik
-  \`${PREFIX}ig <link>\` → download foto/video/reels Instagram
+┏━『 *INFO & LAINNYA* 』
+┃
+┣⌬ ${PREFIX}myid
+┣⌬ ${PREFIX}help
+┣⌬ ${PREFIX}menu
+┗━━━━━━━◧
 
-━━━━━━━━━━━━━━━━━━━
-📡 *SALURAN / CHANNEL*
-━━━━━━━━━━━━━━━━━━━
-  \`${PREFIX}kirim\` → reply voice note/stiker → kirim ke channel
-  \`${PREFIX}kirim 628xxx@newsletter\` → kirim ke channel lain
-  \`${PREFIX}cekjid\` → cek JID saluran (forward postingan dulu)
-
-━━━━━━━━━━━━━━━━━━━
-ℹ️ *INFO*
-━━━━━━━━━━━━━━━━━━━
-  • Bot 24/7 dengan session tersimpan
-  • Prefix: *${PREFIX}*
-  • Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
+*Info Tambahan:*
+• Bot 24/7 dengan session tersimpan
+• Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
 
                     await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
                 }

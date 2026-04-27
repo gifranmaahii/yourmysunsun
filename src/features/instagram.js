@@ -148,19 +148,7 @@ async function getInstagramMedia(url) {
     // ============================================================
     console.error(`[IG Downloader] Semua layer gagal ditembus:\n`, errors.join('\n'));
     
-    if (!betabotzKey && !pitucodeKey) {
-        throw new Error(
-            '🚫 Semua server Scraper Publik sedang terblokir Instagram (Anti-Bot).\n\n' +
-            '💡 *SOLUSI DARURAT:* Aktifkan Jalur VVIP!\n' +
-            '1. Daftar di web: https://pitucode.com atau https://api.betabotz.eu.org\n' +
-            '2. Copy API Key Anda.\n' +
-            '3. Buka file `.env` dan tambahkan:\n\n' +
-            '`PITUCODE_API_KEY=kunci_api_anda_di_sini`\n\n' +
-            'Setelah dimasukkan, restart bot dan fitur Instagram akan berjalan lancar lagi!'
-        );
-    } else {
-        throw new Error(`🚫 Gagal mengambil Instagram, semua server down termasuk API Pitucode & BetaBotz. Cek limit harian API Key Anda.`);
-    }
+    throw new Error('🚫 API Key Error: IP belum ke waitlist atau API Key belum terpasang.');
 }
 
 module.exports = {
