@@ -3191,13 +3191,15 @@ async function startBot() {
                     }
 
                     const participants = groupMetadata.participants;
+                    const sender = msg.key.participant || msg.key.remoteJid;
+                    const cleanSender = sender.replace(/:[0-9]+/, '');
                     
                     // Cek apakah sender adalah admin grup (atau owner bot)
-                    const senderObj = participants.find(p => p.id === senderJid);
+                    const senderObj = participants.find(p => p.id.replace(/:[0-9]+/, '') === cleanSender);
                     const isGroupAdmin = senderObj?.admin === 'admin' || senderObj?.admin === 'superadmin';
                     
-                    if (!isGroupAdmin && !senderIsOwner && !senderIsAdmin) {
-                        await sock.sendMessage(remoteJid, { text: '❌ Hanya admin grup yang bisa menggunakan perintah ini!' }, { quoted: msg });
+                    if (!isGroupAdmin && !isOwner) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Hanya admin grup atau owner bot yang bisa menggunakan perintah ini!' }, { quoted: msg });
                         continue;
                     }
 

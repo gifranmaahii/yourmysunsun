@@ -78,8 +78,10 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
     let isAdmin = false;
     try {
         const metadata = await sock.groupMetadata(remoteJid);
-        const p = metadata.participants.find(x => x.id === sender);
-        isAdmin = p ? p.admin : false;
+        const clean = require('../utils/config').cleanNumber;
+        const cleanSender = clean(sender);
+        const p = metadata.participants.find(x => clean(x.id) === cleanSender);
+        isAdmin = p ? (p.admin === 'admin' || p.admin === 'superadmin') : false;
     } catch (e) { }
 
     if (!isAdmin) {
@@ -185,11 +187,25 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
     
     try {
         const metadata = await sock.groupMetadata(remoteJid);
-        const p = metadata.participants.find(x => x.id === sender);
-        isAdmin = p ? !!p.admin : false;
-        const myJid = sock.user.id.replace(/:[0-9]+/, '');
-        const myLid = sock.user.lid ? sock.user.lid.replace(/:[0-9]+/, '') : null;
-        const botP = metadata.participants.find(x => x.id === myJid || (myLid && x.id === myLid));
+        const participants = metadata.participants;
+        
+        // --- NORMALISASI JID ---
+        const clean = (jid) => require('../utils/config').cleanNumber(jid);
+        const cleanSender = clean(msg.key.participant || msg.key.remoteJid);
+        
+        // Cari sender di daftar peserta
+        const p = participants.find(x => clean(x.id) === cleanSender);
+        isAdmin = p ? (p.admin === 'admin' || p.admin === 'superadmin') : false;
+        
+        // --- NORMALISASI BOT ---
+        const myJid = clean(sock.user.id);
+        const myLid = sock.user.lid ? clean(sock.user.lid) : null;
+        
+        const botP = participants.find(x => {
+            const cleanXid = clean(x.id);
+            return cleanXid === myJid || (myLid && cleanXid === myLid);
+        });
+        
         botIsAdmin = botP ? (botP.admin === 'admin' || botP.admin === 'superadmin') : false;
     } catch (e) { }
 
@@ -199,64 +215,64 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         return true;
     }
 
-    const requireBotAdmin = ['.kick', '.add', '.promote', '.demote', '.setnamegc', '.setdescgc', '.setopen', '.setclose', '.linkgc', '.revokelink'];
+    const requireBotAdmin = [prefix + 'kick', prefix + 'add', prefix + 'promote', prefix + 'demote', prefix + 'setnamegc', prefix + 'setdescgc', prefix + 'setopen', prefix + 'setclose', prefix + 'linkgc', prefix + 'revokelink'];
     if (requireBotAdmin.includes(command) && !botIsAdmin) {
         await sock.sendMessage(remoteJid, { text: `❌ Bot harus menjadi Admin untuk menggunakan perintah ini.` }, { quoted: msg });
         return true;
     }
 
     try {
-        if (command === '.kick') {
+        if (command === prefix + 'kick') {
             const users = getMentionedOrQuoted(msg, args);
             if (!users.length) return await sock.sendMessage(remoteJid, { text: '❌ Tag/reply/masukkan nomor.' });
             await sock.groupParticipantsUpdate(remoteJid, users, "remove");
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil kick target.` });
         }
-        else if (command === '.add') {
+        else if (command === prefix + 'add') {
             const users = getMentionedOrQuoted(msg, args);
             if (!users.length) return await sock.sendMessage(remoteJid, { text: '❌ Masukkan nomor target.' });
             await sock.groupParticipantsUpdate(remoteJid, users, "add");
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil mengundang target.` });
         }
-        else if (command === '.promote') {
+        else if (command === prefix + 'promote') {
             const users = getMentionedOrQuoted(msg, args);
             if (!users.length) return await sock.sendMessage(remoteJid, { text: '❌ Tag/reply/masukkan nomor.' });
             await sock.groupParticipantsUpdate(remoteJid, users, "promote");
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil promote menjadi admin.` });
         }
-        else if (command === '.demote') {
+        else if (command === prefix + 'demote') {
             const users = getMentionedOrQuoted(msg, args);
             if (!users.length) return await sock.sendMessage(remoteJid, { text: '❌ Tag/reply/masukkan nomor.' });
             await sock.groupParticipantsUpdate(remoteJid, users, "demote");
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil demote dari admin.` });
         }
-        else if (command === '.setnamegc') {
+        else if (command === prefix + 'setnamegc') {
             const newName = args.slice(1).join(' ');
             if (!newName) return await sock.sendMessage(remoteJid, { text: '❌ Masukkan nama grup baru.' });
             await sock.groupUpdateSubject(remoteJid, newName);
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil mengubah nama grup.` });
         }
-        else if (command === '.setdescgc') {
+        else if (command === prefix + 'setdescgc') {
             const newDesc = args.slice(1).join(' ');
             if (!newDesc) return await sock.sendMessage(remoteJid, { text: '❌ Masukkan deskripsi grup baru.' });
             await sock.groupUpdateDescription(remoteJid, newDesc);
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil mengubah deskripsi grup.` });
         }
-        else if (command === '.setopen') {
+        else if (command === prefix + 'setopen') {
             await sock.groupSettingUpdate(remoteJid, 'not_announcement');
             await sock.sendMessage(remoteJid, { text: `✅ Grup dibuka.` });
         }
-        else if (command === '.setclose') {
+        else if (command === prefix + 'setclose') {
             await sock.groupSettingUpdate(remoteJid, 'announcement');
             await sock.sendMessage(remoteJid, { text: `✅ Grup ditutup.` });
         }
-        else if (command === '.hidetag') {
+        else if (command === prefix + 'hidetag') {
             const textMsg = args.slice(1).join(' ');
             const groupMetadata = await sock.groupMetadata(remoteJid);
             const participants = groupMetadata.participants.map(p => p.id);
             await sock.sendMessage(remoteJid, { text: textMsg || '📢 Perhatian', mentions: participants });
         }
-        else if (command === '.tagall') {
+        else if (command === prefix + 'tagall') {
             const textMsg = args.slice(1).join(' ');
             const groupMetadata = await sock.groupMetadata(remoteJid);
             const participants = groupMetadata.participants;
@@ -264,30 +280,30 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             for (let mem of participants) tek += `• @${mem.id.split('@')[0]}\n`;
             await sock.sendMessage(remoteJid, { text: tek, mentions: participants.map(p => p.id) });
         }
-        else if (command === '.leavegc') {
+        else if (command === prefix + 'leavegc') {
             await sock.sendMessage(remoteJid, { text: `👋 Bot akan keluar.` });
             await sock.groupLeave(remoteJid);
         }
-        else if (command === '.linkgc') {
+        else if (command === prefix + 'linkgc') {
             const code = await sock.groupInviteCode(remoteJid);
             await sock.sendMessage(remoteJid, { text: `🔗 *Link Grup:*\nhttps://chat.whatsapp.com/${code}` });
         }
-        else if (command === '.revokelink') {
+        else if (command === prefix + 'revokelink') {
             await sock.groupRevokeInvite(remoteJid);
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil mereset link invite grup.` });
         }
-        else if (command === '.groupinfo') {
+        else if (command === prefix + 'groupinfo') {
             const groupMetadata = await sock.groupMetadata(remoteJid);
             let textInfo = `*📊 INFO GRUP*\n\n*Nama:* ${groupMetadata.subject}\n*ID:* ${groupMetadata.id}\n*Dibuat:* ${new Date(groupMetadata.creation * 1000).toLocaleString()}\n*Member:* ${groupMetadata.participants.length}\n*Admin:* ${groupMetadata.participants.filter(p => p.admin).length}\n*Deskripsi:*\n${groupMetadata.desc ? groupMetadata.desc.toString() : 'Tidak ada'}`;
             await sock.sendMessage(remoteJid, { text: textInfo });
         }
-        else if (command === '.welcome') {
+        else if (command === prefix + 'welcome') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].welcome = !groupSettings[remoteJid].welcome;
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Welcome di-${groupSettings[remoteJid].welcome ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === '.setwelcome') {
+        else if (command === prefix + 'setwelcome') {
             const teks = args.slice(1).join(' ');
             if (!teks) return await sock.sendMessage(remoteJid, { text: `❌ Masukkan teks.\nContoh: .setwelcome Halo @user!` });
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
@@ -295,13 +311,13 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Teks welcome diset.` });
         }
-        else if (command === '.left') {
+        else if (command === prefix + 'left') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].left = !groupSettings[remoteJid].left;
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Left di-${groupSettings[remoteJid].left ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === '.setleft') {
+        else if (command === prefix + 'setleft') {
             const teks = args.slice(1).join(' ');
             if (!teks) return await sock.sendMessage(remoteJid, { text: `❌ Masukkan teks.\nContoh: .setleft Bye @user!` });
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
@@ -309,35 +325,35 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Teks left diset.` });
         }
-        else if (command === '.antilink') {
+        else if (command === prefix + 'antilink') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].antilink = !groupSettings[remoteJid].antilink;
             if (groupSettings[remoteJid].antilink) groupSettings[remoteJid].antilinknokick = false;
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Anti-Link (Kick) di-${groupSettings[remoteJid].antilink ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === '.antilinknokick') {
+        else if (command === prefix + 'antilinknokick') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].antilinknokick = !groupSettings[remoteJid].antilinknokick;
             if (groupSettings[remoteJid].antilinknokick) groupSettings[remoteJid].antilink = false;
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Anti-Link (No Kick) di-${groupSettings[remoteJid].antilinknokick ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === '.antibadword') {
+        else if (command === prefix + 'antibadword') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].antibadword = !groupSettings[remoteJid].antibadword;
             if (groupSettings[remoteJid].antibadword) groupSettings[remoteJid].antibadwordnokick = false;
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Anti-Badword (Kick) di-${groupSettings[remoteJid].antibadword ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === '.antibadwordnokick') {
+        else if (command === prefix + 'antibadwordnokick') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].antibadwordnokick = !groupSettings[remoteJid].antibadwordnokick;
             if (groupSettings[remoteJid].antibadwordnokick) groupSettings[remoteJid].antibadword = false;
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Anti-Badword (No Kick) di-${groupSettings[remoteJid].antibadwordnokick ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === '.addbadword') {
+        else if (command === prefix + 'addbadword') {
             const word = args[1];
             if (!word) return await sock.sendMessage(remoteJid, { text: `❌ Masukkan kata.` });
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
@@ -350,7 +366,7 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
                 await sock.sendMessage(remoteJid, { text: `⚠️ Sudah ada.` });
             }
         }
-        else if (command === '.delbadword') {
+        else if (command === prefix + 'delbadword') {
             const word = args[1];
             if (!word) return await sock.sendMessage(remoteJid, { text: `❌ Masukkan kata.` });
             if (!groupSettings[remoteJid] || !groupSettings[remoteJid].badwords) return true;
@@ -363,13 +379,13 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
                 await sock.sendMessage(remoteJid, { text: `⚠️ Tidak ditemukan.` });
             }
         }
-        else if (command === '.listbadword') {
+        else if (command === prefix + 'listbadword') {
             if (!groupSettings[remoteJid] || !groupSettings[remoteJid].badwords || !groupSettings[remoteJid].badwords.length) {
                 return await sock.sendMessage(remoteJid, { text: `📝 Kosong.` });
             }
             await sock.sendMessage(remoteJid, { text: `📝 *Badwords:*\n` + groupSettings[remoteJid].badwords.join(', ') });
         }
-        else if (command === '.resetbadword') {
+        else if (command === prefix + 'resetbadword') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].badwords = [];
             saveSettings();
