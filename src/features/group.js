@@ -1,44 +1,37 @@
 const fs = require('fs');
 const path = require('path');
 
-const SETTINGS_FILE = path.join(__dirname, '../../data/groupSettings.json');
+const SETTINGS_PATH = path.join(__dirname, '../../data/group_settings.json');
+const WARN_DATA_PATH = path.join(__dirname, '../../data/warn_data.json');
+const BLACKLIST_PATH = path.join(__dirname, '../../data/blacklist_data.json');
+const SEWA_PATH = path.join(__dirname, '../../data/sewa.json');
 const afkDataPath = path.join(__dirname, '../../data/afkData.json');
 const absenDataPath = path.join(__dirname, '../../data/absenData.json');
 const listDataPath = path.join(__dirname, '../../data/listData.json');
-const warnDataPath = path.join(__dirname, '../../data/warnData.json');
-const blacklistDataPath = path.join(__dirname, '../../data/blacklistData.json');
 
 let groupSettings = {};
-if (fs.existsSync(SETTINGS_FILE)) {
-    try {
-        groupSettings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-    } catch (e) { }
-}
-
-let afkData = {};
-if (fs.existsSync(afkDataPath)) { try { afkData = JSON.parse(fs.readFileSync(afkDataPath, 'utf8')); } catch (e) { } }
-let absenData = {};
-if (fs.existsSync(absenDataPath)) { try { absenData = JSON.parse(fs.readFileSync(absenDataPath, 'utf8')); } catch (e) { } }
-let listData = {};
-if (fs.existsSync(listDataPath)) { try { listData = JSON.parse(fs.readFileSync(listDataPath, 'utf8')); } catch (e) { } }
 let warnData = {};
-if (fs.existsSync(warnDataPath)) { try { warnData = JSON.parse(fs.readFileSync(warnDataPath, 'utf8')); } catch (e) { } }
 let blacklistData = {};
-if (fs.existsSync(blacklistDataPath)) { try { blacklistData = JSON.parse(fs.readFileSync(blacklistDataPath, 'utf8')); } catch (e) { } }
+let sewaData = {};
+let afkData = {};
+let absenData = {};
+let listData = {};
 
-function saveSettings() {
-    try {
-        const dir = path.dirname(SETTINGS_FILE);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(groupSettings, null, 2));
-    } catch (e) { }
-}
+if (fs.existsSync(SETTINGS_PATH)) { try { groupSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')); } catch (e) { } }
+if (fs.existsSync(WARN_DATA_PATH)) { try { warnData = JSON.parse(fs.readFileSync(WARN_DATA_PATH, 'utf8')); } catch (e) { } }
+if (fs.existsSync(BLACKLIST_PATH)) { try { blacklistData = JSON.parse(fs.readFileSync(BLACKLIST_PATH, 'utf8')); } catch (e) { } }
+if (fs.existsSync(SEWA_PATH)) { try { sewaData = JSON.parse(fs.readFileSync(SEWA_PATH, 'utf8')); } catch (e) { } }
+if (fs.existsSync(afkDataPath)) { try { afkData = JSON.parse(fs.readFileSync(afkDataPath, 'utf8')); } catch (e) { } }
+if (fs.existsSync(absenDataPath)) { try { absenData = JSON.parse(fs.readFileSync(absenDataPath, 'utf8')); } catch (e) { } }
+if (fs.existsSync(listDataPath)) { try { listData = JSON.parse(fs.readFileSync(listDataPath, 'utf8')); } catch (e) { } }
 
-function saveAfkData() { fs.writeFileSync(afkDataPath, JSON.stringify(afkData, null, 2)); }
-function saveAbsenData() { fs.writeFileSync(absenDataPath, JSON.stringify(absenData, null, 2)); }
-function saveListData() { fs.writeFileSync(listDataPath, JSON.stringify(listData, null, 2)); }
-function saveWarnData() { fs.writeFileSync(warnDataPath, JSON.stringify(warnData, null, 2)); }
-function saveBlacklistData() { fs.writeFileSync(blacklistDataPath, JSON.stringify(blacklistData, null, 2)); }
+const saveSettings = () => fs.writeFileSync(SETTINGS_PATH, JSON.stringify(groupSettings, null, 2));
+const saveWarnData = () => fs.writeFileSync(WARN_DATA_PATH, JSON.stringify(warnData, null, 2));
+const saveBlacklistData = () => fs.writeFileSync(BLACKLIST_PATH, JSON.stringify(blacklistData, null, 2));
+const saveSewaData = () => fs.writeFileSync(SEWA_PATH, JSON.stringify(sewaData, null, 2));
+const saveAfkData = () => fs.writeFileSync(afkDataPath, JSON.stringify(afkData, null, 2));
+const saveAbsenData = () => fs.writeFileSync(absenDataPath, JSON.stringify(absenData, null, 2));
+const saveListData = () => fs.writeFileSync(listDataPath, JSON.stringify(listData, null, 2));
 
 function getGroupSettings(jid) {
     return groupSettings[jid] || {};
@@ -620,6 +613,7 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             saveBlacklistData();
             await sock.sendMessage(remoteJid, { text: `✅ Berhasil menghapus target dari blacklist.` });
         }
+        }
         else if (command === prefix + 'listblacklist') {
             if (!blacklistData[remoteJid] || !blacklistData[remoteJid].length) {
                 await sock.sendMessage(remoteJid, { text: `📝 Daftar blacklist kosong.` });
@@ -630,6 +624,108 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
                 });
                 await sock.sendMessage(remoteJid, { text, mentions: blacklistData[remoteJid] });
             }
+        }
+        
+        // --- ANTI-BOT ---
+        else if (command === prefix + 'antibot') {
+            if (!isAuthorized) return true;
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            groupSettings[remoteJid].antibot = args[1] === 'on';
+            saveSettings();
+            await sock.sendMessage(remoteJid, { text: `✅ Anti-Bot di-${groupSettings[remoteJid].antibot ? 'Aktifkan' : 'Matikan'}.` });
+        }
+        else if (command === prefix + 'antibot_kick') {
+            if (!isAuthorized) return true;
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            groupSettings[remoteJid].antibot_kick = args[1] === 'on';
+            saveSettings();
+            await sock.sendMessage(remoteJid, { text: `✅ Fitur Auto-Kick Anti-Bot di-${groupSettings[remoteJid].antibot_kick ? 'Aktifkan' : 'Matikan'}.` });
+        }
+        
+        // --- AUTO-MUTE ---
+        else if (command === prefix + 'automute') {
+            if (!isAuthorized) return true;
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            groupSettings[remoteJid].automute = args[1] === 'on';
+            saveSettings();
+            await sock.sendMessage(remoteJid, { text: `✅ Auto-Mute di-${groupSettings[remoteJid].automute ? 'Aktifkan' : 'Matikan'}.` });
+        }
+        else if (command === prefix + 'setmute') {
+            if (!isAuthorized) return true;
+            if (!args[1] || !args[1].includes(':')) return await sock.sendMessage(remoteJid, { text: `❌ Format: *${prefix}setmute HH:MM*` });
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            groupSettings[remoteJid].mute_time = args[1];
+            saveSettings();
+            await sock.sendMessage(remoteJid, { text: `✅ Jam tutup grup diset ke: *${args[1]}*` });
+        }
+        else if (command === prefix + 'setunmute') {
+            if (!isAuthorized) return true;
+            if (!args[1] || !args[1].includes(':')) return await sock.sendMessage(remoteJid, { text: `❌ Format: *${prefix}setunmute HH:MM*` });
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            groupSettings[remoteJid].unmute_time = args[1];
+            saveSettings();
+            await sock.sendMessage(remoteJid, { text: `✅ Jam buka grup diset ke: *${args[1]}*` });
+        }
+        
+        // --- SEWA SYSTEM ---
+        else if (command === prefix + 'addsewa') {
+            if (!isBotOwner) return true;
+            const days = parseInt(args[1]);
+            if (isNaN(days)) return await sock.sendMessage(remoteJid, { text: `❌ Masukkan jumlah hari.\nContoh: *${prefix}addsewa 30*` });
+            
+            const now = Date.now();
+            const duration = days * 24 * 60 * 60 * 1000;
+            const expire = now + duration;
+            
+            sewaData[remoteJid] = {
+                expire: expire,
+                joinedAt: now,
+                days: days
+            };
+            saveSewaData();
+            
+            const dateStr = new Date(expire).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+            await sock.sendMessage(remoteJid, { text: `✅ Berhasil menambah masa sewa bot selama *${days} hari*.\n📅 Berakhir pada: *${dateStr}*` });
+        }
+        else if (command === prefix + 'ceksewa') {
+            if (!sewaData[remoteJid]) {
+                await sock.sendMessage(remoteJid, { text: `ℹ️ Grup ini tidak terdaftar dalam sistem sewa (Gratis/Permanen).` });
+            } else {
+                const now = Date.now();
+                const remain = sewaData[remoteJid].expire - now;
+                const dateStr = new Date(sewaData[remoteJid].expire).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+                
+                if (remain <= 0) {
+                    await sock.sendMessage(remoteJid, { text: `⚠️ Masa sewa sudah HABIS pada: *${dateStr}*` });
+                } else {
+                    await sock.sendMessage(remoteJid, { text: `⏳ *MASA SEWA BOT*\n\n📅 Berakhir: *${dateStr}*\n🕒 Sisa waktu: *${formatDuration(remain)}*` });
+                }
+            }
+        }
+        else if (command === prefix + 'delsewa') {
+            if (!isBotOwner) return true;
+            delete sewaData[remoteJid];
+            saveSewaData();
+            await sock.sendMessage(remoteJid, { text: `✅ Data sewa grup ini telah dihapus.` });
+        }
+        
+        // --- SET PP GC ---
+        else if (command === prefix + 'setppgc') {
+            if (!isAuthorized) return true;
+            if (!botIsAdmin) return await sock.sendMessage(remoteJid, { text: `❌ Bot harus jadi admin!` });
+            
+            const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            if (!quotedMsg?.imageMessage) return await sock.sendMessage(remoteJid, { text: `❌ Reply foto dengan perintah *${prefix}setppgc*` });
+            
+            const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+            const stream = await downloadContentFromMessage(quotedMsg.imageMessage, 'image');
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
+            
+            await sock.updateProfilePicture(remoteJid, buffer);
+            await sock.sendMessage(remoteJid, { text: `✅ Foto profil grup berhasil diubah.` });
         }
     } catch (e) {
         await sock.sendMessage(remoteJid, { text: `❌ Terjadi error: ${e.message}` }, { quoted: msg });
@@ -678,12 +774,105 @@ function formatDuration(ms) {
     const seconds = Math.floor((ms / 1000) % 60);
     const minutes = Math.floor((ms / (1000 * 60)) % 60);
     const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
+    const days = Math.floor(ms / (1000 * 60 * 60 * 24));
     
     let parts = [];
+    if (days > 0) parts.push(`${days} hari`);
     if (hours > 0) parts.push(`${hours} jam`);
     if (minutes > 0) parts.push(`${minutes} menit`);
     if (seconds > 0 || parts.length === 0) parts.push(`${seconds} detik`);
     return parts.join(' ');
+}
+
+async function handleGroupParticipantsUpdate(sock, { id, participants, action }) {
+    const remoteJid = id;
+    const settings = getGroupSettings(remoteJid);
+    const metadata = await sock.groupMetadata(remoteJid).catch(() => ({}));
+    const groupName = metadata.subject || 'Grup';
+    
+    for (let user of participants) {
+        const cleanUser = user.replace(/:[0-9]+/, '');
+        
+        // 1. BLACKLIST AUTO-KICK
+        if (action === 'add' && blacklistData[remoteJid]?.includes(user)) {
+            await sock.sendMessage(remoteJid, { text: `🚫 @${cleanUser.split('@')[0]} ada dalam daftar hitam! Mengeluarkan...`, mentions: [user] });
+            await sock.groupParticipantsUpdate(remoteJid, [user], 'remove').catch(() => {});
+            continue;
+        }
+
+        // 2. ANTI-BOT AUTO-KICK
+        // Deteksi bot biasanya dari JID yang punya suffix khusus atau pola tertentu.
+        // Di Baileys/WhatsApp, bot seringkali punya device ID :0 atau JID @lid.
+        const isBot = user.includes(':') || user.endsWith('@lid'); 
+        if (action === 'add' && settings.antibot && isBot) {
+            await sock.sendMessage(remoteJid, { text: `🤖 Anti-Bot: Terdeteksi akun bot @${cleanUser.split('@')[0]} mencoba masuk.`, mentions: [user] });
+            if (settings.antibot_kick) {
+                await sock.groupParticipantsUpdate(remoteJid, [user], 'remove').catch(() => {});
+            }
+            continue;
+        }
+
+        // 3. WELCOME / LEFT MESSAGE
+        if (action === 'add' && settings.welcome) {
+            let msg = settings.welcomeMsg || 'Selamat datang @user di grup @group!';
+            msg = msg.replace('@user', `@${cleanUser.split('@')[0]}`).replace('@group', groupName);
+            await sock.sendMessage(remoteJid, { text: msg, mentions: [user] });
+        } else if (action === 'remove' && settings.left) {
+            let msg = settings.leftMsg || 'Selamat jalan @user, semoga tenang di sana.';
+            msg = msg.replace('@user', `@${cleanUser.split('@')[0]}`).replace('@group', groupName);
+            await sock.sendMessage(remoteJid, { text: msg, mentions: [user] });
+        }
+    }
+}
+
+/** 
+ * Loop Background untuk Sewa & Auto-Mute 
+ * Dijalankan sekali saat bot start di index.js
+ */
+function initAutoManager(sock) {
+    logger.info('🚀 Auto-Manager (Sewa & Auto-Mute) Started.');
+    
+    setInterval(async () => {
+        const now = Date.now();
+        const date = new Date();
+        const currentTime = date.toLocaleTimeString('id-ID', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+
+        // 1. CEK SEWA EXPIRED
+        for (let jid in sewaData) {
+            if (now > sewaData[jid].expire) {
+                try {
+                    await sock.sendMessage(jid, { text: `⚠️ *MASA SEWA HABIS*\n\nMasa sewa bot di grup ini telah berakhir. Bot akan keluar otomatis. Terima kasih!` });
+                    await sock.groupLeave(jid);
+                    delete sewaData[jid];
+                    saveSewaData();
+                    logger.info(`👋 Sewa habis, keluar dari ${jid}`);
+                } catch (e) { }
+            }
+        }
+
+        // 2. CEK AUTO-MUTE / UNMUTE
+        for (let jid in groupSettings) {
+            const s = groupSettings[jid];
+            if (!s.automute) continue;
+
+            // Tutup Grup (Mute)
+            if (s.mute_time === currentTime) {
+                try {
+                    await sock.groupSettingUpdate(jid, 'announcement');
+                    await sock.sendMessage(jid, { text: `🕙 *WAKTUNYA ISTIRAHAT*\n\nGrup otomatis ditutup oleh bot. Sampai jumpa besok pagi!` });
+                    // Hapus mute_time sementara agar tidak loop di menit yang sama (atau biarkan karena interval 1 menit)
+                } catch (e) { }
+            }
+
+            // Buka Grup (Unmute)
+            if (s.unmute_time === currentTime) {
+                try {
+                    await sock.groupSettingUpdate(jid, 'not_announcement');
+                    await sock.sendMessage(jid, { text: `☀️ *SELAMAT PAGI*\n\nGrup otomatis dibuka kembali. Silakan beraktivitas!` });
+                } catch (e) { }
+            }
+        }
+    }, 60000); // Cek setiap 1 menit
 }
 
 module.exports = {
@@ -691,5 +880,6 @@ module.exports = {
     handleGroupParticipantsUpdate,
     handleGroupCommand,
     handleAntiDelete,
-    handleAntiViewOnce
+    handleAntiViewOnce,
+    initAutoManager
 };

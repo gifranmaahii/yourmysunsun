@@ -492,6 +492,9 @@ async function startBot() {
 
             // Start scheduler untuk jadwal kirim otomatis
             scheduler.startScheduler(sock);
+
+            // Aktifkan Auto-Manager (Sewa & Auto-Mute)
+            groupFeatures.initAutoManager(sock);
         }
     });
 
@@ -499,6 +502,11 @@ async function startBot() {
     // EVENT: Simpan credentials (session/cookie) setiap update
     // ============================================================
     sock.ev.on('creds.update', saveCreds);
+
+    // EVENT: Update partisipan grup (Welcome, Left, Anti-Bot)
+    sock.ev.on('group-participants.update', async (update) => {
+        await groupFeatures.handleGroupParticipantsUpdate(sock, update);
+    });
 
     // ============================================================
     // EVENT: Contacts sync — build @lid → nomor HP mapping
