@@ -11,6 +11,7 @@ const {
     generateWAMessageContent,
 } = require('@whiskeysockets/baileys');
 
+const tools = require('./src/features/tools');
 const { logger, baileyLogger } = require('./src/utils/logger');
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
 const cfg = require('./src/utils/config');
@@ -23,9 +24,11 @@ const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConvert
 const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
 const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter');
 const { createLottieSticker, getTemplateList } = require('./src/features/lottieSticker');
+const sanka = require('./src/features/sanka');
 const { enhanceImageHD, enhanceVideoHD } = require('./src/features/hdEnhancer');
 const scheduler = require('./src/features/scheduler');
 const games = require('./src/features/games');
+const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
@@ -680,12 +683,55 @@ async function startBot() {
                 const activeCfg = cfg.getConfig();
                 const ACTIVE_NAME = activeCfg.botName || BOT_NAME;
 
+                // ── Ekstrak nomor pengirim & resolve @lid ────────────────────────
+                // Grup: sender = msg.key.participant; DM: sender = msg.key.remoteJid
+                let rawSenderJid = msg.key.participant || msg.key.remoteJid || '';
+                const originalRaw = rawSenderJid; // simpan raw asli untuk log
+
+                // WhatsApp baru pakai @lid (bukan nomor HP langsung)
+                // Coba resolve ke nomor HP via lidMap (dari contacts.upsert)
+                if (rawSenderJid.endsWith('@lid')) {
+                    const lidNum = cfg.cleanNumber(rawSenderJid);
+                    const resolved = lidMap.get(lidNum);
+                    if (resolved) {
+                        rawSenderJid = resolved + '@s.whatsapp.net';
+                        // Update msg.key agar handler fitur (seperti group.js) juga melihat nomor HP-nya
+                        if (msg.key.participant) msg.key.participant = rawSenderJid;
+                        else if (!remoteJid.endsWith('@g.us')) msg.key.remoteJid = rawSenderJid;
+                        
+                        logger.debug(`[LID-RESOLVE] ${lidNum} → ${resolved}`);
+                    } else {
+                        // Coba cari di sock.contacts
+                        const contactEntries = Object.entries(sock.contacts || {});
+                        for (const [cJid, cData] of contactEntries) {
+                            if (cData.lid && cfg.cleanNumber(cData.lid) === lidNum) {
+                                const resolvedPhone = cfg.cleanNumber(cJid);
+                                if (resolvedPhone) {
+                                    rawSenderJid = resolvedPhone + '@s.whatsapp.net';
+                                    if (msg.key.participant) msg.key.participant = rawSenderJid;
+                                    else if (!remoteJid.endsWith('@g.us')) msg.key.remoteJid = rawSenderJid;
+                                    
+                                    lidMap.set(lidNum, resolvedPhone);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Cek owner/admin dengan KEDUA format: resolved JID DAN raw asli
+                const senderIsOwner = cfg.isOwner(rawSenderJid) || cfg.isOwner(originalRaw);
+                const senderIsAdmin = cfg.isAdmin(rawSenderJid) || cfg.isAdmin(originalRaw);
+
+                // Log identitas sender (untuk memantau @lid)
+                console.log(`🔐 Sender   : raw=${originalRaw} → resolved=${rawSenderJid}`);
+                console.log(`🔐 Status   : owner=${senderIsOwner}, admin=${senderIsAdmin}`);
+
                 // --- FITUR MODERASI GRUP ---
                 await groupFeatures.handleGroupModeration(sock, msg, textContent, remoteJid, fromMe);
 
                 // --- FITUR COMMAND GRUP ---
-                const isOwner = cfg.isOwner(msg.key.participant || msg.key.remoteJid);
-                const groupCmdHandled = await groupFeatures.handleGroupCommand(sock, msg, textContent, remoteJid, isOwner);
+                const groupCmdHandled = await groupFeatures.handleGroupCommand(sock, msg, textContent, remoteJid, senderIsOwner);
                 if (groupCmdHandled) continue;
 
                 // ── Cek apakah ada game aktif (jawaban) ──
@@ -697,7 +743,7 @@ async function startBot() {
                 // ── Spesial: .myid bisa dipakai SIAPA SAJA (termasuk non-admin) ──
                 // Berguna agar calon admin tahu @lid mereka untuk daftarkan ke owner
                 if (textContent.trim() === PREFIX + 'myid') {
-                    const rawJidForMyId = msg.key.participant || msg.key.remoteJid || '';
+                    const rawJidForMyId = rawSenderJid;
                     const cleanJidForMyId = cfg.cleanNumber(rawJidForMyId);
                     const pushName = msg.pushName || '';
                     await simulateTyping(sock, remoteJid, 500);
@@ -932,75 +978,47 @@ async function startBot() {
                     continue;
                 }
 
-                // ── Ekstrak nomor pengirim & resolve @lid ────────────────────────
-                // Grup: sender = msg.key.participant; DM: sender = msg.key.remoteJid
-                let rawSenderJid = msg.key.participant || msg.key.remoteJid || '';
-                const originalRaw = rawSenderJid; // simpan raw asli untuk log
-
-                // WhatsApp baru pakai @lid (bukan nomor HP langsung)
-                // Coba resolve ke nomor HP via lidMap (dari contacts.upsert)
-                if (rawSenderJid.endsWith('@lid')) {
-                    const lidNum = cfg.cleanNumber(rawSenderJid);
-                    const resolved = lidMap.get(lidNum);
-                    if (resolved) {
-                        rawSenderJid = resolved + '@s.whatsapp.net';
-                        logger.debug(`[LID-RESOLVE] ${lidNum} → ${resolved}`);
-                    } else {
-                        // Coba cari di sock.contacts
-                        const contactEntries = Object.entries(sock.contacts || {});
-                        for (const [cJid, cData] of contactEntries) {
-                            if (cData.lid && cfg.cleanNumber(cData.lid) === lidNum) {
-                                const resolvedPhone = cfg.cleanNumber(cJid);
-                                if (resolvedPhone) {
-                                    rawSenderJid = resolvedPhone + '@s.whatsapp.net';
-                                    lidMap.set(lidNum, resolvedPhone);
-                                    break;
-                                }
-                            }
-                        }
-                        // Jika masih @lid (belum berhasil resolve), biarkan apa adanya
-                        // isOwner() dan isAdmin() support @lid langsung
-                    }
-                }
-
-                // Cek owner/admin dengan KEDUA format: resolved JID DAN raw asli
-                // Karena OWNER_NUMBER bisa dalam format @lid (152xxx) atau HP (628xxx)
-                const senderIsOwner = cfg.isOwner(rawSenderJid) || cfg.isOwner(originalRaw);
-                const senderIsAdmin = cfg.isAdmin(rawSenderJid) || cfg.isAdmin(originalRaw);
-
-                // ── DEBUG: log identitas sender ──
-                const cleanSender = cfg.cleanNumber(rawSenderJid);
-                const cleanOriginal = cfg.cleanNumber(originalRaw);
-                console.log(`🔐 Sender   : raw=${originalRaw} → resolved=${rawSenderJid}`);
-                console.log(`🔐 Clean    : original=${cleanOriginal}, resolved=${cleanSender}`);
-                console.log(`🔐 Status   : owner=${senderIsOwner}, admin=${senderIsAdmin}`);
-
+                // ── Cek Hak Akses Fitur Non-Grup ─────────────────────────────────
+                // (Fitur grup sudah dihandle di atas)
+                
                 // Jika bukan owner dan bukan admin → cek apakah mode publik aktif
                 if (!senderIsOwner && !senderIsAdmin) {
                     const cfgCurrent = cfg.getConfig();
                     
                     if (!cfgCurrent.helpRestricted) {
                         // Mode PUBLIK: semua fitur bisa diakses siapa saja
-                        // (kecuali .owner dan .jadwal yang punya guard sendiri di dalam handler-nya)
-                        console.log(`🔐 ✅ DIIZINKAN: mode publik aktif — semua fitur terbuka`);
+                        console.log(`🔐 ✅ DIIZINKAN: mode publik aktif — fitur terbuka`);
                     } else {
                         // Mode PRIVATE: hanya admin/owner yang bisa akses
-                        console.log(`🔐 ❌ DIBLOKIR: bukan owner/admin — pesan diabaikan (mode: admin-only)`);
+                        console.log(`🔐 ❌ DIBLOKIR: bukan owner/admin — pesan diabaikan`);
                         continue; // block
                     }
                 } else {
                     console.log(`🔐 ✅ DIIZINKAN: ${senderIsOwner ? 'OWNER' : 'ADMIN'}`);
                 }
 
-                // ── Shortcut: senderJid untuk backward compat ────────────────────
+                // Shortcut: senderJid untuk backward compat
                 const senderJid = rawSenderJid;
 
 
 
                 // ── Handler .owner (KHUSUS OWNER) ────────────────────────────────
                 if (textContent.startsWith(PREFIX + 'owner')) {
+                    // Cek Admin Grup (untuk akses menu Grup Admin di .owner)
+                    const isGroup = remoteJid.endsWith('@g.us');
+                    let isGroupAdmin = false;
+                    if (isGroup) {
+                        try {
+                            const metadata = await sock.groupMetadata(remoteJid);
+                            const sender = msg.key.participant || msg.key.remoteJid;
+                            const cleanSender = cfg.cleanNumber(sender);
+                            const p = metadata.participants.find(x => cfg.cleanNumber(x.id) === cleanSender);
+                            isGroupAdmin = p ? (p.admin === 'admin' || p.admin === 'superadmin') : false;
+                        } catch (e) {}
+                    }
+
                     if (!senderIsOwner) {
-                        // Bukan owner: diam saja
+                        // Benar-benar diam jika bukan owner asli
                         continue;
                     }
 
@@ -1013,50 +1031,99 @@ async function startBot() {
                     // Tampilkan menu utama .owner
                     if (!ownerCmd) {
                         const cur = cfg.getConfig();
-                        await sock.sendMessage(remoteJid, {
-                            text:
-                                `⚙️ *Owner Settings Panel*\n\n` +
+                        let menuText = `⚙️ *Owner Settings Panel*\n\n`;
+
+                        // Bagian 1: BOT & STICKER
+                        if (senderIsOwner) {
+                            menuText += 
                                 `┏━『 *BOT & STICKER* 』\n` +
                                 `┃\n` +
                                 `┣⌬ ${PREFIX}owner setname [nama]\n` +
                                 `┣⌬ ${PREFIX}owner setsticker [nama]\n` +
                                 `┣⌬ ${PREFIX}owner setauthor [nama]\n` +
-                                `┗━━━━━━━◧\n\n` +
+                                `┗━━━━━━━◧\n\n`;
+                        }
+
+                        // Bagian 2: ADMIN MANAGEMENT (Hidden add/del)
+                        if (senderIsOwner) {
+                            menuText += 
                                 `┏━『 *ADMIN* 』\n` +
                                 `┃\n` +
-                                `┣⌬ ${PREFIX}owner addadmin [nomor]\n` +
-                                `┣⌬ ${PREFIX}owner deladmin [nomor]\n` +
-                                `┣⌬ ${PREFIX}owner delalladmin\n` +
                                 `┣⌬ ${PREFIX}owner listadmin\n` +
-                                `┗━━━━━━━◧\n\n` +
+                                `┣⌬ ${PREFIX}owner delalladmin\n` +
+                                `┗━━━━━━━◧\n\n`;
+                        }
+
+                        // Bagian 3: JADWAL
+                        if (senderIsOwner) {
+                            menuText += 
                                 `┏━『 *JADWAL KIRIM* 』\n` +
                                 `┃\n` +
                                 `┣⌬ ${PREFIX}jadwal [jam]\n` +
                                 `┣⌬ ${PREFIX}jadwal list\n` +
                                 `┣⌬ ${PREFIX}jadwal hapus [id]\n` +
-                                `┗━━━━━━━◧\n\n` +
+                                `┗━━━━━━━◧\n\n`;
+                        }
+
+                        // Bagian 4: GRUP MODERASI (Desain Premium)
+                        if (senderIsOwner || isGroupAdmin) {
+                            menuText += 
+                                `◈ *GRUP: KEANGGOTAAN*\n` +
+                                `  ⌬ .kick, .add, .promote, .demote\n` +
+                                `  ⌬ .hidetag, .tagall, .leavegc\n` +
+                                `  ⌬ .linkgc, .revokelink\n\n` +
+                                
+                                `◈ *GRUP: PENGATURAN*\n` +
+                                `  ⌬ .setnamegc, .setdescgc, .setppgc\n` +
+                                `  ⌬ .setopen, .setclose\n` +
+                                `  ⌬ .welcome (on/off), .left (on/off)\n` +
+                                `  ⌬ .setwelcome, .setleft\n\n` +
+                                
+                                `◈ *GRUP: MODERASI & AI*\n` +
+                                `  ⌬ .antilink, .antibadword\n` +
+                                `  ⌬ .antidelete, .antiviewonce\n` +
+                                `  ⌬ .antibot, .automute\n\n` +
+                                
+                                `◈ *GRUP: TOOLS & GAME*\n` +
+                                `  ⌬ .addsewa, .ceksewa, .delsewa\n` +
+                                `  ⌬ .mulaiabsen, .deleteabsen\n` +
+                                `  ⌬ .addlist, .dellist\n` +
+                                `  ⌬ .warn, .blacklist\n` +
+                                `┗━━━━━━━━━━━━━━━━━━━◧\n\n`;
+                        }
+
+                        // Bagian 5: MAINTENANCE
+                        if (senderIsOwner) {
+                            menuText += 
                                 `┏━『 *MAINTENANCE* 』\n` +
-                                `┃\n` +
-                                `┣⌬ ${PREFIX}owner public\n` +
-                                `┣⌬ ${PREFIX}owner setmenuimg [url]\n` +
-                                `┣⌬ ${PREFIX}owner usemenuimg [on/off]\n` +
-                                `┣⌬ ${PREFIX}owner clearsession\n` +
-                                `┣⌬ ${PREFIX}owner lid [nomor_hp]\n` +
-                                `┗━━━━━━━◧\n\n` +
-                                `📊 *Statistik & Setting Saat Ini:*\n` +
-                                `• Nama bot: *${cur.botName}*\n` +
-                                `• Menu gambar: *${cur.useMenuImage ? '✅ ON' : '❌ OFF'}*\n` +
-                                `• Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner' : '🌐 Publik'}*\n` +
-                                `• Jumlah admin: *${cur.admins.length} orang*\n` +
-                                `• Grup disewa: *${Object.keys(groupFeatures.sewaData || {}).length} grup*\n` +
-                                `• Jadwal aktif: *${scheduler.getSchedules().length} jadwal*\n` +
-                                `• Reconnect: *${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}*`
-                        }, { quoted: msg });
+                                `┃  ⌬ .owner public\n` +
+                                `┃  ⌬ .owner setmenuimg\n` +
+                                `┃  ⌬ .owner usemenuimg\n` +
+                                `┃  ⌬ .owner clearsession\n` +
+                                `┃  ⌬ .owner lid [nomor_hp]\n` +
+                                `┗━━━━━━━◧\n\n`;
+                        }
+
+                        // Statistik
+                        if (senderIsOwner) {
+                            const owners = cur.ownerNumber || '';
+                            menuText += 
+                                `📊 *SETTINGAN SAAT INI*\n` +
+                                `• Bot Name : *${cur.botName}*\n` +
+                                `• Pack/Auth: *${cur.stickerPackName}* / *${cur.stickerPackAuthor}*\n` +
+                                `• Admins   : *${cur.admins.length} orang*\n` +
+                                `• Owners   : *${owners.substring(0, 50)}${owners.length > 50 ? '...' : ''}*\n` +
+                                `• Help Mode: *${cur.helpRestricted ? '🔒 Private' : '🌐 Public'}*\n` +
+                                `• Reconnect: *${reconnectAttempts}/50*`;
+                        }
+
+                        await sock.sendMessage(remoteJid, { text: menuText }, { quoted: msg });
                         continue;
                     }
 
                     // --- .owner setname ---
                     if (ownerCmd === 'setname') {
+                        if (!senderIsOwner) return; 
                         if (!ownerVal) {
                             await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setname NamaBot*` }, { quoted: msg });
                         } else {
@@ -1068,6 +1135,7 @@ async function startBot() {
 
                     // --- .owner setsticker ---
                     if (ownerCmd === 'setsticker') {
+                        if (!senderIsOwner) return;
                         if (!ownerVal) {
                             await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setsticker NamaPackSticker*` }, { quoted: msg });
                         } else {
@@ -1079,6 +1147,7 @@ async function startBot() {
 
                     // --- .owner setauthor ---
                     if (ownerCmd === 'setauthor') {
+                        if (!senderIsOwner) return;
                         if (!ownerVal) {
                             await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setauthor NamaCopyrightMu*` }, { quoted: msg });
                         } else {
@@ -1090,6 +1159,7 @@ async function startBot() {
 
                     // --- .owner addadmin ---
                     if (ownerCmd === 'addadmin') {
+                        if (!senderIsOwner) return;
                         const num = ownerArgs[2] || '';
                         if (!num) {
                             await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner addadmin 6281234567890*` }, { quoted: msg });
@@ -1102,6 +1172,7 @@ async function startBot() {
 
                     // --- .owner deladmin ---
                     if (ownerCmd === 'deladmin') {
+                        if (!senderIsOwner) return;
                         const num = ownerArgs[2] || '';
                         if (!num) {
                             await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner deladmin 6281234567890*` }, { quoted: msg });
@@ -1114,6 +1185,7 @@ async function startBot() {
 
                     // --- .owner delalladmin (hapus SEMUA admin) ---
                     if (ownerCmd === 'delalladmin') {
+                        if (!senderIsOwner) return;
                         const admins = cfg.getConfig().admins;
                         if (admins.length === 0) {
                             await sock.sendMessage(remoteJid, {
@@ -1135,6 +1207,7 @@ async function startBot() {
 
                     // --- .owner listadmin ---
                     if (ownerCmd === 'listadmin') {
+                        if (!senderIsOwner) return;
                         const admins = cfg.getConfig().admins;
                         if (admins.length === 0) {
                             await sock.sendMessage(remoteJid, { text: `👥 Belum ada admin.\nGunakan *${PREFIX}owner addadmin [nomor]* untuk menambah.` }, { quoted: msg });
@@ -1147,6 +1220,7 @@ async function startBot() {
 
                     // --- .owner lid [nomor_hp] ---
                     if (ownerCmd === 'lid') {
+                        if (!senderIsOwner) return;
                         const targetNum = cfg.cleanNumber(ownerVal);
                         if (!targetNum) {
                             await sock.sendMessage(remoteJid, {
@@ -1201,6 +1275,7 @@ async function startBot() {
 
                     // --- .owner public (toggle akses .help) ---
                     if (ownerCmd === 'public') {
+                        if (!senderIsOwner) return;
                         const currentVal = cfg.getConfig().helpRestricted;
                         const newVal = !currentVal;
                         cfg.update('helpRestricted', newVal);
@@ -1216,17 +1291,55 @@ async function startBot() {
                     
                     // --- .owner setmenuimg [url] ---
                     if (ownerCmd === 'setmenuimg') {
-                        if (!ownerVal) {
-                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setmenuimg https://link.gambar.jpg*` }, { quoted: msg });
+                        if (!senderIsOwner) return;
+
+                        // Cek apakah me-reply gambar
+                        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                        const isQuotedImage = quotedMsg?.imageMessage;
+
+                        if (isQuotedImage) {
+                            const contextInfo = msg.message.extendedTextMessage.contextInfo;
+                            await sock.sendMessage(remoteJid, { text: '⏳ Sedang mengunduh dan menyimpan gambar menu...' }, { quoted: msg });
+                            try {
+                                const buffer = await downloadMediaMessage(
+                                    { 
+                                        key: {
+                                            remoteJid: remoteJid,
+                                            id: contextInfo.stanzaId,
+                                            participant: contextInfo.participant,
+                                            fromMe: contextInfo.participant === (sock.user.lid || sock.user.id)
+                                        }, 
+                                        message: quotedMsg 
+                                    },
+                                    'buffer',
+                                    {},
+                                    { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                                );
+
+                                if (buffer) {
+                                    const imgPath = path.join(__dirname, 'data', 'menu_image.jpg');
+                                    fs.writeFileSync(imgPath, buffer);
+                                    cfg.update('menuImage', imgPath);
+                                    await sock.sendMessage(remoteJid, { text: `✅ Gambar menu berhasil diunggah dan disimpan!\n\n💡 Ketik \`${PREFIX}owner usemenuimg on\` untuk mengaktifkan tampilan gambar di menu.` }, { quoted: msg });
+                                } else {
+                                    throw new Error('Gagal mendapatkan data gambar (buffer kosong)');
+                                }
+                            } catch (err) {
+                                logger.error(`❌ Gagal simpan gambar menu: ${err.message}`);
+                                await sock.sendMessage(remoteJid, { text: `❌ Gagal menyimpan gambar: ${err.message}` }, { quoted: msg });
+                            }
+                        } else if (!ownerVal) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setmenuimg [URL]* atau *balas sebuah gambar* dengan perintah ini.` }, { quoted: msg });
                         } else {
                             cfg.update('menuImage', ownerVal);
-                            await sock.sendMessage(remoteJid, { text: `✅ Gambar menu berhasil diatur ke:\n${ownerVal}` }, { quoted: msg });
+                            await sock.sendMessage(remoteJid, { text: `✅ Gambar menu berhasil diatur ke URL:\n${ownerVal}\n\n💡 Ketik \`${PREFIX}owner usemenuimg on\` untuk mengaktifkan.` }, { quoted: msg });
                         }
                         continue;
                     }
 
                     // --- .owner usemenuimg [on/off] ---
                     if (ownerCmd === 'usemenuimg') {
+                        if (!senderIsOwner) return;
                         const val = ownerVal.toLowerCase();
                         if (val === 'on' || val === 'off') {
                             const newVal = (val === 'on');
@@ -1240,6 +1353,7 @@ async function startBot() {
 
                     // --- .owner clearsession (Hapus session corrupt) ---
                     if (ownerCmd === 'clearsession') {
+                        if (!senderIsOwner) return;
                         await sock.sendMessage(remoteJid, {
                             text: `🧹 *Membersihkan session yang error/corrupt...*\n\n⚠️ Bot akan dimatikan otomatis. Silakan jalankan \`npm start\` lagi setelah ini (tidak perlu scan QR ulang).`
                         }, { quoted: msg });
@@ -1336,7 +1450,7 @@ async function startBot() {
                     const timeMatch = jadwalCmd.match(/^(\d{1,2}):(\d{2})$/);
                     if (!timeMatch) {
                         await sock.sendMessage(remoteJid, {
-                            text: `⏰ *Cara Pakai Jadwal*\n\n🕐 Waktu sekarang: *${wibNow.full}*\n\n*Reply audio/stiker* lalu ketik:\n  \`${PREFIX}jadwal 18:00\` → kirim sekali\n  \`${PREFIX}jadwal 18:00 harian\` → tiap hari\n  \`${PREFIX}jadwal 18:00 senin\` → tiap Senin\n\n*Jadwal teks* (tanpa reply):\n  \`${PREFIX}jadwal 18:00 harian Halo!\`\n\n*Kelola:*\n  \`${PREFIX}jadwal list\` → daftar\n  \`${PREFIX}jadwal hapus [id]\` → hapus`
+                            text: `⏰ *Cara Pakai Jadwal*\n\n🕐 Waktu sekarang: *${wibNow.full}*\n\n*Reply audio/stiker/gambar/video* lalu ketik:\n  \`${PREFIX}jadwal 18:00\` → kirim sekali\n  \`${PREFIX}jadwal 18:00 harian\` → tiap hari\n  \`${PREFIX}jadwal 18:00 senin\` → tiap Senin\n\n*Jadwal teks* (tanpa reply):\n  \`${PREFIX}jadwal 18:00 harian Halo!\`\n\n*Catatan untuk Gambar/Video:*\nTeks yang ditulis setelah jadwal akan jadi caption.\nContoh: \`${PREFIX}jadwal 18:00 harian Ini gambarnya!\`\n\n*Kelola:*\n  \`${PREFIX}jadwal list\` → daftar\n  \`${PREFIX}jadwal hapus [id]\` → hapus`
                         }, { quoted: msg });
                         continue;
                     }
@@ -1361,10 +1475,12 @@ async function startBot() {
                     const jadwalQuotedCtx = message.extendedTextMessage?.contextInfo;
                     const jadwalQuotedAudio = jadwalQuotedCtx?.quotedMessage?.audioMessage;
                     const jadwalQuotedSticker = jadwalQuotedCtx?.quotedMessage?.stickerMessage;
+                    const jadwalQuotedImage = jadwalQuotedCtx?.quotedMessage?.imageMessage;
+                    const jadwalQuotedVideo = jadwalQuotedCtx?.quotedMessage?.videoMessage;
 
                     let schedMediaType, schedMediaBuffer, schedText;
 
-                    if (jadwalQuotedAudio || jadwalQuotedSticker) {
+                    if (jadwalQuotedAudio || jadwalQuotedSticker || jadwalQuotedImage || jadwalQuotedVideo) {
                         // Download media yang di-reply
                         const jadwalQuotedObj = {
                             key: {
@@ -1396,6 +1512,12 @@ async function startBot() {
                             } catch (convErr) {
                                 logger.warn('⚠️ Gagal konversi audio jadwal: ' + convErr.message);
                             }
+                        } else if (jadwalQuotedImage) {
+                            schedMediaType = 'image';
+                            schedText = parsed.textParts.join(' ');
+                        } else if (jadwalQuotedVideo) {
+                            schedMediaType = 'video';
+                            schedText = parsed.textParts.join(' ');
                         } else {
                             schedMediaType = 'sticker';
                         }
@@ -1405,7 +1527,7 @@ async function startBot() {
                         schedText = parsed.textParts.join(' ');
                     } else {
                         await sock.sendMessage(remoteJid, {
-                            text: `❌ *Reply* audio/stiker, atau tulis teks setelah waktu.\n\nContoh:\n  Reply audio + \`${PREFIX}jadwal 18:00 harian\`\n  \`${PREFIX}jadwal 18:00 harian Selamat pagi!\``
+                            text: `❌ *Reply* media (audio/stiker/gambar/video), atau tulis teks setelah waktu.\n\nContoh:\n  Reply media + \`${PREFIX}jadwal 18:00 harian\`\n  \`${PREFIX}jadwal 18:00 harian Selamat pagi!\``
                         }, { quoted: msg });
                         continue;
                     }
@@ -2708,6 +2830,202 @@ async function startBot() {
                 }
 
                 // -----------------------------------------------
+                // FITUR: VOICE CHANGER — .tovn [filter]
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'tovn') || textContent.startsWith(PREFIX + 'vchanger')) {
+                    const args = textContent.trim().split(/\s+/);
+                    const filter = args[1]?.toLowerCase();
+                    const validFilters = ['robot', 'tupai', 'raksasa', 'deep', 'bass', 'nightcore', 'slow', 'fast', 'reverse', 'smooth', 'earrape', 'blown', 'vibrato'];
+
+                    if (!filter || !validFilters.includes(filter)) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ Pilih filter yang valid!\n\n🎨 Filter tersedia:\n${validFilters.map(f => `  • \`${f}\``).join('\n')}\n\n💡 *Cara pakai:*\nReply VN/Audio lalu ketik *${PREFIX}tovn [filter]*`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    const contextInfo = message.extendedTextMessage?.contextInfo;
+                    const quotedMsg = contextInfo?.quotedMessage;
+                    const isAudio = quotedMsg?.audioMessage;
+
+                    if (!isAudio) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Silakan reply Voice Note atau Audio yang ingin diubah suaranya.' }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1000);
+                    await sock.sendMessage(remoteJid, { text: `⏳ Sedang mengubah suara menjadi *${filter}*...` }, { quoted: msg });
+
+                    try {
+                        const audioBuf = await downloadMediaMessage(
+                            { 
+                                key: {
+                                    remoteJid: remoteJid,
+                                    id: contextInfo.stanzaId,
+                                    participant: contextInfo.participant
+                                }, 
+                                message: quotedMsg 
+                            },
+                            'buffer',
+                            {},
+                            { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                        );
+
+                        if (!audioBuf) throw new Error('Gagal download audio');
+
+                        const resultBuffer = await applyVoiceFilter(audioBuf, filter);
+
+                        await sock.sendMessage(remoteJid, {
+                            audio: resultBuffer,
+                            mimetype: 'audio/ogg; codecs=opus',
+                            ptt: true,
+                            waveform: [0, 10, 50, 100, 50, 10, 0] 
+                        }, { quoted: msg });
+
+                        logger.info(`🎵 Voice Changer (${filter}) dikirim ke ${remoteJid}`);
+                    } catch (err) {
+                        logger.error(`❌ Voice changer error: ${err.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal mengubah suara: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: GAMES
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'tebakgambar')) {
+                    await games.startGame(sock, remoteJid, msg, 'tebakgambar');
+                    continue;
+                }
+                if (textContent.startsWith(PREFIX + 'tebaktebakan')) {
+                    await games.startGame(sock, remoteJid, msg, 'tebaktebakan');
+                    continue;
+                }
+                if (textContent.startsWith(PREFIX + 'tebakkata')) {
+                    await games.startGame(sock, remoteJid, msg, 'tebakkata');
+                    continue;
+                }
+                if (textContent.startsWith(PREFIX + 'tebakbendera')) {
+                    await games.startGame(sock, remoteJid, msg, 'tebakbendera');
+                    continue;
+                }
+                if (textContent.startsWith(PREFIX + 'caklontong')) {
+                    await games.startGame(sock, remoteJid, msg, 'caklontong');
+                    continue;
+                }
+                if (textContent.startsWith(PREFIX + 'tebaklirik')) {
+                    await games.startGame(sock, remoteJid, msg, 'tebaklirik');
+                    continue;
+                }
+                if (textContent.startsWith(PREFIX + 'tebakkimia')) {
+                    await games.startGame(sock, remoteJid, msg, 'tebakkimia');
+                    continue;
+                }
+
+                // ==========================================
+                // TOOLS & SEARCH & SANKA
+                // ==========================================
+                if (textContent.startsWith(PREFIX + 'anime')) {
+                    await simulateTyping(sock, remoteJid, 1000);
+                    const res = await sanka.sankaFetch('anime');
+                    if (res) {
+                        if (res.type === 'url' || res.type === 'image') {
+                            await sock.sendMessage(remoteJid, { image: res.type === 'url' ? { url: res.data } : res.data, caption: '🌸 Random Anime' }, { quoted: msg });
+                        } else if (res.type === 'json' || res.type === 'text') {
+                            const textData = typeof res.data === 'string' ? res.data : JSON.stringify(res.data, null, 2);
+                            await sock.sendMessage(remoteJid, { text: `[API Response]\n${textData.substring(0, 500)}` }, { quoted: msg });
+                        }
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal mengambil data anime dari Sankavollerei.' }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'comic')) {
+                    await simulateTyping(sock, remoteJid, 1000);
+                    const res = await sanka.sankaFetch('comic');
+                    if (res) {
+                        if (res.type === 'url' || res.type === 'image') {
+                            await sock.sendMessage(remoteJid, { image: res.type === 'url' ? { url: res.data } : res.data, caption: '📖 Random Comic' }, { quoted: msg });
+                        } else if (res.type === 'json' || res.type === 'text') {
+                            const textData = typeof res.data === 'string' ? res.data : JSON.stringify(res.data, null, 2);
+                            await sock.sendMessage(remoteJid, { text: `[API Response]\n${textData.substring(0, 500)}` }, { quoted: msg });
+                        }
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal mengambil data comic dari Sankavollerei.' }, { quoted: msg });
+                    }
+                    continue;
+                }
+                if (textContent.startsWith(PREFIX + 'pin')) {
+                    const query = textContent.slice(PREFIX.length + 3).trim();
+                    if (!query) return sock.sendMessage(remoteJid, { text: `❌ Gunakan: ${PREFIX}pin [kueri]\nContoh: ${PREFIX}pin pemandangan anime` }, { quoted: msg });
+                    
+                    await simulateTyping(sock, remoteJid, 1000);
+                    const results = await tools.pinterestSearch(query);
+                    if (results && results.length > 0) {
+                        const imgUrl = results[Math.floor(Math.random() * results.length)];
+                        await sock.sendMessage(remoteJid, { image: { url: imgUrl }, caption: `📌 Hasil pencarian untuk: *${query}*` }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: '❌ Tidak ditemukan hasil untuk pencarian tersebut.' }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'ssweb')) {
+                    const url = textContent.slice(PREFIX.length + 5).trim();
+                    if (!url) return sock.sendMessage(remoteJid, { text: `❌ Gunakan: ${PREFIX}ssweb [url]\nContoh: ${PREFIX}ssweb https://google.com` }, { quoted: msg });
+                    
+                    await simulateTyping(sock, remoteJid, 1000);
+                    const ss = await tools.ssweb(url);
+                    if (ss) {
+                        await sock.sendMessage(remoteJid, { image: { url: ss }, caption: `📸 Screenshot Website: *${url}*` }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal mengambil screenshot website tersebut.' }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'google')) {
+                    const query = textContent.slice(PREFIX.length + 6).trim();
+                    if (!query) return sock.sendMessage(remoteJid, { text: `❌ Gunakan: ${PREFIX}google [kueri]` }, { quoted: msg });
+                    
+                    await simulateTyping(sock, remoteJid, 1000);
+                    const results = await tools.googleSearch(query);
+                    if (results && results.length > 0) {
+                        let resMsg = `🔍 *Google Search: ${query}*\n\n`;
+                        results.slice(0, 5).forEach((res, i) => {
+                            resMsg += `${i + 1}. *${res.title}*\n🔗 ${res.link}\n📝 ${res.snippet}\n\n`;
+                        });
+                        await sock.sendMessage(remoteJid, { text: resMsg }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: '❌ Tidak ditemukan hasil di Google.' }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'sholat')) {
+                    const kota = textContent.slice(PREFIX.length + 6).trim();
+                    if (!kota) return sock.sendMessage(remoteJid, { text: `❌ Gunakan: ${PREFIX}sholat [nama_kota]\nContoh: ${PREFIX}sholat jakarta` }, { quoted: msg });
+                    
+                    await simulateTyping(sock, remoteJid, 1000);
+                    const res = await tools.jadwalSholat(kota);
+                    if (res) {
+                        let sholatMsg = `🕋 *Jadwal Sholat: ${kota.toUpperCase()}*\n📅 Tanggal: ${res.tanggal || '-'}\n\n`;
+                        sholatMsg += `Imsak: ${res.imsak}\n`;
+                        sholatMsg += `Subuh: ${res.subuh}\n`;
+                        sholatMsg += `Dzuhur: ${res.dzuhur}\n`;
+                        sholatMsg += `Ashar: ${res.ashar}\n`;
+                        sholatMsg += `Maghrib: ${res.maghrib}\n`;
+                        sholatMsg += `Isya: ${res.isya}`;
+                        await sock.sendMessage(remoteJid, { text: sholatMsg }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal mendapatkan jadwal sholat untuk kota tersebut.' }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+
+                // -----------------------------------------------
                 // FITUR: REMOVE BACKGROUND GAMBAR — .rmbg
                 // Kirim/quote gambar + ketik .rmbg → sticker transparan
                 // -----------------------------------------------
@@ -3282,83 +3600,61 @@ async function startBot() {
                     await simulateTyping(sock, remoteJid, 1000);
                     await randomDelay(500, 1200);
 
-                    const groupAdminSection = isOwner ? 
-                        `┏━『 *GRUP (ADMIN)* 』\n` +
-                        `┃\n` +
-                        `┣⌬ ${PREFIX}kick / .add\n` +
-                        `┣⌬ ${PREFIX}promote / .demote\n` +
-                        `┣⌬ ${PREFIX}setnamegc / .setdescgc\n` +
-                        `┣⌬ ${PREFIX}setppgc / .linkgc / .revokelink\n` +
-                        `┣⌬ ${PREFIX}setopen / .setclose\n` +
-                        `┣⌬ ${PREFIX}welcome / .setwelcome\n` +
-                        `┣⌬ ${PREFIX}left / .setleft\n` +
-                        `┣⌬ ${PREFIX}antilink (kick/nokick)\n` +
-                        `┣⌬ ${PREFIX}antibadword (kick/nokick)\n` +
-                        `┣⌬ ${PREFIX}antidelete / .antiviewonce\n` +
-                        `┣⌬ ${PREFIX}antibot / .antibot_kick (on/off)\n` +
-                        `┣⌬ ${PREFIX}automute / .setmute / .setunmute\n` +
-                        `┣⌬ ${PREFIX}addsewa / .ceksewa / .delsewa\n` +
-                        `┣⌬ ${PREFIX}addbadword / .listbadword\n` +
-                        `┣⌬ ${PREFIX}mulaiabsen / .deleteabsen\n` +
-                        `┣⌬ ${PREFIX}addlist / .dellist\n` +
-                        `┣⌬ ${PREFIX}warn / .delwarn\n` +
-                        `┣⌬ ${PREFIX}blacklist / .delblacklist\n` +
-                        `┗━━━━━━━◧\n\n` : '';
-
                     const helpText =
-                        `🤖 *${BOT_NAME}* — Daftar Perintah
- 
- ┏━『 *STICKER & LOTTIE* 』
- ┃
- ┣⌬ ${PREFIX}sticker
- ┣⌬ ${PREFIX}toimg
- ┣⌬ ${PREFIX}tovid
- ┣⌬ ${PREFIX}lottie
- ┗━━━━━━━◧
- 
- ┏━『 *EDIT & AI* 』
- ┃
- ┣⌬ ${PREFIX}rmbgstatus
- ┣⌬ ${PREFIX}teks / .quote
- ┣⌬ ${PREFIX}brat / .hd
- ┗━━━━━━━◧
- 
- ┏━『 *DOWNLOADER* 』
- ┃
- ┣⌬ ${PREFIX}tiktok / .ttaudio
- ┣⌬ ${PREFIX}ig / .instagram
- ┣⌬ ${PREFIX}ytmp3 / .ytmp4
- ┣⌬ ${PREFIX}play / .spotify
- ┗━━━━━━━◧
- 
- ┏━『 *GRUP (MEMBER)* 』
- ┃
- ┣⌬ ${PREFIX}afk [alasan]
- ┣⌬ ${PREFIX}absen / .cekabsen
- ┣⌬ ${PREFIX}list / .[kunci_list]
- ┣⌬ ${PREFIX}hidetag / .tagall
- ┣⌬ ${PREFIX}cekwarn / .listblacklist
- ┣⌬ ${PREFIX}groupinfo / .myid
- ┗━━━━━━━◧
- 
- ${groupAdminSection}` +
-`┏━『 *GAMES* 』
-┃
-┣⌬ ${PREFIX}tebakgambar
-┣⌬ ${PREFIX}tebaktebakan
-┣⌬ ${PREFIX}tebakkata
-┣⌬ ${PREFIX}tebakbendera
-┗━━━━━━━◧
- 
- ┏━『 *INFO & OWNER* 』
- ┃
- ┣⌬ ${PREFIX}help / .menu
- ┣⌬ ${PREFIX}owner / .jadwal
- ┗━━━━━━━◧
- 
- *Info Tambahan:*
- • Bot 24/7 dengan session tersimpan
- • Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
+                        `🤖 *${cfg.getConfig().botName}* — Daftar Perintah\n\n` +
+                        `┏━『 *STICKER & LOTTIE* 』\n` +
+                        `┃\n` +
+                        `┣⌬ ${PREFIX}sticker\n` +
+                        `┣⌬ ${PREFIX}toimg\n` +
+                        `┣⌬ ${PREFIX}tovid\n` +
+                        `┣⌬ ${PREFIX}lottie\n` +
+                        `┗━━━━━━━◧\n\n` + 
+                        `┏━『 *EDIT & AI* 』\n` +
+                        `┃\n` +
+                        `┣⌬ ${PREFIX}rmbgstatus\n` +
+                        `┣⌬ ${PREFIX}teks / .quote\n` +
+                        `┣⌬ ${PREFIX}brat / .hd\n` +
+                        `┗━━━━━━━◧\n\n` +
+                        `┏━『 *DOWNLOADER* 』\n` +
+                        `┃\n` +
+                        `┣⌬ ${PREFIX}tiktok / .ttaudio\n` +
+                        `┣⌬ ${PREFIX}ig / .instagram\n` +
+                        `┣⌬ ${PREFIX}ytmp3 / .ytmp4\n` +
+                        `┣⌬ ${PREFIX}play / .spotify\n` +
+                        `┗━━━━━━━◧\n\n` +
+                        `┏━『 *GRUP (MEMBER)* 』\n` +
+                        `┃\n` +
+                        `┣⌬ ${PREFIX}afk [alasan]\n` +
+                        `┣⌬ ${PREFIX}absen / .cekabsen\n` +
+                        `┣⌬ ${PREFIX}list / .[kunci_list]\n` +
+                        `┣⌬ ${PREFIX}hidetag / .tagall\n` +
+                        `┣⌬ ${PREFIX}cekwarn / .listblacklist\n` +
+                        `┣⌬ ${PREFIX}groupinfo / .myid\n` +
+                        `┗━━━━━━━◧\n\n` +
+                        `┏━『 *GAMES* 』\n` +
+                        `┃\n` +
+                        `┣⌬ .tebakgambar / .tebaktebakan\n` +
+                        `┣⌬ .caklontong / .tebakkata\n` +
+                        `┣⌬ .tebakbendera / .tebaklirik\n` +
+                        `┣⌬ .tebakkimia / .nyerah\n` +
+                        `┗━━━━━━━◧\n\n` +
+                        `┏━『 *AUDIO TOOLS* 』\n` +
+                        `┃\n` +
+                        `┣⌬ .tovn [filter] / .ttaudio\n` +
+                        `┣⌬ .kirim / .ceksaluran / .cekjid\n` +
+                        `┗━━━━━━━◧\n\n` +
+                        `┏━『 *TOOLS & SEARCH* 』\n` +
+                        `┃\n` +
+                        `┣⌬ .pin [kueri] / .google\n` +
+                        `┣⌬ .ssweb [url] / .sholat\n` +
+                        `┗━━━━━━━◧\n\n` +
+                        `┏━『 *LAINNYA* 』\n` +
+                        `┃\n` +
+                        `┣⌬ .owner / .myid\n` +
+                        `┗━━━━━━━◧\n\n` +
+                        `*Info Tambahan:*\n` +
+                        `• Bot 24/7 dengan session tersimpan\n` +
+                        `• Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
 
                     const { useMenuImage, menuImage } = cfg.getConfig();
                     

@@ -149,9 +149,9 @@ function generateBratImage(text) {
                    : wCount > 4  ? 88
                    : 104;
     const lineH    = Math.round(fontSize * 1.22);
-    // ★ Menggunakan Arial Narrow Bold agar tulisan lebih tebal
-    // Apple Color Emoji di posisi pertama setelah font utama supaya emoji tampil versi iOS/iPhone
-    const font = `bold ${fontSize}px "Arial Narrow Bold", "Arial Narrow", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", Arial, sans-serif`;
+    // ★ Menggunakan Arial Narrow (bukan bold) agar persis dengan style brat asli
+    // Apple Color Emoji dipertahankan agar emoji iOS/iPhone tetap muncul
+    const font = `${fontSize}px "Arial Narrow", "Arial", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Emoji", sans-serif`;
 
     // ── Word wrap ─────────────────────────────────────────────
     const tmp    = createCanvas(SIZE, 100);
@@ -171,6 +171,9 @@ function generateBratImage(text) {
     ctx.fillStyle    = '#000000';
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'alphabetic';
+    
+    // ★ Efek blur sedikit khas album Brat asli (low resolution aesthetic)
+    ctx.filter       = 'blur(0.8px)';
 
     // Vertikal center
     const totalH = lines.length * lineH;

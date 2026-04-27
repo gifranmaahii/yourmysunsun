@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { logger } = require('../utils/logger');
 
 const SETTINGS_PATH = path.join(__dirname, '../../data/group_settings.json');
 const WARN_DATA_PATH = path.join(__dirname, '../../data/warn_data.json');
@@ -185,7 +186,11 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         prefix + 'absen', prefix + 'cekabsen', prefix + 'deleteabsen', prefix + 'mulaiabsen',
         prefix + 'addlist', prefix + 'dellist', prefix + 'list',
         prefix + 'warn', prefix + 'cekwarn', prefix + 'delwarn', prefix + 'listwarn',
-        prefix + 'blacklist', prefix + 'delblacklist', prefix + 'listblacklist'
+        prefix + 'blacklist', prefix + 'delblacklist', prefix + 'listblacklist',
+        prefix + 'addsewa', prefix + 'ceksewa', prefix + 'delsewa',
+        prefix + 'antibot', prefix + 'antibot_kick', 
+        prefix + 'automute', prefix + 'setmute', prefix + 'setunmute',
+        prefix + 'setppgc'
     ];
 
     // --- HANDLE LIST (Custom Response) ---
@@ -201,27 +206,53 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
     let botIsAdmin = false;
     
     try {
-        const metadata = await sock.groupMetadata(remoteJid);
-        const participants = metadata.participants;
+        let metadata = await sock.groupMetadata(remoteJid);
+        let participants = metadata.participants;
         
         // --- NORMALISASI JID ---
         const clean = (jid) => require('../utils/config').cleanNumber(jid);
         const cleanSender = clean(msg.key.participant || msg.key.remoteJid);
         
-        // Cari sender di daftar peserta
-        const p = participants.find(x => clean(x.id) === cleanSender);
+        const findParticipant = (list, targetClean) => {
+            return list.find(x => {
+                const cleanXid = clean(x.id);
+                if (cleanXid === targetClean) return true;
+                // Support LID check if available in metadata
+                if (x.lid && clean(x.lid) === targetClean) return true;
+                return false;
+            });
+        };
+
+        // 1. Cek User Admin
+        const p = findParticipant(participants, cleanSender);
         isAdmin = p ? (p.admin === 'admin' || p.admin === 'superadmin') : false;
         
-        // --- NORMALISASI BOT ---
+        // 2. Cek Bot Admin
         const myJid = clean(sock.user.id);
         const myLid = sock.user.lid ? clean(sock.user.lid) : null;
         
         const botP = participants.find(x => {
             const cleanXid = clean(x.id);
-            return cleanXid === myJid || (myLid && cleanXid === myLid);
+            const isMatch = cleanXid === myJid || (myLid && cleanXid === myLid) || (x.lid && clean(x.lid) === myJid) || (x.lid && myLid && clean(x.lid) === myLid);
+            return isMatch;
         });
         
         botIsAdmin = botP ? (botP.admin === 'admin' || botP.admin === 'superadmin') : false;
+
+        // --- FALLBACK REFRESH ---
+        // Jika bot baru dipromosikan, metadata mungkin masih cache lama.
+        // Jika butuh bot admin tapi di metadata belum, coba paksa refresh sekali.
+        const requireBotAdmin = [prefix + 'kick', prefix + 'add', prefix + 'promote', prefix + 'demote', prefix + 'setnamegc', prefix + 'setdescgc', prefix + 'setopen', prefix + 'setclose', prefix + 'linkgc', prefix + 'revokelink'];
+        if (requireBotAdmin.includes(command) && !botIsAdmin) {
+            // Re-fetch metadata (beberapa library/cache butuh waktu)
+            metadata = await sock.groupMetadata(remoteJid);
+            participants = metadata.participants;
+            const botP2 = participants.find(x => {
+                const cleanXid = clean(x.id);
+                return cleanXid === myJid || (myLid && cleanXid === myLid) || (x.lid && clean(x.lid) === myJid);
+            });
+            botIsAdmin = botP2 ? (botP2.admin === 'admin' || botP2.admin === 'superadmin') : false;
+        }
     } catch (e) { }
 
     const isAuthorized = isBotOwner || isAdmin;

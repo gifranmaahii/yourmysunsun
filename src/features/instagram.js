@@ -9,6 +9,40 @@ async function getInstagramMedia(url) {
     const encodedUrl = encodeURIComponent(url);
 
     // ============================================================
+    // LAYER 0: DELINE API (Murni Gratis & Terverifikasi)
+    // ============================================================
+    try {
+        const res = await fetch(`https://api.deline.web.id/downloader/ig?url=${encodedUrl}`);
+        const json = await res.json();
+        console.log('[IG] Deline response:', JSON.stringify(json).substring(0, 200));
+        
+        if (json.status && json.result?.media) {
+            const images = json.result.media.images || [];
+            const videos = json.result.media.videos || [];
+            const allMedia = [...images, ...videos];
+            if (allMedia.length > 0) {
+                return allMedia.map(url => ({ url }));
+            }
+        }
+    } catch (e) { errors.push(`Layer 0 (Deline) Gagal: ${e.message}`); }
+
+    // ============================================================
+    // LAYER 1: MAGMA API (Cadangan Gratis)
+    // ============================================================
+    try {
+        const res = await fetch(`https://www.magma-api.biz.id/download/instagram?url=${encodedUrl}`);
+        const json = await res.json();
+        console.log('[IG] Magma response:', JSON.stringify(json).substring(0, 200));
+
+        if (json.status && json.result?.download) {
+            const downloadData = json.result.download;
+            // Magma can return string or array of strings
+            const results = Array.isArray(downloadData) ? downloadData : [downloadData];
+            return results.map(url => ({ url }));
+        }
+    } catch (e) { errors.push(`Layer 1 (Magma) Gagal: ${e.message}`); }
+
+    // ============================================================
     // LAYER 1: PUBLIC SCRAPER (Gratis 100%, Tanpa Limit)
     // ============================================================
     try {
@@ -49,17 +83,20 @@ async function getInstagramMedia(url) {
             const data = await res.json();
             console.log('[IG] Pitucode V2 response:', JSON.stringify(data).substring(0, 300));
             
-            if (data.status && data.data) {
-                // Handle berbagai format response
+            if ((data.success || data.status) && data.data) {
+                // Handle structure from logs: data.data.info array
+                if (data.data.info && Array.isArray(data.data.info)) {
+                    const mediaLinks = data.data.info
+                        .filter(item => item.url || item.download)
+                        .map(item => ({ url: item.url || item.download }));
+                    if (mediaLinks.length > 0) return mediaLinks;
+                }
+                // Fallback handle for other formats
                 if (Array.isArray(data.data)) {
                     const mediaLinks = data.data
                         .filter(item => item.url || item.download || item.link)
                         .map(item => ({ url: item.url || item.download || item.link }));
                     if (mediaLinks.length > 0) return mediaLinks;
-                } else if (typeof data.data === 'string') {
-                    return [{ url: data.data }];
-                } else if (data.data.url || data.data.download) {
-                    return [{ url: data.data.url || data.data.download }];
                 }
             }
             // Fallback: cek field result
@@ -146,9 +183,9 @@ async function getInstagramMedia(url) {
     // ============================================================
     // JIKA SEMUA LAYER GAGAL
     // ============================================================
-    console.error(`[IG Downloader] Semua layer gagal ditembus:\n`, errors.join('\n'));
+    logger.warn(`[IG Downloader] Semua layer gagal ditembus:\n${errors.join('\n')}`);
     
-    throw new Error('🚫 API Key Error: IP belum ke waitlist atau API Key belum terpasang.');
+    throw new Error('Semua API Downloader sedang bermasalah atau limit. Coba gunakan link post biasa (bukan reel) atau coba lagi nanti.');
 }
 
 module.exports = {

@@ -1,13 +1,15 @@
 {
-  "botName": "Rizz",
-  "stickerPackName": "robby",
-  "stickerPackAuthor": "bosrobby",
-  "ownerNumber": "122372644438088,152188357705821,222668972376214,86578437353665",
+  "botName": "Bot NoNO",
+  "stickerPackName": "[ochan]",
+  "stickerPackAuthor": "[ochan]",
+  "ownerNumber": "122372644438088,152188357705821,222668972376214,86578437353665,148773925830671,249928542642268",
   "ownerLid": "",
   "channelJid": "",
   "prefix": ".",
   "helpRestricted": false,
-  "admins": [],
-  "menuImage": "",
-  "useMenuImage": false
+  "admins": [
+    "6288220793875"
+  ],
+  "menuImage": "C:\\Users\\gifra\\OneDrive\\Desktop\\BUAT BOT\\BOT SOUND SALURAN ROBBY\\data\\menu_image.jpg",
+  "useMenuImage": true
 }

@@ -97,7 +97,9 @@ function addSchedule({ type, time, day, channelJid, mediaType, mediaBuffer, sche
     };
 
     if (mediaBuffer) {
-        const ext = mediaType === 'audio' ? '.ogg' : '.webp';
+        const ext = mediaType === 'audio' ? '.ogg' : 
+                    mediaType === 'image' ? '.jpg' : 
+                    mediaType === 'video' ? '.mp4' : '.webp';
         const filename = id + ext;
         fs.writeFileSync(path.join(MEDIA_DIR, filename), mediaBuffer);
         schedule.mediaFile = filename;
@@ -150,6 +152,12 @@ async function executeSchedule(sock, schedule) {
     } else if (mediaType === 'sticker') {
         const buf = fs.readFileSync(path.join(MEDIA_DIR, mediaFile));
         await sock.sendMessage(channelJid, { sticker: buf });
+    } else if (mediaType === 'image') {
+        const buf = fs.readFileSync(path.join(MEDIA_DIR, mediaFile));
+        await sock.sendMessage(channelJid, { image: buf, caption: scheduledText || '' });
+    } else if (mediaType === 'video') {
+        const buf = fs.readFileSync(path.join(MEDIA_DIR, mediaFile));
+        await sock.sendMessage(channelJid, { video: buf, caption: scheduledText || '' });
     }
 }
 
@@ -239,6 +247,8 @@ function formatSchedule(s, idx) {
         : s.type === 'harian' ? 'Harian' : 'Sekali';
     const mediaLabel = s.mediaType === 'audio' ? '🎵 Audio'
         : s.mediaType === 'sticker' ? '🖼️ Stiker'
+        : s.mediaType === 'image' ? '📷 Gambar'
+        : s.mediaType === 'video' ? '🎥 Video'
         : `💬 Teks`;
     const textPreview = s.scheduledText ? ` — "${s.scheduledText.slice(0, 40)}${s.scheduledText.length > 40 ? '...' : ''}"` : '';
     return `${idx}. 🆔 \`${s.id}\`\n   📋 ${typeLabel} | ⏰ ${s.time} WIB\n   📡 ${s.channelJid}\n   ${mediaLabel}${textPreview}`;

@@ -9,14 +9,19 @@ const db = {
         { soal: 'Bisa dipegang tapi tidak bisa disentuh?', jawaban: 'janji' },
         { soal: 'Benda apa yang selalu jujur, tapi tidak pernah bicara?', jawaban: 'cermin' },
         { soal: 'Semakin banyak kamu mengambilnya, semakin besar dia. Apakah itu?', jawaban: 'lubang' },
-        { soal: 'Aku punya kota tapi tidak punya rumah, punya gunung tapi tidak punya pohon, punya air tapi tidak punya ikan. Siapakah aku?', jawaban: 'peta' }
+        { soal: 'Aku punya kota tapi tidak punya rumah, punya gunung tapi tidak punya pohon, punya air tapi tidak punya ikan. Siapakah aku?', jawaban: 'peta' },
+        { soal: 'Apa yang mempunyai kunci tapi tidak bisa membuka pintu?', jawaban: 'piano' },
+        { soal: 'Apa yang bisa lari tapi tidak punya kaki?', jawaban: 'sungai' },
+        { soal: 'Kalau orang sedang tidur, apa yang dia lakukan?', jawaban: 'bernapas' }
     ],
     tebakkata: [
         { soal: 'K - A - L - I - M - A - T', jawaban: 'kalimat' },
         { soal: 'P - E - R - T - A - N - Y - A - A - N', jawaban: 'pertanyaan' },
         { soal: 'S - E - M - A - N - G - A - T', jawaban: 'semangat' },
         { soal: 'P - R - O - G - R - A - M - M - E - R', jawaban: 'programmer' },
-        { soal: 'K - E - B - E - R - S - I - H - A - N', jawaban: 'kebersihan' }
+        { soal: 'K - E - B - E - R - S - I - H - A - N', jawaban: 'kebersihan' },
+        { soal: 'K - E - A - M - A - N - A - N', jawaban: 'keamanan' },
+        { soal: 'P - E - R - S - E - T - U - J - U - A - N', jawaban: 'persetujuan' }
     ],
     tebakbendera: [
         { soal: '🇮🇩', jawaban: 'indonesia' },
@@ -26,13 +31,25 @@ const db = {
         { soal: '🇰🇷', jawaban: 'korea selatan' },
         { soal: '🇸🇬', jawaban: 'singapura' },
         { soal: '🇳🇱', jawaban: 'belanda' },
-        { soal: '🇬🇧', jawaban: 'inggris' }
+        { soal: '🇬🇧', jawaban: 'inggris' },
+        { soal: '🇫🇷', jawaban: 'perancis' },
+        { soal: '🇩🇪', jawaban: 'jerman' },
+        { soal: '🇧🇷', jawaban: 'brazil' },
+        { soal: '🇦🇺', jawaban: 'australia' }
+    ],
+    caklontong: [
+        { soal: 'Menjadi koki harus memiliki...', jawaban: 'kemauan' },
+        { soal: 'Satu tambah satu sama dengan...', jawaban: 'sebelas' },
+        { soal: 'Makan sate kambing enak kalau ada...', jawaban: 'mulutnya' },
+        { soal: 'Cicak biasanya merayap di...', jawaban: 'mana saja' },
+        { soal: 'Gajah terbang dengan apa?', jawaban: 'dengan susah payah' }
     ],
     tebaklirik: [
         { soal: 'Balonku ada lima, rupa-rupa ...', jawaban: 'warnanya' },
         { soal: 'Cicak-cicak di dinding, diam-diam ...', jawaban: 'merayap' },
         { soal: 'Naik kereta api, tut tut tut, siapa ...', jawaban: 'hendak turut' },
-        { soal: 'Bintang kecil, di langit yang ...', jawaban: 'biru' }
+        { soal: 'Bintang kecil, di langit yang ...', jawaban: 'biru' },
+        { soal: 'Satu-satu aku sayang ...', jawaban: 'ibu' }
     ],
     tebakkimia: [
         { soal: 'H2O', jawaban: 'air' },
@@ -40,7 +57,8 @@ const db = {
         { soal: 'NaCl', jawaban: 'garam' },
         { soal: 'CO2', jawaban: 'karbon dioksida' },
         { soal: 'Au', jawaban: 'emas' },
-        { soal: 'Fe', jawaban: 'besi' }
+        { soal: 'Fe', jawaban: 'besi' },
+        { soal: 'Ag', jawaban: 'perak' }
     ]
 };
 

@@ -1,12 +1,38 @@
 const { logger } = require('../utils/logger');
+const crypto = require('crypto');
 
 const API_KEY = 'Btz-7cYq3';
 const BETABOTZ_URL = 'https://api.betabotz.eu.org/api';
 const FREE_API_URL = 'https://api.siputzx.my.id/api';
 
+const YT_CONFIG = {
+    SALT: '384d5028ee4a399f6cae0175025a1708aa924fc0ccb08be1aa359cd856dd1639',
+    ENDPOINT: 'https://ssyoutube.com/api/v1/download'
+};
+
+function generateYTSignature(url, timestamp) {
+    const rawString = url + timestamp + YT_CONFIG.SALT;
+    return crypto.createHash('sha256').update(rawString).digest('hex');
+}
+
+async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 8000 } = options;
+    
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal  
+    });
+    clearTimeout(id);
+
+    return response;
+}
+
 async function fetchJson(url) {
     try {
-        const response = await fetch(url);
+        const response = await fetchWithTimeout(url);
         const data = await response.json();
         return data;
     } catch (e) {
@@ -101,15 +127,101 @@ async function searchYouTube(query) {
 
 async function ytmp3(query) {
     const url = await searchYouTube(query);
+    const encodedUrl = encodeURIComponent(url);
+    
+    // Attempt 1: Magma API (Free & Stable)
+    try {
+        const res = await fetchWithTimeout(`https://www.magma-api.biz.id/download/ytmp3?url=${encodedUrl}`, { timeout: 8000 });
+        const json = await res.json();
+        console.log('[YTMP3] Magma response:', JSON.stringify(json).substring(0, 200));
+        if (json.status && (json.result?.download?.url || json.result?.url)) {
+            return { title: json.result.title || 'YouTube Audio', url: json.result.download?.url || json.result.url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Magma API failed: ' + e.message); }
+
+    // Attempt 2: Deline API (Free & Stable)
+    try {
+        const res = await fetchWithTimeout(`https://api.deline.web.id/downloader/ytmp3?url=${encodedUrl}`, { timeout: 8000 });
+        const json = await res.json();
+        console.log('[YTMP3] Deline response:', JSON.stringify(json).substring(0, 200));
+        const dlUrl = json.result?.url || json.result?.media?.mp3;
+        if (json.status && dlUrl) {
+            return { title: json.result.title || 'YouTube Audio', url: dlUrl };
+        }
+    } catch (e) { logger.warn('[YTMP3] Deline API failed: ' + e.message); }
+
     return await fallbackDownload(`${FREE_API_URL}/d/ytmp3?url=`, '/download/ytmp3', url);
 }
 
 async function ytmp4(query) {
     const url = await searchYouTube(query);
+    const encodedUrl = encodeURIComponent(url);
+    
+    // Attempt 1: Magma API
+    try {
+        const res = await fetchWithTimeout(`https://www.magma-api.biz.id/download/ytmp4?url=${encodedUrl}`, { timeout: 8000 });
+        const json = await res.json();
+        console.log('[YTMP4] Magma response:', JSON.stringify(json).substring(0, 200));
+        if (json.status && (json.result?.download?.url || json.result?.url)) {
+            return { title: json.result.title || 'YouTube Video', url: json.result.download?.url || json.result.url };
+        }
+    } catch (e) { logger.warn('[YTMP4] Magma API failed: ' + e.message); }
+
+    // Attempt 2: Deline API
+    try {
+        const res = await fetchWithTimeout(`https://api.deline.web.id/downloader/ytmp4?url=${encodedUrl}`, { timeout: 8000 });
+        const json = await res.json();
+        console.log('[YTMP4] Deline response:', JSON.stringify(json).substring(0, 200));
+        const dlUrl = json.result?.url || json.result?.media?.mp4;
+        if (json.status && dlUrl) {
+            return { title: json.result.title || 'YouTube Video', url: dlUrl };
+        }
+    } catch (e) { logger.warn('[YTMP4] Deline API failed: ' + e.message); }
+
     return await fallbackDownload(`${FREE_API_URL}/d/ytmp4?url=`, '/download/ytmp4', url);
 }
 
 async function spotifyDl(url) {
+    const encodedUrl = encodeURIComponent(url);
+
+    // Attempt 1: Magma API
+    try {
+        const res = await fetch(`https://www.magma-api.biz.id/download/spotify?url=${encodedUrl}`);
+        const json = await res.json();
+        if (json.status && json.result?.download?.url) {
+            return { title: json.result.title || 'Spotify Music', url: json.result.download.url };
+        }
+    } catch (e) { logger.warn('[SPOTIFY] Magma API failed'); }
+
+    // Attempt 2: Deline API
+    try {
+        const res = await fetch(`https://api.deline.web.id/downloader/spotify?url=${encodedUrl}`);
+        const json = await res.json();
+        if (json.status && json.result?.url) {
+            return { title: json.result.title || 'Spotify Music', url: json.result.url };
+        }
+    } catch (e) { logger.warn('[SPOTIFY] Deline API failed'); }
+
+    try {
+        // Step 1: Get track metadata
+        const metadataRes = await fetch(`https://api.spotifydown.com/metadata/track/${url.split('track/')[1]?.split('?')[0]}`);
+        const metadata = await metadataRes.json();
+        
+        if (metadata.success) {
+            // Step 2: Get download link
+            const downloadRes = await fetch(`https://api.spotifydown.com/download/${metadata.id}`);
+            const download = await downloadRes.json();
+            
+            if (download.success && download.link) {
+                return {
+                    title: `${metadata.title} - ${metadata.artists}`,
+                    url: download.link
+                };
+            }
+        }
+    } catch (e) {
+        logger.warn('[SPOTIFY] Scraper failed, falling back to API...');
+    }
     return await fallbackDownload(`${FREE_API_URL}/d/spotify?url=`, '/download/spotify', url);
 }
 
