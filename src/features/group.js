@@ -880,5 +880,6 @@ module.exports = {
     handleGroupCommand,
     handleAntiDelete,
     handleAntiViewOnce,
-    initAutoManager
+    initAutoManager,
+    sewaData
 };

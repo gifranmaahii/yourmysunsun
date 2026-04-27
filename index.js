@@ -1043,17 +1043,14 @@ async function startBot() {
                                 `┣⌬ ${PREFIX}owner clearsession\n` +
                                 `┣⌬ ${PREFIX}owner lid [nomor_hp]\n` +
                                 `┗━━━━━━━◧\n\n` +
-                                `📊 *Settingan Saat Ini:*\n` +
+                                `📊 *Statistik & Setting Saat Ini:*\n` +
                                 `• Nama bot: *${cur.botName}*\n` +
-                                `• Sticker pack: *${cur.stickerPackName}*\n` +
-                                `• Sticker author: *${cur.stickerPackAuthor}*\n` +
-                                `• Menu gambar: *${cur.useMenuImage ? '✅ Aktif' : '❌ Mati'}*\n` +
-                                `• URL Menu: ${cur.menuImage ? cur.menuImage.substring(0, 30) + '...' : '-(belum ada)-'}\n` +
+                                `• Menu gambar: *${cur.useMenuImage ? '✅ ON' : '❌ OFF'}*\n` +
+                                `• Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner' : '🌐 Publik'}*\n` +
                                 `• Jumlah admin: *${cur.admins.length} orang*\n` +
-                                `• Owner: *${cur.ownerNumber}*\n` +
-                                `• Akses .help: *${cur.helpRestricted ? '🔒 Admin/Owner saja' : '🌐 Semua orang (publik)'}*\n` +
+                                `• Grup disewa: *${Object.keys(groupFeatures.sewaData || {}).length} grup*\n` +
                                 `• Jadwal aktif: *${scheduler.getSchedules().length} jadwal*\n` +
-                                `• Reconnect attempts: *${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}*`
+                                `• Reconnect: *${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}*`
                         }, { quoted: msg });
                         continue;
                     }
@@ -3291,13 +3288,16 @@ async function startBot() {
                         `┣⌬ ${PREFIX}kick / .add\n` +
                         `┣⌬ ${PREFIX}promote / .demote\n` +
                         `┣⌬ ${PREFIX}setnamegc / .setdescgc\n` +
+                        `┣⌬ ${PREFIX}setppgc / .linkgc / .revokelink\n` +
                         `┣⌬ ${PREFIX}setopen / .setclose\n` +
-                        `┣⌬ ${PREFIX}linkgc / .revokelink\n` +
                         `┣⌬ ${PREFIX}welcome / .setwelcome\n` +
                         `┣⌬ ${PREFIX}left / .setleft\n` +
                         `┣⌬ ${PREFIX}antilink (kick/nokick)\n` +
                         `┣⌬ ${PREFIX}antibadword (kick/nokick)\n` +
                         `┣⌬ ${PREFIX}antidelete / .antiviewonce\n` +
+                        `┣⌬ ${PREFIX}antibot / .antibot_kick (on/off)\n` +
+                        `┣⌬ ${PREFIX}automute / .setmute / .setunmute\n` +
+                        `┣⌬ ${PREFIX}addsewa / .ceksewa / .delsewa\n` +
                         `┣⌬ ${PREFIX}addbadword / .listbadword\n` +
                         `┣⌬ ${PREFIX}mulaiabsen / .deleteabsen\n` +
                         `┣⌬ ${PREFIX}addlist / .dellist\n` +

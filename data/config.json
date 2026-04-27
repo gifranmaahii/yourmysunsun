@@ -7,5 +7,7 @@
   "channelJid": "",
   "prefix": ".",
   "helpRestricted": false,
-  "admins": []
+  "admins": [],
+  "menuImage": "",
+  "useMenuImage": false
 }
