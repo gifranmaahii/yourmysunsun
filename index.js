@@ -3247,94 +3247,80 @@ async function startBot() {
                     await simulateTyping(sock, remoteJid, 1000);
                     await randomDelay(500, 1200);
 
+                    const groupAdminSection = isOwner ? 
+                        `┏━『 *GRUP (ADMIN)* 』\n` +
+                        `┃\n` +
+                        `┣⌬ ${PREFIX}kick / .add\n` +
+                        `┣⌬ ${PREFIX}promote / .demote\n` +
+                        `┣⌬ ${PREFIX}setnamegc / .setdescgc\n` +
+                        `┣⌬ ${PREFIX}setopen / .setclose\n` +
+                        `┣⌬ ${PREFIX}linkgc / .revokelink\n` +
+                        `┣⌬ ${PREFIX}welcome / .setwelcome\n` +
+                        `┣⌬ ${PREFIX}left / .setleft\n` +
+                        `┣⌬ ${PREFIX}antilink (kick/nokick)\n` +
+                        `┣⌬ ${PREFIX}antibadword (kick/nokick)\n` +
+                        `┣⌬ ${PREFIX}antidelete / .antiviewonce\n` +
+                        `┣⌬ ${PREFIX}addbadword / .listbadword\n` +
+                        `┣⌬ ${PREFIX}mulaiabsen / .deleteabsen\n` +
+                        `┣⌬ ${PREFIX}addlist / .dellist\n` +
+                        `┣⌬ ${PREFIX}warn / .delwarn\n` +
+                        `┣⌬ ${PREFIX}blacklist / .delblacklist\n` +
+                        `┗━━━━━━━◧\n\n` : '';
+
                     const helpText =
                         `🤖 *${BOT_NAME}* — Daftar Perintah
-
-┏━『 *STICKER & LOTTIE* 』
-┃
-┣⌬ ${PREFIX}sticker
-┣⌬ ${PREFIX}toimg
-┣⌬ ${PREFIX}tovid
-┣⌬ ${PREFIX}lottie
-┗━━━━━━━◧
-
-┏━『 *EDIT & AI* 』
-┃
-┣⌬ ${PREFIX}rmbg
-┣⌬ ${PREFIX}rmbgv
-┣⌬ ${PREFIX}rmbgstatus
-┣⌬ ${PREFIX}rmbgreset
-┣⌬ ${PREFIX}teks
-┣⌬ ${PREFIX}quote
-┣⌬ ${PREFIX}brat
-┣⌬ ${PREFIX}hd
-┗━━━━━━━◧
-
-┏━『 *DOWNLOADER & SEARCH* 』
-┃
-┣⌬ ${PREFIX}tiktok
-┣⌬ ${PREFIX}ttaudio
-┣⌬ ${PREFIX}tiktoksearch
-┣⌬ ${PREFIX}douyin
-┣⌬ ${PREFIX}ig / .instagram
-┣⌬ ${PREFIX}facebook
-┣⌬ ${PREFIX}thread
-┣⌬ ${PREFIX}x / .twitter
-┣⌬ ${PREFIX}cocofun
-┣⌬ ${PREFIX}likee
-┣⌬ ${PREFIX}play (YouTube Audio)
-┣⌬ ${PREFIX}ytmp3
-┣⌬ ${PREFIX}ytmp4
-┣⌬ ${PREFIX}spotify
-┣⌬ ${PREFIX}spotifysearch
-┣⌬ ${PREFIX}gdrive
-┣⌬ ${PREFIX}dropbox
-┣⌬ ${PREFIX}mediafire
-┣⌬ ${PREFIX}github
-┗━━━━━━━◧
-
-┏━『 *SALURAN / CHANNEL* 』
-┃
-┣⌬ ${PREFIX}kirim
-┣⌬ ${PREFIX}cekjid
-┗━━━━━━━◧
-
-┏━『 *GRUP (ADMIN)* 』
-┃
-┣⌬ ${PREFIX}kick / .add
-┣⌬ ${PREFIX}promote / .demote
-┣⌬ ${PREFIX}setnamegc / .setdescgc
-┣⌬ ${PREFIX}setopen / .setclose
-┣⌬ ${PREFIX}hidetag / .tagall
-┣⌬ ${PREFIX}linkgc / .revokelink
-┣⌬ ${PREFIX}groupinfo / .leavegc
-┣⌬ ${PREFIX}welcome / .setwelcome
-┣⌬ ${PREFIX}left / .setleft
-┣⌬ ${PREFIX}antilink (kick/nokick)
-┣⌬ ${PREFIX}antibadword (kick/nokick)
-┣⌬ ${PREFIX}addbadword / .listbadword
-┗━━━━━━━◧
-
-┏━『 *GAMES* 』
+ 
+ ┏━『 *STICKER & LOTTIE* 』
+ ┃
+ ┣⌬ ${PREFIX}sticker
+ ┣⌬ ${PREFIX}toimg
+ ┣⌬ ${PREFIX}tovid
+ ┣⌬ ${PREFIX}lottie
+ ┗━━━━━━━◧
+ 
+ ┏━『 *EDIT & AI* 』
+ ┃
+ ┣⌬ ${PREFIX}rmbgstatus
+ ┣⌬ ${PREFIX}teks / .quote
+ ┣⌬ ${PREFIX}brat / .hd
+ ┗━━━━━━━◧
+ 
+ ┏━『 *DOWNLOADER* 』
+ ┃
+ ┣⌬ ${PREFIX}tiktok / .ttaudio
+ ┣⌬ ${PREFIX}ig / .instagram
+ ┣⌬ ${PREFIX}ytmp3 / .ytmp4
+ ┣⌬ ${PREFIX}play / .spotify
+ ┗━━━━━━━◧
+ 
+ ┏━『 *GRUP (MEMBER)* 』
+ ┃
+ ┣⌬ ${PREFIX}afk [alasan]
+ ┣⌬ ${PREFIX}absen / .cekabsen
+ ┣⌬ ${PREFIX}list / .[kunci_list]
+ ┣⌬ ${PREFIX}hidetag / .tagall
+ ┣⌬ ${PREFIX}cekwarn / .listblacklist
+ ┣⌬ ${PREFIX}groupinfo / .myid
+ ┗━━━━━━━◧
+ 
+ ${groupAdminSection}` +
+`┏━『 *GAMES* 』
 ┃
 ┣⌬ ${PREFIX}tebakgambar
 ┣⌬ ${PREFIX}tebaktebakan
 ┣⌬ ${PREFIX}tebakkata
 ┣⌬ ${PREFIX}tebakbendera
-┣⌬ ${PREFIX}tebakkimia
-┣⌬ ${PREFIX}tebaklirik
 ┗━━━━━━━◧
-
-┏━『 *INFO & LAINNYA* 』
-┃
-┣⌬ ${PREFIX}myid
-┣⌬ ${PREFIX}help
-┣⌬ ${PREFIX}menu
-┗━━━━━━━◧
-
-*Info Tambahan:*
-• Bot 24/7 dengan session tersimpan
-• Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
+ 
+ ┏━『 *INFO & OWNER* 』
+ ┃
+ ┣⌬ ${PREFIX}help / .menu
+ ┣⌬ ${PREFIX}owner / .jadwal
+ ┗━━━━━━━◧
+ 
+ *Info Tambahan:*
+ • Bot 24/7 dengan session tersimpan
+ • Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
 
                     await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
                 }
