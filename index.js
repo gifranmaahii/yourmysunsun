@@ -49,7 +49,8 @@ const fs = require('fs');
 // ============================================================
 // KONFIGURASI
 // ============================================================
-import * as botManager from './src/features/botManager.js';
+const minimist = require('minimist');
+const botManager = require('./src/features/botManager');
 
 // Parsing argumen CLI (untuk multi-session)
 const argv = minimist(process.argv.slice(2));
@@ -61,12 +62,12 @@ if (SESSION_NAME !== 'session' && !fs.existsSync(path.join(__dirname, 'sessions'
 }
 
 const CHANNEL_JID = process.env.CHANNEL_JID || '';
-const OWNER_NUMBER = process.env.OWNER_NUMBER || '';
+const OWNER_NUMBER = argv.owner || process.env.OWNER_NUMBER || '';
 const BOT_NAME = process.env.BOT_NAME || 'Robby Bot';
 const PREFIX = process.env.PREFIX || '.';
 
 // Folder penyimpanan sesi (cookie / auth) - akan di-persist untuk login 1x
-const SESSION_DIR = path.join(__dirname, 'session');
+const SESSION_DIR = SESSION_PATH;
 if (!fs.existsSync(SESSION_DIR)) {
     fs.mkdirSync(SESSION_DIR, { recursive: true });
 }
@@ -283,9 +284,10 @@ async function addTextToRmbgSticker(pngBuffer, text) {
 // START BOT
 // ============================================================
 
-// Cleanup temp folder secara periodik setiap 1 jam untuk menghemat penyimpanan
-setInterval(() => {
+// Timer Pembersihan Temp & Cek Expired Bot Anak (Setiap 1 jam)
+setInterval(async () => {
     try {
+        // 1. Bersihkan folder temp
         const tempDir = path.join(__dirname, 'temp');
         if (fs.existsSync(tempDir)) {
             const files = fs.readdirSync(tempDir);
@@ -294,18 +296,32 @@ setInterval(() => {
             for (const file of files) {
                 const filePath = path.join(tempDir, file);
                 const stats = fs.statSync(filePath);
-                // Hapus file yang lebih tua dari 1 jam
                 if (now - stats.mtimeMs > 60 * 60 * 1000) {
                     fs.unlinkSync(filePath);
                     deletedCount++;
                 }
             }
-            if (deletedCount > 0) {
-                logger.info(`🧹 Membersihkan ${deletedCount} file usang di folder temp.`);
+            if (deletedCount > 0) logger.info(`🧹 Membersihkan ${deletedCount} file temp.`);
+        }
+
+        // 2. Cek Expired Bot Anak (Hanya dijalankan oleh Bot Utama)
+        if (SESSION_NAME === 'session') {
+            const bots = botManager.getChildBots();
+            const { exec } = require('child_process');
+            let changed = false;
+            
+            for (const bot of bots) {
+                if (bot.status === 'active' && new Date() > new Date(bot.expiryAt)) {
+                    logger.warn(`🚨 Bot Anak ${bot.name} (${bot.phone}) telah EXPIRED! Mematikan proses...`);
+                    exec(`npx pm2 stop bot_${bot.phone}`);
+                    bot.status = 'expired';
+                    changed = true;
+                }
             }
+            if (changed) botManager.saveChildBots(bots);
         }
     } catch (e) {
-        logger.error('Gagal membersihkan temp folder: ' + e.message);
+        logger.error('Gagal menjalankan maintenance timer: ' + e.message);
     }
 }, 60 * 60 * 1000);
 
@@ -368,9 +384,9 @@ async function startBot() {
     if (!hasSession && !state.creds.registered) {
         if (argv.pairing) {
             usePairingCode = true;
-            phoneNumber = argv.pairing.replace(/[^0-9]/g, '');
+            phoneNumber = String(argv.pairing).replace(/[^0-9]/g, '');
         } else {
-            const readline = (await import('readline')).default;
+            const readline = require('readline');
             const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
             const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
@@ -422,7 +438,7 @@ async function startBot() {
                 const code = await sock.requestPairingCode(phoneNumber);
                 const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
                 console.log(`\n========================================================`);
-                console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
+                console.log(` KODE PAIRING ANDA: ${formattedCode}`);
                 console.log(`========================================================\n`);
             } catch (err) {
                 logger.error('❌ Gagal mendapatkan pairing code: ' + err.message);
@@ -783,7 +799,7 @@ async function startBot() {
                     if (!senderIsOwner) continue;
                     const secretMenu = `🔒 *OWNER SECRET PANEL*\n\n` +
                                      `*Bot Management:*\n` +
-                                     `┣⌬ ${PREFIX}addbotku <no> <nama> <hari>\n` +
+                                     `┣⌬ ${PREFIX}addbotku <no_bot> <nama> <hari> <no_owner>\n` +
                                      `┣⌬ ${PREFIX}listbotku\n` +
                                      `┣⌬ ${PREFIX}stopbotku <nomor/sesi>\n\n` +
                                      `*System Control:*\n` +
@@ -801,12 +817,13 @@ async function startBot() {
                     const phone = args[1];
                     const name = args[2];
                     const days = args[3] || '30';
+                    const owner = args[4];
 
-                    if (!phone || !name) {
-                        return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}addbotku <nomor> <nama> <hari>*` }, { quoted: msg });
+                    if (!phone || !name || !owner) {
+                        return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}addbotku <no_bot> <nama> <hari> <no_owner>*` }, { quoted: msg });
                     }
                     await sock.sendMessage(remoteJid, { text: `⏳ Sedang menyiapkan bot untuk *${name}*...` }, { quoted: msg });
-                    await botManager.addChildBot(sock, remoteJid, phone, name, days);
+                    await botManager.addChildBot(sock, remoteJid, phone, name, days, owner);
                     continue;
                 }
 

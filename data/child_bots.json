@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "phone": "6282312867226",
+    "name": "shopee",
+    "sessionName": "bot_6282312867226",
+    "addedAt": "2026-04-28T06:00:27.108Z",
+    "expiryAt": "2026-04-29T06:00:27.108Z",
+    "status": "active"
+  },
+  {
+    "phone": "6282312867226",
+    "name": "shopee",
+    "sessionName": "bot_6282312867226",
+    "addedAt": "2026-04-28T06:09:06.031Z",
+    "expiryAt": "2026-04-29T06:09:06.031Z",
+    "status": "active"
+  }
+]

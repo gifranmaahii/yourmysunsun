@@ -32,11 +32,12 @@ const saveChildBots = (bots) => {
 
 /**
  * Menambahkan bot baru (Child Bot)
- * @param {string} phone Nomor HP
+ * @param {string} phone Nomor HP Bot Anak
  * @param {string} name Nama Pembeli/Bot
  * @param {number} days Durasi sewa (hari)
+ * @param {string} ownerPhone Nomor HP Owner Bot Anak
  */
-export const addChildBot = async (sock, remoteJid, phone, name, days) => {
+export const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
     const bots = getChildBots();
     
     // Hitung waktu kadaluarsa
@@ -46,26 +47,32 @@ export const addChildBot = async (sock, remoteJid, phone, name, days) => {
     const newBot = {
         phone,
         name,
+        owner: ownerPhone,
         sessionName: `bot_${phone}`,
         addedAt: new Date().toISOString(),
         expiryAt: expiryDate.toISOString(),
         status: 'pending'
     };
 
-    // Jalankan bot di latar belakang menggunakan PM2 atau Node langsung
-    // Kita gunakan spawn agar bisa menangkap output Pairing Code jika ada
-    const child = spawn('node', ['index.js', `--session=bot_${phone}`, `--pairing=${phone}`], {
+    // Jalankan bot di latar belakang
+    const child = spawn(process.execPath, ['index.js', `--session=bot_${phone}`, `--pairing=${phone}`, `--owner=${ownerPhone}`], {
         cwd: path.join(__dirname, '../../'),
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe']
     });
 
+    console.log(`🚀 [BotManager] Memulai proses bot anak untuk ${phone}...`);
+    await sock.sendMessage(remoteJid, { text: `🚀 Menghubungkan ke server WhatsApp untuk nomor ${phone}... Mohon tunggu sebentar.` });
+
     let pairingCodeSent = false;
 
+    // Log output untuk debug
     child.stdout.on('data', async (data) => {
         const output = data.toString();
-        // Cari pola kode pairing (8 digit: XXXX-XXXX)
-        const pairingMatch = output.match(/([A-Z0-9]{4}-[A-Z0-9]{4})/);
+        console.log(`[ChildBot ${phone}] STDOUT: ${output}`);
+
+        // Cari pola kode pairing (format XXXX-XXXX)
+        const pairingMatch = output.match(/KODE PAIRING ANDA: ([A-Z0-9]{4}-[A-Z0-9]{4})/);
         
         if (pairingMatch && !pairingCodeSent) {
             pairingCodeSent = true;
@@ -88,17 +95,17 @@ export const addChildBot = async (sock, remoteJid, phone, name, days) => {
         }
     });
 
-    child.on('error', (err) => {
-        console.error('Gagal menjalankan bot anak:', err);
+    child.stderr.on('data', (data) => {
+        console.error(`[ChildBot ${phone}] ERROR: ${data.toString()}`);
     });
 
-    // Timeout jika kode pairing tidak muncul dalam 60 detik
+    // Timeout jika kode pairing tidak muncul dalam 120 detik
     setTimeout(() => {
         if (!pairingCodeSent) {
-            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone}. Pastikan nomor benar dan coba lagi.` });
+            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone}. Pastikan nomor tersebut tidak sedang login di tempat lain (RDP/Web) dan coba lagi dalam 1 menit.` });
             child.kill();
         }
-    }, 60000);
+    }, 120000);
 };
 
 /**
