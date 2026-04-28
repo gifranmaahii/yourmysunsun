@@ -2372,7 +2372,12 @@ async function startBot() {
                 if (textContent.startsWith(PREFIX + 'fake')) {
                     const baitText = textContent.replace(/^\.fake\s*/i, '').trim() || 'TAP ME';
                     
-                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    // Ambil contextInfo dari berbagai kemungkinan tipe pesan
+                    const contextInfo = message.extendedTextMessage?.contextInfo || 
+                                      message.imageMessage?.contextInfo || 
+                                      message.videoMessage?.contextInfo;
+                                      
+                    const quotedMsg = contextInfo?.quotedMessage;
                     const imageMsg = message.imageMessage || quotedMsg?.imageMessage;
 
                     if (!imageMsg) {
@@ -2388,9 +2393,10 @@ async function startBot() {
                     try {
                         let downloadKey;
                         if (message.imageMessage) {
+                            // Jika pesan aslinya adalah gambar (dan mungkin membalas gambar lain)
                             downloadKey = msg;
                         } else {
-                            const contextInfo = message.extendedTextMessage?.contextInfo;
+                            // Jika pesan aslinya adalah teks yang membalas gambar
                             if (!contextInfo?.stanzaId) throw new Error('Informasi pesan balasan tidak ditemukan');
 
                             downloadKey = {
