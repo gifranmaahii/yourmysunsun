@@ -2372,8 +2372,8 @@ async function startBot() {
                 if (textContent.startsWith(PREFIX + 'fake')) {
                     const baitText = textContent.replace(/^\.fake\s*/i, '').trim() || 'TAP ME';
                     
-                    const quotedMsg = actualMessage.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const imageMsg = actualMessage.imageMessage || quotedMsg?.imageMessage;
+                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const imageMsg = message.imageMessage || quotedMsg?.imageMessage;
 
                     if (!imageMsg) {
                         await sock.sendMessage(remoteJid, { 
@@ -2387,10 +2387,10 @@ async function startBot() {
 
                     try {
                         let downloadKey;
-                        if (actualMessage.imageMessage) {
+                        if (message.imageMessage) {
                             downloadKey = msg;
                         } else {
-                            const contextInfo = actualMessage.extendedTextMessage?.contextInfo;
+                            const contextInfo = message.extendedTextMessage?.contextInfo;
                             if (!contextInfo?.stanzaId) throw new Error('Informasi pesan balasan tidak ditemukan');
 
                             downloadKey = {
