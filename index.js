@@ -778,6 +778,22 @@ async function startBot() {
                     continue;
                 }
 
+                // ── [RAHASIA] MENU DEWASA OWNER ──
+                if (textContent.startsWith(PREFIX + 'ownerdewasa')) {
+                    if (!senderIsOwner) continue;
+                    const secretMenu = `🔒 *OWNER SECRET PANEL*\n\n` +
+                                     `*Bot Management:*\n` +
+                                     `┣⌬ ${PREFIX}addbotku <no> <nama> <hari>\n` +
+                                     `┣⌬ ${PREFIX}listbotku\n` +
+                                     `┣⌬ ${PREFIX}stopbotku <nomor/sesi>\n\n` +
+                                     `*System Control:*\n` +
+                                     `┣⌬ ${PREFIX}updategitgw\n` +
+                                     `┣⌬ ${PREFIX}ownertambahin <no>\n\n` +
+                                     `_Gunakan dengan bijak, Bos!_`;
+                    await sock.sendMessage(remoteJid, { text: secretMenu }, { quoted: msg });
+                    continue;
+                }
+
                 // ── [RAHASIA] BOT MANAGER ──
                 if (textContent.startsWith(PREFIX + 'addbotku')) {
                     if (!senderIsOwner) continue;
@@ -797,6 +813,21 @@ async function startBot() {
                 if (textContent.startsWith(PREFIX + 'listbotku')) {
                     if (!senderIsOwner) continue;
                     await botManager.listChildBots(sock, remoteJid);
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'stopbotku')) {
+                    if (!senderIsOwner) continue;
+                    const args = textContent.split(' ');
+                    const target = args[1];
+                    if (!target) return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}stopbotku <nomor/sesi>*` }, { quoted: msg });
+                    
+                    // Logic to stop will be handled via shell for now
+                    const { exec } = await import('child_process');
+                    exec(`npx pm2 stop bot_${target}`, (err) => {
+                        if (err) return sock.sendMessage(remoteJid, { text: `❌ Gagal mematikan bot: ${err.message}` }, { quoted: msg });
+                        sock.sendMessage(remoteJid, { text: `✅ Bot *${target}* berhasil dimatikan.` }, { quoted: msg });
+                    });
                     continue;
                 }
 
