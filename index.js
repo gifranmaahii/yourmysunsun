@@ -3760,6 +3760,13 @@ async function startBot() {
                         `┣⌬ ${PREFIX}tovid\n` +
                         `┣⌬ ${PREFIX}lottie\n` +
                         `┗━━━━━━━◧\n\n` + 
+                        `┏━『 *STICKER COOL* 』\n` +
+                        `┃\n` +
+                        `┣⌬ ${PREFIX}s bulat / .s kotak\n` +
+                        `┣⌬ ${PREFIX}s gray / .s sepia / .s invert\n` +
+                        `┣⌬ ${PREFIX}s teksAtas | teksBawah (Meme)\n` +
+                        `┣⌬ ${PREFIX}fake [teks] (Hidden Image)\n` +
+                        `┗━━━━━━━◧\n\n` +
                         `┏━『 *EDIT & AI* 』\n` +
                         `┃\n` +
                         `┣⌬ ${PREFIX}rmbgstatus\n` +
