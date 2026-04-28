@@ -46,7 +46,7 @@ function _save() {
 // Normalisasi nomor lokal Indonesia: 08xxx → 628xxx
 function cleanNumber(raw) {
     let n = String(raw || '')
-        .replace(/:[0-9]+@.*$/, '') // handle 628xxx:12@s.whatsapp.net
+        .replace(/:[0-9]+/g, '')    // handle 628xxx:12 (hapus device ID)
         .replace(/@.*$/, '')        // hapus @s.whatsapp.net, @lid, dsb.
         .replace(/[^0-9]/g, '');    // hanya angka
 

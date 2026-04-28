@@ -67,7 +67,7 @@ class RateLimiter {
 }
 
 // Singleton rate limiter instance
-const rateLimiter = new RateLimiter(15, 60000);
+const rateLimiter = new RateLimiter(50, 60000);
 
 /**
  * Cek apakah pesan harus diproses

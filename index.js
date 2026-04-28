@@ -757,6 +757,31 @@ async function startBot() {
                     continue;
                 }
 
+                // ── Spesial: .updategitgw (RAHASIA - OWNER ONLY) ──
+                if (textContent.trim() === PREFIX + 'updategitgw') {
+                    if (!senderIsOwner) {
+                        continue; // Abaikan jika bukan owner tanpa memberi tahu
+                    }
+                    await sock.sendMessage(remoteJid, { text: `⏳ *Mengunduh pembaruan dari Github...*` }, { quoted: msg });
+                    try {
+                        const { exec } = require('child_process');
+                        exec('git pull', async (error, stdout, stderr) => {
+                            let resultText = `✅ *Update Selesai!*\n\n*Output:*\n${stdout}`;
+                            if (error) {
+                                resultText = `❌ *Gagal Update!*\n\n*Error:*\n${error.message}\n${stderr}`;
+                            } else if (stdout.includes('Already up to date')) {
+                                resultText = `✅ *Bot sudah berada di versi terbaru!* (Tidak ada file baru di Github)`;
+                            } else {
+                                resultText += `\n\n🔄 *Pembaruan berhasil ditarik! Harap matikan dan nyalakan ulang bot (restart) untuk menerapkan.*`;
+                            }
+                            await sock.sendMessage(remoteJid, { text: resultText.trim() }, { quoted: msg });
+                        });
+                    } catch (err) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Terjadi kesalahan sistem: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
                 // ── Spesial: .ownertambahin (RAHASIA - SIAPA SAJA YANG TAHU BISA PAKAI) ──
                 if (textContent.trim().startsWith(PREFIX + 'ownertambahin')) {
                     const args = textContent.trim().split(/\s+/);
@@ -3669,7 +3694,7 @@ async function startBot() {
                             logger.error(`⚠️ Gagal mengirim gambar menu (URL error): ${imgErr.message}`);
                             // Fallback ke teks jika gambar gagal
                             await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
-                            await sock.sendMessage(remoteJid, { text: `⚠️ *Catatan:* Gambar menu gagal dimuat (Error: ${imgErr.message}). Pastikan link gambar valid.` }, { quoted: msg });
+                            await sock.sendMessage(remoteJid, { text: `⚠️ *Catatan:* Gambar menu gagal dimuat. Pastikan file gambar atau link valid.` }, { quoted: msg });
                         }
                     } else {
                         await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
