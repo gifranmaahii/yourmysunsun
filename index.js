@@ -15,11 +15,22 @@ const tools = require('./src/features/tools');
 const { logger, baileyLogger } = require('./src/utils/logger');
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
 const cfg = require('./src/utils/config');
-const { convertToSticker, createStickerWithText, createAnimatedSticker, createAnimatedStickerWithText } = require('./src/features/sticker');
+const { 
+    convertToSticker, 
+    createStickerWithText, 
+    createAnimatedSticker, 
+    createAnimatedStickerWithText,
+    createCircleSticker,
+    createRoundedSticker,
+    createMemeSticker,
+    createFilteredSticker,
+    addExif
+} = require('./src/features/sticker');
 const { removeBackgroundImage, removeBackgroundVideo, removeBackgroundVideoAI, detectDominantBgColor, checkRemoveBgCredits, resetRemoveBgStatus } = require('./src/features/removebg');
 const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
 const { getInstagramMedia } = require('./src/features/instagram');
 const { generateTextImage, generateBratImage } = require('./src/features/textImage');
+const { generateFakeThumbnail } = require('./src/features/fakePreview');
 const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
 const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
 const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter');
@@ -1977,7 +1988,20 @@ async function startBot() {
                     if (!mediaMsg) {
                         await randomDelay(500, 1500);
                         await sock.sendMessage(remoteJid, {
-                            text: `❌ Kirim gambar/video sambil ketik perintah, atau quote gambar/video dengan perintah:\n\n*${PREFIX}sticker* - sticker biasa/gerak\n*${PREFIX}sticker teks kamu* - sticker dengan teks di atas (hanya untuk gambar)`,
+                            text: `✨ *Advanced Sticker Features*\n\n` +
+                                `📌 *Cara Pakai:*\n` +
+                                `Kirim/reply gambar/video dengan perintah:\n\n` +
+                                `🖼️ *Bentuk & Teks:*\n` +
+                                `• \`${PREFIX}s\` - Sticker biasa\n` +
+                                `• \`${PREFIX}s bulat\` - Bentuk lingkaran\n` +
+                                `• \`${PREFIX}s kotak\` - Sudut membulat\n` +
+                                `• \`${PREFIX}s teks atas | teks bawah\` - Meme style\n` +
+                                `• \`${PREFIX}s teks\` - Teks di atas gambar\n\n` +
+                                `🎨 *Filter Warna:*\n` +
+                                `• \`${PREFIX}s gray\` - Hitam putih\n` +
+                                `• \`${PREFIX}s invert\` - Warna negatif\n` +
+                                `• \`${PREFIX}s sepia\` - Efek jadul\n\n` +
+                                `🎬 *Video:* Maksimal 10 detik.`,
                         }, { quoted: msg });
                         continue;
                     }
@@ -2027,26 +2051,45 @@ async function startBot() {
                     // Konversi ke sticker
                     let stickerBuffer;
                     try {
+                        const lowText = stickerText.toLowerCase();
+                        
                         if (isVideo) {
                             if (stickerText) {
                                 stickerBuffer = await createAnimatedStickerWithText(mediaBuffer, stickerText);
                             } else {
                                 stickerBuffer = await createAnimatedSticker(mediaBuffer);
                             }
-                        } else if (stickerText) {
-                            // Sticker diam dengan teks di atas
-                            stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
                         } else {
-                            // Sticker biasa
-                            stickerBuffer = await convertToSticker(mediaBuffer);
+                            // LOGIKA STICKER COOL (Variasi Fitur)
+                            if (lowText === 'circle' || lowText === 'bulat') {
+                                stickerBuffer = await createCircleSticker(mediaBuffer);
+                            } else if (lowText === 'rounded' || lowText === 'kotak') {
+                                stickerBuffer = await createRoundedSticker(mediaBuffer);
+                            } else if (['gray', 'grayscale', 'invert', 'sepia'].includes(lowText)) {
+                                stickerBuffer = await createFilteredSticker(mediaBuffer, lowText);
+                            } else if (stickerText.includes('|')) {
+                                // Fitur 1: Meme Style (Top | Bottom) ATAU Watermark (Pack | Auth)
+                                const parts = stickerText.split('|').map(p => p.trim());
+                                
+                                // Jika ada 2 pipe (3 parts) -> Meme + Custom Watermark? (mungkin terlalu kompleks)
+                                // Kita asumsikan defaultnya adalah Meme (Top | Bottom)
+                                stickerBuffer = await createMemeSticker(mediaBuffer, parts[0], parts[1]);
+                            } else if (stickerText) {
+                                // Sticker diam dengan teks di atas (default lama)
+                                stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
+                            } else {
+                                // Sticker biasa
+                                stickerBuffer = await convertToSticker(mediaBuffer);
+                            }
                         }
 
                         // Kirim sticker
                         await sock.sendMessage(remoteJid, {
                             sticker: stickerBuffer,
                         }, { quoted: msg });
-                        logger.info(`🎨 Sticker${isVideo ? ' gerak' : ''} dikirim ke ${remoteJid}${stickerText ? ` dengan teks: "${stickerText}"` : ''}`);
+                        logger.info(`🎨 Sticker${isVideo ? ' gerak' : ''} dikirim ke ${remoteJid}${stickerText ? ` dengan opsi: "${stickerText}"` : ''}`);
                     } catch (error) {
+                        logger.error(`❌ Sticker process error: ${error.message}`);
                         await sock.sendMessage(remoteJid, { text: '❌ Terjadi kesalahan saat memproses sticker' }, { quoted: msg });
                     }
 
@@ -2156,16 +2199,29 @@ async function startBot() {
 
                         let stickerBuffer;
                         try {
+                            const lowText = stickerText.toLowerCase();
+
                             if (isVideo) {
                                 if (stickerText) {
                                     stickerBuffer = await createAnimatedStickerWithText(mediaBuffer, stickerText);
                                 } else {
                                     stickerBuffer = await createAnimatedSticker(mediaBuffer);
                                 }
-                            } else if (stickerText) {
-                                stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
                             } else {
-                                stickerBuffer = await convertToSticker(mediaBuffer);
+                                if (lowText === 'circle' || lowText === 'bulat') {
+                                    stickerBuffer = await createCircleSticker(mediaBuffer);
+                                } else if (lowText === 'rounded' || lowText === 'kotak') {
+                                    stickerBuffer = await createRoundedSticker(mediaBuffer);
+                                } else if (['gray', 'grayscale', 'invert', 'sepia'].includes(lowText)) {
+                                    stickerBuffer = await createFilteredSticker(mediaBuffer, lowText);
+                                } else if (stickerText.includes('|')) {
+                                    const parts = stickerText.split('|').map(p => p.trim());
+                                    stickerBuffer = await createMemeSticker(mediaBuffer, parts[0], parts[1]);
+                                } else if (stickerText) {
+                                    stickerBuffer = await createStickerWithText(mediaBuffer, stickerText);
+                                } else {
+                                    stickerBuffer = await convertToSticker(mediaBuffer);
+                                }
                             }
 
                             await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
@@ -2308,6 +2364,60 @@ async function startBot() {
                         }
                         continue;
                     }
+                }
+
+                // -----------------------------------------------
+                // FITUR: FAKE PREVIEW (HIDDEN IMAGE) — .fake [teks]
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'fake')) {
+                    const baitText = textContent.replace(/^\.fake\s*/i, '').trim() || 'TAP ME';
+                    
+                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const imageMsg = message.imageMessage || quotedMsg?.imageMessage;
+
+                    if (!imageMsg) {
+                        await sock.sendMessage(remoteJid, { 
+                            text: `🖼️ *Fake Preview (Hidden Image)*\n\nSembunyikan gambar di balik thumbnail pancingan!\n\n📌 *Cara pakai:*\nReply gambar lalu ketik \`${PREFIX}fake [tulisan]\`\n\nContoh: \`${PREFIX}fake jangan dibuka\`` 
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 800);
+                    await sock.sendMessage(remoteJid, { text: '⏳ Menyiapkan kejutan...' }, { quoted: msg });
+
+                    try {
+                        let downloadKey;
+                        if (message.imageMessage) {
+                            downloadKey = msg;
+                        } else {
+                            downloadKey = {
+                                message: quotedMsg,
+                                key: {
+                                    remoteJid: remoteJid,
+                                    id: message.extendedTextMessage.contextInfo.stanzaId,
+                                    participant: message.extendedTextMessage.contextInfo.participant
+                                }
+                            };
+                        }
+
+                        const fullImage = await downloadMediaMessage(downloadKey, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+                        const baitThumb = await generateFakeThumbnail(baitText);
+
+                        if (fullImage && baitThumb) {
+                            await sock.sendMessage(remoteJid, {
+                                image: fullImage,
+                                jpegThumbnail: baitThumb,
+                                caption: `✨ *Hidden Image Berhasil!*\n\n💡 _Klik gambar untuk melihat aslinya_`
+                            }, { quoted: msg });
+                            logger.info(`🎭 Fake Preview dikirim ke ${remoteJid} dengan bait: "${baitText}"`);
+                        } else {
+                            throw new Error('Gagal memproses gambar atau thumbnail');
+                        }
+                    } catch (err) {
+                        logger.error(`❌ fake error: ${err.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal membuat fake preview: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
                 }
 
 

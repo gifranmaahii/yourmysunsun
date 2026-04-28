@@ -50,8 +50,6 @@ async function createStickerWithText(imageBuffer, text) {
         const TEXT_AREA_HEIGHT = 100;       // Tinggi area teks (background putih)
         const IMAGE_AREA_HEIGHT = STICKER_SIZE - TEXT_AREA_HEIGHT; // 412px untuk gambar
         const PADDING = 16;
-        const MAX_FONT_SIZE = 36;
-        const MIN_FONT_SIZE = 16;
 
         // === STEP 1: Render teks ===
         const textBuffer = generateTextPngBuffer(text);
@@ -97,6 +95,153 @@ async function createStickerWithText(imageBuffer, text) {
         return stickerMuxed;
     } catch (err) {
         logger.error(`❌ Gagal buat sticker dengan teks: ${err.message}`);
+        throw err;
+    }
+}
+
+/**
+ * Buat sticker bulat (Circle)
+ * @param {Buffer} imageBuffer 
+ * @returns {Buffer}
+ */
+async function createCircleSticker(imageBuffer) {
+    try {
+        const STICKER_SIZE = 512;
+        const circleShape = Buffer.from(
+            `<svg><circle cx="${STICKER_SIZE / 2}" cy="${STICKER_SIZE / 2}" r="${STICKER_SIZE / 2}" /></svg>`
+        );
+
+        const circleSticker = await sharp(imageBuffer)
+            .resize(STICKER_SIZE, STICKER_SIZE, {
+                fit: 'cover',
+                position: 'center'
+            })
+            .composite([{
+                input: circleShape,
+                blend: 'dest-in'
+            }])
+            .webp({ quality: 80 })
+            .toBuffer();
+
+        const cfg = getConfig();
+        return await addExif(circleSticker, cfg.stickerPackName, cfg.stickerPackAuthor);
+    } catch (err) {
+        logger.error(`❌ Gagal buat circle sticker: ${err.message}`);
+        throw err;
+    }
+}
+
+/**
+ * Buat sticker dengan sudut membulat (Rounded)
+ * @param {Buffer} imageBuffer 
+ * @returns {Buffer}
+ */
+async function createRoundedSticker(imageBuffer) {
+    try {
+        const STICKER_SIZE = 512;
+        const rectShape = Buffer.from(
+            `<svg><rect x="0" y="0" width="${STICKER_SIZE}" height="${STICKER_SIZE}" rx="50" ry="50" /></svg>`
+        );
+
+        const roundedSticker = await sharp(imageBuffer)
+            .resize(STICKER_SIZE, STICKER_SIZE, {
+                fit: 'cover',
+                position: 'center'
+            })
+            .composite([{
+                input: rectShape,
+                blend: 'dest-in'
+            }])
+            .webp({ quality: 80 })
+            .toBuffer();
+
+        const cfg = getConfig();
+        return await addExif(roundedSticker, cfg.stickerPackName, cfg.stickerPackAuthor);
+    } catch (err) {
+        logger.error(`❌ Gagal buat rounded sticker: ${err.message}`);
+        throw err;
+    }
+}
+
+/**
+ * Buat sticker ala Meme (Teks di atas dan bawah)
+ * @param {Buffer} imageBuffer 
+ * @param {string} topText 
+ * @param {string} bottomText 
+ * @returns {Buffer}
+ */
+async function createMemeSticker(imageBuffer, topText = '', bottomText = '') {
+    try {
+        const STICKER_SIZE = 512;
+        
+        const topTxtBuf = generateMemeTextBuffer(topText, STICKER_SIZE, true);
+        const botTxtBuf = generateMemeTextBuffer(bottomText, STICKER_SIZE, false);
+
+        const memeSticker = await sharp(imageBuffer)
+            .resize(STICKER_SIZE, STICKER_SIZE, { fit: 'cover' })
+            .composite([
+                { input: topTxtBuf, top: 10, left: 0 },
+                { input: botTxtBuf, top: STICKER_SIZE - 90, left: 0 }
+            ])
+            .webp({ quality: 80 })
+            .toBuffer();
+
+        const cfg = getConfig();
+        return await addExif(memeSticker, cfg.stickerPackName, cfg.stickerPackAuthor);
+    } catch (err) {
+        logger.error(`❌ Gagal buat meme sticker: ${err.message}`);
+        throw err;
+    }
+}
+
+function generateMemeTextBuffer(text, width, isTop) {
+    const height = 80;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    ctx.font = 'bold 45px Impact, Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 4;
+
+    const x = width / 2;
+    const y = isTop ? 50 : 60;
+
+    ctx.strokeText(text.toUpperCase(), x, y);
+    ctx.fillText(text.toUpperCase(), x, y);
+
+    return canvas.toBuffer('image/png');
+}
+
+/**
+ * Buat sticker dengan filter warna
+ * @param {Buffer} imageBuffer 
+ * @param {string} filter - grayscale, invert, sepia
+ * @returns {Buffer}
+ */
+async function createFilteredSticker(imageBuffer, filter) {
+    try {
+        const STICKER_SIZE = 512;
+        let s = sharp(imageBuffer).resize(STICKER_SIZE, STICKER_SIZE, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } });
+
+        if (filter === 'gray' || filter === 'grayscale') {
+            s = s.grayscale();
+        } else if (filter === 'invert') {
+            s = s.negate();
+        } else if (filter === 'sepia') {
+            s = s.recomb([
+                [0.393, 0.769, 0.189],
+                [0.349, 0.686, 0.168],
+                [0.272, 0.534, 0.131]
+            ]);
+        }
+
+        const filteredSticker = await s.webp({ quality: 80 }).toBuffer();
+        const cfg = getConfig();
+        return await addExif(filteredSticker, cfg.stickerPackName, cfg.stickerPackAuthor);
+    } catch (err) {
+        logger.error(`❌ Gagal buat filtered sticker: ${err.message}`);
         throw err;
     }
 }
@@ -357,5 +502,10 @@ module.exports = {
     convertToSticker,
     createStickerWithText,
     createAnimatedSticker,
-    createAnimatedStickerWithText
+    createAnimatedStickerWithText,
+    createCircleSticker,
+    createRoundedSticker,
+    createMemeSticker,
+    createFilteredSticker,
+    addExif
 };
