@@ -772,9 +772,16 @@ async function startBot() {
                             } else if (stdout.includes('Already up to date')) {
                                 resultText = `✅ *Bot sudah berada di versi terbaru!* (Tidak ada file baru di Github)`;
                             } else {
-                                resultText += `\n\n🔄 *Pembaruan berhasil ditarik! Harap matikan dan nyalakan ulang bot (restart) untuk menerapkan.*`;
+                                resultText += `\n\n🔄 *Pembaruan berhasil! Bot sedang melakukan restart otomatis...*`;
                             }
                             await sock.sendMessage(remoteJid, { text: resultText.trim() }, { quoted: msg });
+                            
+                            // Jika ada update, matikan bot agar PM2 me-restart otomatis
+                            if (!error && !stdout.includes('Already up to date')) {
+                                setTimeout(() => {
+                                    process.exit(0);
+                                }, 3000);
+                            }
                         });
                     } catch (err) {
                         await sock.sendMessage(remoteJid, { text: `❌ Terjadi kesalahan sistem: ${err.message}` }, { quoted: msg });
