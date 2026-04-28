@@ -2390,12 +2390,15 @@ async function startBot() {
                         if (message.imageMessage) {
                             downloadKey = msg;
                         } else {
+                            const contextInfo = message.extendedTextMessage?.contextInfo;
+                            if (!contextInfo?.stanzaId) throw new Error('Informasi pesan balasan tidak ditemukan');
+
                             downloadKey = {
                                 message: quotedMsg,
                                 key: {
                                     remoteJid: remoteJid,
-                                    id: message.extendedTextMessage.contextInfo.stanzaId,
-                                    participant: message.extendedTextMessage.contextInfo.participant
+                                    id: contextInfo.stanzaId,
+                                    participant: contextInfo.participant
                                 }
                             };
                         }
