@@ -49,6 +49,17 @@ const fs = require('fs');
 // ============================================================
 // KONFIGURASI
 // ============================================================
+import * as botManager from './src/features/botManager.js';
+
+// Parsing argumen CLI (untuk multi-session)
+const argv = minimist(process.argv.slice(2));
+const SESSION_NAME = argv.session || 'session';
+const SESSION_PATH = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
+
+if (SESSION_NAME !== 'session' && !fs.existsSync(path.join(__dirname, 'sessions'))) {
+    fs.mkdirSync(path.join(__dirname, 'sessions'));
+}
+
 const CHANNEL_JID = process.env.CHANNEL_JID || '';
 const OWNER_NUMBER = process.env.OWNER_NUMBER || '';
 const BOT_NAME = process.env.BOT_NAME || 'Robby Bot';
@@ -300,7 +311,7 @@ setInterval(() => {
 
 async function startBot() {
     // Muat state auth dari folder session (cookie otomatis disimpan di sini)
-    const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+    const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
     // Init config (merge .env defaults + data/config.json)
     cfg.initConfig({
         botName: process.env.BOT_NAME || 'Robby Bot',
@@ -330,9 +341,14 @@ async function startBot() {
     } finally {
         if (versionTimeout) clearTimeout(versionTimeout);
     }
-    logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version.join('.')} (latest: ${isLatest})`);
+    
+    if (SESSION_NAME === 'session') {
+        logger.info(`🤖 ${BOT_NAME} menggunakan Baileys v${version.join('.')} (latest: ${isLatest})`);
+    } else {
+        logger.info(`🤖 Bot Anak [${SESSION_NAME}] menggunakan Baileys v${version.join('.')}`);
+    }
 
-    const credsPath = path.join(SESSION_DIR, 'creds.json');
+    const credsPath = path.join(SESSION_PATH, 'creds.json');
     let hasSession = false;
     try {
         if (fs.existsSync(credsPath)) {
@@ -350,58 +366,53 @@ async function startBot() {
     let phoneNumber = '';
 
     if (!hasSession && !state.creds.registered) {
-        const readline = require('readline');
-        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-        const question = (text) => new Promise((resolve) => rl.question(text, resolve));
-
-        console.log(`\n========================================================`);
-        console.log(` 🔑 METODE LOGIN WHATSAPP BOT`);
-        console.log(`========================================================`);
-        console.log(` 1. Scan QR Code (Arahkan kamera HP Anda)`);
-        console.log(` 2. Pairing Code (Login memasukkan kode angka di HP)`);
-        console.log(`========================================================`);
-        
-        // Timeout untuk pertanyaan jika tidak dijawab (misal saat restart otomatis tapi file session corrupt)
-        const answerPromise = question('Pilih metode login (1/2): ');
-        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('1'), 60000));
-        
-        const answer = await Promise.race([answerPromise, timeoutPromise]);
-
-        if (answer.trim() === '2') {
+        if (argv.pairing) {
             usePairingCode = true;
-            let hw = await question('Masukkan nomor WhatsApp BOT (contoh awalan 62: 6281234567890): ');
-            phoneNumber = hw.replace(/[^0-9]/g, '');
-            console.log(`⏳ Sedang meminta kode pairing untuk nomor: ${phoneNumber}...`);
-            console.log(`⚠️ Jika gagal, pastikan nomor sudah benar dan belum login di tempat lain.\n`);
+            phoneNumber = argv.pairing.replace(/[^0-9]/g, '');
+        } else {
+            const readline = (await import('readline')).default;
+            const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+            const question = (text) => new Promise((resolve) => rl.question(text, resolve));
+
+            console.log(`\n========================================================`);
+            console.log(` 🔑 METODE LOGIN WHATSAPP BOT [${SESSION_NAME}]`);
+            console.log(`========================================================`);
+            console.log(` 1. Scan QR Code (Arahkan kamera HP Anda)`);
+            console.log(` 2. Pairing Code (Login memasukkan kode angka di HP)`);
+            console.log(`========================================================`);
+            
+            const answerPromise = question('Pilih metode login (1/2): ');
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('1'), 60000));
+            const answer = await Promise.race([answerPromise, timeoutPromise]);
+
+            if (answer.trim() === '2') {
+                usePairingCode = true;
+                let hw = await question('Masukkan nomor WhatsApp BOT (contoh awalan 62: 6281234567890): ');
+                phoneNumber = hw.replace(/[^0-9]/g, '');
+                console.log(`⏳ Sedang meminta kode pairing untuk nomor: ${phoneNumber}...`);
+            }
+            rl.close();
         }
-        rl.close();
     } else {
         logger.info('🔑 Sesi ditemukan. Melanjutkan login otomatis...');
     }
 
-    // Buat socket WA dengan timeout yang lebih besar agar tidak mudah "Timed Out"
+    // Buat socket WA
     const sock = makeWASocket({
         version,
         auth: state,
-        logger: baileyLogger,           // silent – tidak spam terminal
-        printQRInTerminal: !usePairingCode, // QR tampil jika tidak pakai pairing code
-        browser: Browsers.ubuntu('Chrome'), // Browser yang wajib dipakai agar pairing code berhasil
-        syncFullHistory: false,         // Tidak perlu history penuh (lebih aman)
-        markOnlineOnConnect: false,     // Jangan langsung online (anti-ban)
-        generateHighQualityLinkPreview: false,
-        connectTimeoutMs: 60000,        // Timeout koneksi: 60 detik (default 20 detik)
-        retryRequestDelayMs: 350,       // Delay antar retry request internal
-        defaultQueryTimeoutMs: 120000,   // Timeout query WA: 120 detik (diperbesar agar tidak mudah timeout)
-        keepAliveIntervalMs: 15000,     // Kirim keepalive setiap 15 detik (default 30s)
-        qrTimeout: 40000,              // Timeout QR code 40 detik
-        emitOwnEvents: true,           // Emit event sendiri
+        logger: baileyLogger,
+        printQRInTerminal: !usePairingCode,
+        browser: ["Ubuntu", "Chrome", "20.0.04"], 
+        syncFullHistory: false,
+        markOnlineOnConnect: false,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
         getMessage: async (key) => {
-            // Fallback dari cache sederhana
             return msgCache.get(key.id) || undefined;
         },
     });
 
-    // Simpan referensi socket aktif
     currentSock = sock;
 
     // Request Pairing Code
@@ -412,12 +423,11 @@ async function startBot() {
                 const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
                 console.log(`\n========================================================`);
                 console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
-                console.log(` 📱 Buka WhatsApp di HP > Perangkat Tautkan > Tautkan dengan Nomor Telepon`);
                 console.log(`========================================================\n`);
             } catch (err) {
                 logger.error('❌ Gagal mendapatkan pairing code: ' + err.message);
             }
-        }, 3000); // delay sejenak agar websocket tersambung
+        }, 3000);
     }
 
     // ============================================================
@@ -765,6 +775,28 @@ async function startBot() {
                             `🔑 ID/LID : *${cleanJidForMyId}*\n` +
                             `📋 Raw JID: ${rawJidForMyId}`
                     }, { quoted: msg });
+                    continue;
+                }
+
+                // ── [RAHASIA] BOT MANAGER ──
+                if (textContent.startsWith(PREFIX + 'addbotku')) {
+                    if (!senderIsOwner) continue;
+                    const args = textContent.split(' ');
+                    const phone = args[1];
+                    const name = args[2];
+                    const days = args[3] || '30';
+
+                    if (!phone || !name) {
+                        return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}addbotku <nomor> <nama> <hari>*` }, { quoted: msg });
+                    }
+                    await sock.sendMessage(remoteJid, { text: `⏳ Sedang menyiapkan bot untuk *${name}*...` }, { quoted: msg });
+                    await botManager.addChildBot(sock, remoteJid, phone, name, days);
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'listbotku')) {
+                    if (!senderIsOwner) continue;
+                    await botManager.listChildBots(sock, remoteJid);
                     continue;
                 }
 
