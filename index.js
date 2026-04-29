@@ -451,51 +451,59 @@ async function startBot() {
 
     currentSock = sock;
 
-    // Request Pairing Code — tunggu WebSocket terhubung dulu baru minta kode
+    // Request Pairing Code — tunggu WebSocket + handshake selesai, lalu minta kode 1x
     let pairingTimer = null;
     if (usePairingCode && !hasSession && !state.creds.registered) {
-        const requestPairing = async () => {
-            try {
-                console.log(' ⏳ Meminta kode pairing ke server WhatsApp...');
-                const code = await sock.requestPairingCode(phoneNumber);
-                const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
-                console.log(`\n========================================================`);
-                console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
-                console.log(` 📞 Nomor: ${phoneNumber}`);
-                console.log(` 💡 Buka WhatsApp HP → Setelan → Perangkat Tertaut`);
-                console.log(`    → Tautkan Perangkat → Tautkan dengan nomor telepon`);
-                console.log(` ⏳ Kode berlaku ±2 menit. Akan dikirim ulang otomatis.`);
-                console.log(`========================================================\n`);
-            } catch (err) {
-                logger.error('❌ Gagal mendapatkan pairing code: ' + err.message);
-                console.log(' ⚠️ Coba tunggu beberapa detik, kode akan diminta ulang...');
-            }
-        };
 
-        // Tunggu WebSocket benar-benar terhubung sebelum minta kode
-        // Polling cek setiap 1 detik, maksimal 15 detik
+        // Tunggu WebSocket benar-benar terhubung (maks 15 detik)
         console.log(' ⏳ Menunggu koneksi WebSocket ke server WhatsApp...');
         let wsReady = false;
         for (let i = 0; i < 15; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (sock.ws?.readyState === sock.ws?.OPEN) {
                 wsReady = true;
-                console.log(' ✅ WebSocket terhubung! Meminta kode pairing...');
+                console.log(' ✅ WebSocket terhubung!');
                 break;
             }
             console.log(` ⏳ Menunggu koneksi... (${i + 1}/15)`);
         }
 
-        if (wsReady) {
-            // Minta kode pertama kali setelah WS siap (tunggu 2 detik lagi)
-            setTimeout(requestPairing, 2000);
+        if (!wsReady) {
+            console.log(' ❌ WebSocket gagal terhubung. Coba jalankan ulang bot.');
         } else {
-            console.log(' ⚠️ WebSocket belum siap, tetap mencoba minta kode...');
-            setTimeout(requestPairing, 3000);
+            // Tunggu 5 detik lagi agar handshake internal WA selesai
+            // Ini mencegah notif ganda (request terlalu cepat = server belum siap)
+            console.log(' ⏳ Menunggu handshake selesai (5 detik)...');
+            await new Promise(r => setTimeout(r, 5000));
+
+            // Fungsi request pairing — hanya dipanggil 1x, retry jika gagal
+            const requestPairing = async (attempt = 1) => {
+                try {
+                    console.log(` ⏳ Meminta kode pairing ke server WhatsApp... (percobaan ke-${attempt})`);
+                    const code = await sock.requestPairingCode(phoneNumber);
+                    const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
+                    console.log(`\n========================================================`);
+                    console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
+                    console.log(` 📞 Nomor: ${phoneNumber}`);
+                    console.log(` 💡 Buka WhatsApp HP → Setelan → Perangkat Tertaut`);
+                    console.log(`    → Tautkan Perangkat → Tautkan dengan nomor telepon`);
+                    console.log(` ⏳ Kode berlaku ±2 menit.`);
+                    console.log(`========================================================\n`);
+                } catch (err) {
+                    logger.error('❌ Gagal mendapatkan pairing code: ' + err.message);
+                    if (attempt < 3) {
+                        const retryDelay = attempt * 5000;
+                        console.log(` ⚠️ Mencoba ulang dalam ${retryDelay / 1000} detik...`);
+                        setTimeout(() => requestPairing(attempt + 1), retryDelay);
+                    } else {
+                        console.log(' ❌ Gagal 3x. Coba jalankan ulang bot dengan: npm start');
+                    }
+                }
+            };
+
+            // Panggil 1x saja
+            await requestPairing();
         }
-        
-        // Resend kode otomatis setiap 2 menit jika belum login
-        pairingTimer = setInterval(requestPairing, 120000);
     }
 
     // ============================================================
