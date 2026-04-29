@@ -460,8 +460,9 @@ async function startBot() {
             }
         };
 
-        // Kirim pertama kali setelah 3 detik
-        setTimeout(requestPairing, 3000);
+        // Kirim pertama kali setelah 6 detik (memberi waktu koneksi stabil)
+        console.log(' ⏳ Sedang meminta kode pairing dari server WhatsApp... Mohon tunggu.');
+        setTimeout(requestPairing, 6000);
         
         // Setup interval resend setiap 10 menit (agar sangat stabil untuk user)
         pairingTimer = setInterval(requestPairing, 600000);
