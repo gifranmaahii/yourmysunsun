@@ -391,9 +391,35 @@ async function startBot() {
             usePairingCode = true;
             phoneNumber = String(argv.pairing || process.env.PAIRING_NUMBER).replace(/[^0-9]/g, '');
         } else {
-            // Jika tidak ada pairing number, otomatis pilih QR Code (untuk PM2)
-            console.log(` 🔑 OTOMATIS MEMILIH METODE QR CODE...`);
-            usePairingCode = false;
+            const readline = require('readline').createInterface({
+                input: process.stdin,
+                output: process.stdout
+            });
+
+            const question = (text) => new Promise(resolve => readline.question(text, resolve));
+
+            console.log(`\n========================================================`);
+            console.log(` 🤖 LOGIN ${BOT_NAME.toUpperCase()} [${SESSION_NAME}]`);
+            console.log(`========================================================`);
+            console.log(` 1. QR Code (Scan langsung)`);
+            console.log(` 2. Pairing Code (Masukkan nomor HP)`);
+            console.log(`========================================================`);
+            
+            const choice = await question(' 🛠️ Pilih metode login (1/2): ');
+            
+            if (choice === '2') {
+                usePairingCode = true;
+                const num = await question(' 📞 Masukkan nomor WhatsApp (contoh: 628123456789): ');
+                phoneNumber = num.replace(/[^0-9]/g, '');
+                if (!phoneNumber) {
+                    console.log(' ❌ Nomor tidak valid! Mengalihkan ke QR Code...');
+                    usePairingCode = false;
+                }
+            } else {
+                console.log(' 📱 Menyiapkan QR Code...');
+                usePairingCode = false;
+            }
+            readline.close();
         }
     } else {
         logger.info('🔑 Sesi ditemukan. Melanjutkan login otomatis...');
