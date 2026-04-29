@@ -1,3 +1,4 @@
+// Konfigurasi PM2 untuk Bot WhatsApp - Multi Instance
 module.exports = {
   apps: [
     {
