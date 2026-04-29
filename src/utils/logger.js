@@ -12,7 +12,7 @@ const logger = pino({
     timestamp: pino.stdTimeFunctions.isoTime,
 });
 
-// Child logger untuk Baileys (silent supaya tidak spam)
-const baileyLogger = pino({ level: 'silent' });
+// Child logger untuk Baileys (level debug untuk melihat trafik protokol)
+const baileyLogger = pino({ level: 'debug' });
 
 module.exports = { logger, baileyLogger };

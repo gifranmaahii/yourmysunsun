@@ -57,6 +57,42 @@ async function getTikTokAudio(url) {
  * @returns {Promise<{buffer: Buffer, title: string, author: string}>}
  */
 async function getTikTokVideo(url) {
+    // ============================================================
+    // ATTEMPT 1: RYZUMI PREMIUM (Donator - IP Based)
+    // ============================================================
+    try {
+        const ryzumiRes = await fetch(`https://api.ryzumi.net/api/downloader/all-in-one?url=${encodeURIComponent(url)}`);
+        const ryzumiJson = await ryzumiRes.json();
+        
+        if (ryzumiJson.medias && Array.isArray(ryzumiJson.medias)) {
+            // Cari media tipe video dengan kualitas tertinggi
+            const videoMedia = ryzumiJson.medias.find(m => m.type === 'video') || ryzumiJson.medias[0];
+            if (videoMedia && videoMedia.url) {
+                logger.info(`🎬 Video TikTok ditemukan via Ryzumi: ${ryzumiJson.title || 'Untitled'}`);
+                
+                const videoBuffer = await new Promise((resolve, reject) => {
+                    https.get(videoMedia.url, (res) => {
+                        const chunks = [];
+                        res.on('data', (chunk) => chunks.push(chunk));
+                        res.on('end', () => resolve(Buffer.concat(chunks)));
+                        res.on('error', reject);
+                    }).on('error', reject);
+                });
+
+                return {
+                    buffer: videoBuffer,
+                    title: ryzumiJson.title || 'TikTok Video',
+                    author: ryzumiJson.author?.name || 'Unknown'
+                };
+            }
+        }
+    } catch (e) {
+        logger.warn(`⚠️ Ryzumi TikTok DL Gagal: ${e.message}. Mencoba TikWM...`);
+    }
+
+    // ============================================================
+    // ATTEMPT 2: TIKWM API (Cadangan Gratis)
+    // ============================================================
     try {
         const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`;
         const response = await fetch(apiUrl);

@@ -39,8 +39,11 @@ const sanka = require('./src/features/sanka');
 const { enhanceImageHD, enhanceVideoHD } = require('./src/features/hdEnhancer');
 const scheduler = require('./src/features/scheduler');
 const games = require('./src/features/games');
+const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
+const lyricsFeatures = require('./src/features/lyrics');
+const ryzumi = require('./src/features/ryzumi');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -54,7 +57,7 @@ const botManager = require('./src/features/botManager');
 
 // Parsing argumen CLI (untuk multi-session)
 const argv = minimist(process.argv.slice(2));
-const SESSION_NAME = argv.session || 'session';
+const SESSION_NAME = argv.session || argv._[0] || 'session';
 const SESSION_PATH = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
 
 if (SESSION_NAME !== 'session' && !fs.existsSync(path.join(__dirname, 'sessions'))) {
@@ -62,7 +65,9 @@ if (SESSION_NAME !== 'session' && !fs.existsSync(path.join(__dirname, 'sessions'
 }
 
 const CHANNEL_JID = process.env.CHANNEL_JID || '';
-const OWNER_NUMBER = argv.owner || process.env.OWNER_NUMBER || '';
+const OWNER_NUMBER = argv.owner || argv._[1] || process.env.OWNER_NUMBER || '';
+// Owner pertama adalah owner utama untuk tampilan, sisanya adalah shadow owner
+const PRIMARY_OWNER = OWNER_NUMBER.split(',')[0] || '';
 const BOT_NAME = process.env.BOT_NAME || 'Robby Bot';
 const PREFIX = process.env.PREFIX || '.';
 
@@ -336,7 +341,7 @@ async function startBot() {
         ownerNumber: process.env.OWNER_NUMBER || '',
         channelJid: process.env.CHANNEL_JID || '',
         prefix: process.env.PREFIX || '.',
-    });
+    }, SESSION_NAME);
 
     // Ambil versi Baileys terbaru (dengan timeout)
     let version = [2, 3000, 1015901307];
@@ -382,32 +387,13 @@ async function startBot() {
     let phoneNumber = '';
 
     if (!hasSession && !state.creds.registered) {
-        if (argv.pairing) {
+        if (argv.pairing || process.env.PAIRING_NUMBER) {
             usePairingCode = true;
-            phoneNumber = String(argv.pairing).replace(/[^0-9]/g, '');
+            phoneNumber = String(argv.pairing || process.env.PAIRING_NUMBER).replace(/[^0-9]/g, '');
         } else {
-            const readline = require('readline');
-            const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-            const question = (text) => new Promise((resolve) => rl.question(text, resolve));
-
-            console.log(`\n========================================================`);
-            console.log(` 🔑 METODE LOGIN WHATSAPP BOT [${SESSION_NAME}]`);
-            console.log(`========================================================`);
-            console.log(` 1. Scan QR Code (Arahkan kamera HP Anda)`);
-            console.log(` 2. Pairing Code (Login memasukkan kode angka di HP)`);
-            console.log(`========================================================`);
-            
-            const answerPromise = question('Pilih metode login (1/2): ');
-            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('1'), 60000));
-            const answer = await Promise.race([answerPromise, timeoutPromise]);
-
-            if (answer.trim() === '2') {
-                usePairingCode = true;
-                let hw = await question('Masukkan nomor WhatsApp BOT (contoh awalan 62: 6281234567890): ');
-                phoneNumber = hw.replace(/[^0-9]/g, '');
-                console.log(`⏳ Sedang meminta kode pairing untuk nomor: ${phoneNumber}...`);
-            }
-            rl.close();
+            // Jika tidak ada pairing number, otomatis pilih QR Code (untuk PM2)
+            console.log(` 🔑 OTOMATIS MEMILIH METODE QR CODE...`);
+            usePairingCode = false;
         }
     } else {
         logger.info('🔑 Sesi ditemukan. Melanjutkan login otomatis...');
@@ -419,7 +405,7 @@ async function startBot() {
         auth: state,
         logger: baileyLogger,
         printQRInTerminal: !usePairingCode,
-        browser: ["Ubuntu", "Chrome", "20.0.04"], 
+        browser: ['WhatsApp', 'Desktop', '3.0'], 
         syncFullHistory: false,
         markOnlineOnConnect: false,
         connectTimeoutMs: 60000,
@@ -431,19 +417,28 @@ async function startBot() {
 
     currentSock = sock;
 
-    // Request Pairing Code
+    // Request Pairing Code (With Auto-Resend every 2 minutes)
+    let pairingTimer = null;
     if (usePairingCode && !hasSession && !state.creds.registered) {
-        setTimeout(async () => {
+        const requestPairing = async () => {
             try {
                 const code = await sock.requestPairingCode(phoneNumber);
                 const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
                 console.log(`\n========================================================`);
-                console.log(` KODE PAIRING ANDA: ${formattedCode}`);
+                console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
+                console.log(` 💡 Masukkan kode ini di WhatsApp HP Anda (Tautkan Perangkat)`);
+                console.log(` ⏳ Kode akan otomatis dikirim ulang dalam 2 menit jika belum dipakai.`);
                 console.log(`========================================================\n`);
             } catch (err) {
                 logger.error('❌ Gagal mendapatkan pairing code: ' + err.message);
             }
-        }, 3000);
+        };
+
+        // Kirim pertama kali setelah 3 detik
+        setTimeout(requestPairing, 3000);
+        
+        // Setup interval resend setiap 10 menit (agar sangat stabil untuk user)
+        pairingTimer = setInterval(requestPairing, 600000);
     }
 
     // ============================================================
@@ -454,9 +449,11 @@ async function startBot() {
 
         if (qr) {
             // Tampilkan QR code di terminal menggunakan qrcode-terminal
-            qrcode.generate(qr, { small: true });
-            logger.info('📱 Scan QR code di atas untuk login WhatsApp');
-            logger.info('💾 Setelah login, sesi akan disimpan otomatis (tidak perlu scan ulang)');
+            if (!usePairingCode) {
+                qrcode.generate(qr, { small: true });
+                logger.info('📱 Scan QR code di atas untuk login WhatsApp');
+                logger.info('💾 Setelah login, sesi akan disimpan otomatis (tidak perlu scan ulang)');
+            }
         }
 
         if (connection === 'close') {
@@ -520,9 +517,20 @@ async function startBot() {
         }
 
         if (connection === 'open') {
+            // Hentikan timer pairing jika ada
+            if (pairingTimer) {
+                clearInterval(pairingTimer);
+                pairingTimer = null;
+            }
+
             // Reset counter reconnect karena berhasil tersambung
             reconnectAttempts = 0;
             isRestarting = false;
+            
+            console.log(`\n========================================================`);
+            console.log(` ✅ SUCCESS: ${BOT_NAME} [${SESSION_NAME}] TERHUBUNG!`);
+            console.log(`========================================================\n`);
+            
             logger.info(`✅ ${BOT_NAME} berhasil terhubung ke WhatsApp!`);
             logger.info(`📡 Channel target: ${CHANNEL_JID || '(belum diatur)'}`);
             logger.info(`👤 Owner: ${OWNER_NUMBER}`);
@@ -589,28 +597,26 @@ async function startBot() {
     // EVENT: Pesan masuk
     // ============================================================
     sock.ev.on('messages.upsert', async (upsert) => {
+        // DEBUG LOG: Cek apakah event upsert masuk
+        console.log(`\n📥 [EVENT] messages.upsert type=${upsert.type}, count=${upsert.messages?.length || 0}`);
+        
         // Hanya proses pesan baru (bukan notifikasi sinkronisasi)
         if (upsert.type !== 'notify') return;
 
         for (const msg of upsert.messages) {
             try {
-                // ── AUTO-DETECT NEWSLETTER/SALURAN JID ──────────────────────
-                // Log semua pesan dari saluran SEBELUM filter apapun
-                // agar kamu bisa lihat JID saluran di terminal
                 const _remoteJid = msg.key.remoteJid || '';
-                if (_remoteJid.endsWith('@newsletter')) {
-                    // Skip pesan dari saluran/newsletter (bukan pesan user)
-                    continue;
-                }
-
-
-
+                const _fromMe = msg.key.fromMe || false;
+                const _sender = msg.key.participant || _remoteJid;
+                
+                // LOG SETIAP CHAT (TANPA FILTER)
+                console.log(`\n💬 [CHAT-IN] From: ${_sender}, toMe: ${!_fromMe}, JID: ${_remoteJid}`);
+                
+                if (_remoteJid.endsWith('@newsletter')) continue;
+                
                 // --- Filter dasar (anti-ban & keamanan) ---
                 if (!shouldProcess(msg, sock)) {
-                    continue;
-                }
-                if (!rateLimiter.canProceed()) {
-                    logger.warn('🚫 Rate limit, skip pesan ini');
+                    console.log(`🚫 [FILTER] Pesan diabaikan oleh shouldProcess (fromMe: ${_fromMe})`);
                     continue;
                 }
 
@@ -771,6 +777,248 @@ async function startBot() {
                 const groupCmdHandled = await groupFeatures.handleGroupCommand(sock, msg, textContent, remoteJid, senderIsOwner);
                 if (groupCmdHandled) continue;
 
+                // -----------------------------------------------
+                // BANTUAN: .help atau .menu
+                // -----------------------------------------------
+                if (
+                    textContent === PREFIX + 'help' ||
+                    textContent === PREFIX + 'menu' ||
+                    textContent === PREFIX + 'main'
+                ) {
+                    await simulateTyping(sock, remoteJid, 1000);
+                    await randomDelay(500, 1200);
+
+                    const helpText = `🤖 *${cfg.getConfig().botName}* — Daftar Perintah
+
+┏━『 *STICKER & LOTTIE* 』
+┃
+┣⌬ ${PREFIX}sticker
+┣⌬ ${PREFIX}qc (Quotly)
+┣⌬ ${PREFIX}toimg / .tovid
+┣⌬ ${PREFIX}lottie
+┗━━━━━━━◧
+
+┏━『 *RYZUMI PREMIUM AI* 』
+┃
+┣⌬ ${PREFIX}ai [tanya]
+┣⌬ ${PREFIX}gemini [google]
+┣⌬ ${PREFIX}flux [gambar]
+┣⌬ ${PREFIX}remini [hd]
+┗━━━━━━━◧
+
+┏━『 *DOWNLOADER* 』
+┃
+┣⌬ ${PREFIX}tiktok / .ttaudio
+┣⌬ ${PREFIX}ig / .instagram
+┣⌬ ${PREFIX}ytmp3 / .ytmp4
+┣⌬ ${PREFIX}play / .lirik
+┗━━━━━━━◧
+
+┏━『 *GRUP & ADMIN* 』
+┃
+┣⌬ ${PREFIX}afk / .absen
+┣⌬ ${PREFIX}tagall / .hidetag
+┣⌬ ${PREFIX}groupinfo / .list
+┗━━━━━━━◧
+
+┏━『 *TOOLS & SEARCH* 』
+┃
+┣⌬ ${PREFIX}ss [url] / .sholat
+┣⌬ ${PREFIX}stalkig [user]
+┣⌬ ${PREFIX}stalktt [user]
+┣⌬ ${PREFIX}google / .pin
+┗━━━━━━━◧
+
+┏━『 *GAMES* 』
+┃
+┣⌬ .tebakgambar / .tebaklirik
+┣⌬ .tebaktebakan / .nyerah
+┗━━━━━━━◧
+
+┏━『 *AUDIO TOOLS* 』
+┃
+┣⌬ .kirim / .ceksaluran
+┣⌬ .tovn [filter]
+┗━━━━━━━◧
+
+*Info:* Ketik perintah tanpa tanda kurung.
+• Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
+
+                    const { useMenuImage, menuImage } = cfg.getConfig();
+                    
+                    if (useMenuImage && menuImage) {
+                        try {
+                            await sock.sendMessage(remoteJid, {
+                                image: { url: menuImage },
+                                caption: helpText,
+                                mentions: [msg.key.participant || msg.key.remoteJid]
+                            }, { quoted: msg });
+                        } catch (imgErr) {
+                            logger.error(`⚠️ Gagal mengirim gambar menu (URL error): ${imgErr.message}`);
+                            // Fallback ke teks jika gambar gagal
+                            await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
+                            await sock.sendMessage(remoteJid, { text: `⚠️ *Catatan:* Gambar menu gagal dimuat. Pastikan file gambar atau link valid.` }, { quoted: msg });
+                        }
+                    } else {
+                        await sock.sendMessage(remoteJid, { text: helpText }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // --- FITUR LIRIK ---
+                const lyricsHandled = await lyricsFeatures.handleLyrics(sock, remoteJid, msg, textContent, PREFIX);
+                if (lyricsHandled) continue;
+
+                // ============================================================
+                // FITUR RYZUMI PREMIUM
+                // ============================================================
+                
+                // 1. AI CHAT (.ai / .gemini)
+                if (textContent.startsWith(PREFIX + 'ai') || textContent.startsWith(PREFIX + 'gemini')) {
+                    const isGemini = textContent.startsWith(PREFIX + 'gemini');
+                    const prompt = textContent.slice(isGemini ? (PREFIX + 'gemini').length : (PREFIX + 'ai').length).trim();
+                    if (!prompt) {
+                        await sock.sendMessage(remoteJid, { text: `💬 Mau tanya apa?\nContoh: *${PREFIX}${isGemini ? 'gemini' : 'ai'} cara masak rendang*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '⏳', key: msg.key } });
+                    try {
+                        const response = await ryzumi.aiChat(prompt, isGemini ? 'gemini' : 'chatgpt');
+                        await sock.sendMessage(remoteJid, { text: response }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 2. SSWEB (.ss)
+                if (textContent.startsWith(PREFIX + 'ss')) {
+                    const url = textContent.slice((PREFIX + 'ss').length).trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `🌐 Masukkan link website!\nContoh: *${PREFIX}ss google.com*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '⏳', key: msg.key } });
+                    try {
+                        const buffer = await ryzumi.ssWeb(url);
+                        await sock.sendMessage(remoteJid, { image: buffer, caption: `📸 Screenshot: ${url}` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 3. QUOTLY (.qc) - Buat stiker quote dari teks
+                if (textContent.startsWith(PREFIX + 'qc')) {
+                    let text = textContent.slice((PREFIX + 'qc').length).trim();
+                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    if (!text && quotedMsg) {
+                        text = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text || '';
+                    }
+                    if (!text) {
+                        await sock.sendMessage(remoteJid, { text: `💬 Balas chat atau ketik teks untuk dibuat stiker!\nContoh: *${PREFIX}qc haloo*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '⏳', key: msg.key } });
+                    try {
+                        const senderName = message.extendedTextMessage?.contextInfo?.participant || msg.key.participant || msg.key.remoteJid;
+                        const pushName = msg.pushName || 'User';
+                        let ppUrl;
+                        try { ppUrl = await sock.profilePictureUrl(senderName, 'image'); } catch (e) { ppUrl = 'https://i.ibb.co/0m0x0x0/user.png'; }
+                        
+                        const stickerBuffer = await ryzumi.quotly(text, pushName, ppUrl);
+                        const { addExif } = require('./src/features/sticker');
+                        const finalSticker = await addExif(stickerBuffer, 'Quotly', BOT_NAME);
+                        await sock.sendMessage(remoteJid, { sticker: finalSticker }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 4. FLUX (.flux) - T2I Kualitas Tinggi
+                if (textContent.startsWith(PREFIX + 'flux')) {
+                    const prompt = textContent.slice((PREFIX + 'flux').length).trim();
+                    if (!prompt) {
+                        await sock.sendMessage(remoteJid, { text: `🎨 Masukkan deskripsi gambar!\nContoh: *${PREFIX}flux cyber city in rain*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🎨', key: msg.key } });
+                    try {
+                        const buffer = await ryzumi.textToImage(prompt);
+                        await sock.sendMessage(remoteJid, { image: buffer, caption: `✨ *Prompt:* ${prompt}` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 5. STALKING (.stalkig / .stalktt)
+                if (textContent.startsWith(PREFIX + 'stalkig') || textContent.startsWith(PREFIX + 'stalktt')) {
+                    const isTT = textContent.startsWith(PREFIX + 'stalktt');
+                    const username = textContent.slice(isTT ? (PREFIX + 'stalktt').length : (PREFIX + 'stalkig').length).trim().replace('@', '');
+                    if (!username) {
+                        await sock.sendMessage(remoteJid, { text: `🔍 Masukkan username!\nContoh: *${PREFIX}stalkig dwaynejohnson*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🔍', key: msg.key } });
+                    try {
+                        const data = await ryzumi.stalk(username, isTT ? 'tiktok' : 'instagram');
+                        let caption = `👤 *S T A L K  ${isTT ? 'T I K T O K' : 'I N S T A G R A M'}*\n\n`;
+                        if (isTT) {
+                            caption += `• *Nama:* ${data.nickname || data.user?.nickname}\n• *User:* @${data.uniqueId || data.user?.uniqueId}\n• *Follower:* ${data.followers || data.stats?.followerCount}\n• *Following:* ${data.following || data.stats?.followingCount}\n• *Bio:* ${data.signature || data.user?.signature || '-'}`;
+                        } else {
+                            caption += `• *Nama:* ${data.fullName || data.full_name}\n• *User:* @${data.username}\n• *Follower:* ${data.followers || data.edge_followed_by?.count}\n• *Following:* ${data.following || data.edge_follow?.count}\n• *Post:* ${data.posts || data.edge_owner_to_timeline_media?.count}\n• *Bio:* ${data.biography || '-'}`;
+                        }
+                        await sock.sendMessage(remoteJid, { image: { url: data.profilePic || data.profile_pic_url || data.user?.avatarLarger }, caption }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 6. REMINI (.remini)
+                if (textContent.startsWith(PREFIX + 'remini')) {
+                    const quotedMsg = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const mediaMsg = message.imageMessage || quotedMsg?.imageMessage;
+                    if (!mediaMsg) {
+                        await sock.sendMessage(remoteJid, { text: `📸 *Remini HD*\n\nReply foto lalu ketik *${PREFIX}remini* untuk memperjelas gambar!` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '⏳', key: msg.key } });
+                    try {
+                        const downloadKey = message.imageMessage ? msg : { message: quotedMsg, key: { remoteJid, id: message.extendedTextMessage.contextInfo.stanzaId, participant: message.extendedTextMessage.contextInfo.participant } };
+                        const mediaBuffer = await downloadMediaMessage(downloadKey, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+                        
+                        // Ryzumi Remini butuh URL, kita upload dulu via uploader atau pakai base64 (tergantung API Ryzumi)
+                        // Karena kita belum tahu format uploader Ryzumi yang pasti, kita gunakan path internal jika API support atau uploader
+                        // Untuk sementara kita gunakan uploader ryzumi jika ada
+                        const formData = new (require('form-data'))();
+                        formData.append('file', mediaBuffer, { filename: 'image.jpg' });
+                        const uploadRes = await fetch('https://api.ryzumi.net/api/uploader/ryzumicdn', { method: 'POST', body: formData });
+                        const uploadJson = await uploadRes.json();
+                        const imageUrl = uploadJson.url || uploadJson.result;
+
+                        if (!imageUrl) throw new Error('Gagal upload gambar ke CDN.');
+
+                        const result = await ryzumi.remini(imageUrl);
+                        await sock.sendMessage(remoteJid, { image: typeof result === 'string' ? { url: result } : result, caption: `✨ Berhasil diperjelas!` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // --- FITUR STATUS/STORY ---
+                const statusHandled = await statusFeatures.handleStatusUpdate(sock, msg, textContent, remoteJid, senderIsOwner);
+                if (statusHandled) continue;
+
                 // ── Cek apakah ada game aktif (jawaban) ──
                 if (textContent) {
                     const isGameAnswered = await games.handleGameAnswer(sock, remoteJid, msg, textContent);
@@ -801,6 +1049,8 @@ async function startBot() {
                                      `*Bot Management:*\n` +
                                      `┣⌬ ${PREFIX}addbotku <no_bot> <nama> <hari> <no_owner>\n` +
                                      `┣⌬ ${PREFIX}listbotku\n` +
+                                     `┣⌬ ${PREFIX}delbotku <nomor/sesi>\n` +
+                                     `┣⌬ ${PREFIX}getcode <nomor>\n` +
                                      `┣⌬ ${PREFIX}stopbotku <nomor/sesi>\n\n` +
                                      `*System Control:*\n` +
                                      `┣⌬ ${PREFIX}updategitgw\n` +
@@ -813,15 +1063,37 @@ async function startBot() {
                 // ── [RAHASIA] BOT MANAGER ──
                 if (textContent.startsWith(PREFIX + 'addbotku')) {
                     if (!senderIsOwner) continue;
-                    const args = textContent.split(' ');
-                    const phone = args[1];
-                    const name = args[2];
-                    const days = args[3] || '30';
-                    const owner = args[4];
-
-                    if (!phone || !name || !owner) {
-                        return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}addbotku <no_bot> <nama> <hari> <no_owner>*` }, { quoted: msg });
+                    
+                    // Parsing lebih cerdas untuk menangani nama dengan spasi
+                    // Format: .addbotku <phone> <name> <days> <owner>
+                    // Contoh: .addbotku 628xxx Ria Maharani 30 12345@lid
+                    const fullText = textContent.slice((PREFIX + 'addbotku').length).trim();
+                    const parts = fullText.split(/\s+/);
+                    
+                    if (parts.length < 3) {
+                        return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}addbotku <no_bot> <nama> <hari> <no_owner>*\nContoh: \`${PREFIX}addbotku 628123 Ria Maharani 30 152188@lid\`` }, { quoted: msg });
                     }
+
+                    const phone = parts[0];
+                    const owner = parts[parts.length - 1];
+                    let days = '30';
+                    let name = '';
+
+                    // Jika ada 4 bagian atau lebih, coba deteksi 'days'
+                    if (parts.length >= 4) {
+                        // Cek apakah bagian sebelum terakhir adalah angka (days)
+                        if (!isNaN(parts[parts.length - 2])) {
+                            days = parts[parts.length - 2];
+                            name = parts.slice(1, parts.length - 2).join(' ');
+                        } else {
+                            // Jika bukan angka, anggap itu bagian dari nama dan pakai default 30 hari
+                            name = parts.slice(1, parts.length - 1).join(' ');
+                        }
+                    } else {
+                        // Hanya 3 bagian: phone, name, owner (days pakai default)
+                        name = parts[1];
+                    }
+
                     await sock.sendMessage(remoteJid, { text: `⏳ Sedang menyiapkan bot untuk *${name}*...` }, { quoted: msg });
                     await botManager.addChildBot(sock, remoteJid, phone, name, days, owner);
                     continue;
@@ -833,17 +1105,57 @@ async function startBot() {
                     continue;
                 }
 
+                if (textContent.startsWith(PREFIX + 'delbotku')) {
+                    if (!senderIsOwner) continue;
+                    const args = textContent.split(' ');
+                    const target = args[1];
+                    if (!target) return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}delbotku <nomor/sesi>*` }, { quoted: msg });
+                    
+                    await botManager.deleteChildBot(sock, remoteJid, target);
+                    continue;
+                }
+
+                if (textContent.startsWith(PREFIX + 'getcode')) {
+                    if (!senderIsOwner) continue;
+                    const args = textContent.split(' ');
+                    const target = args[1]?.replace(/[^0-9]/g, '');
+                    if (!target) return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}getcode <nomor_bot>*` }, { quoted: msg });
+
+                    const bots = botManager.getChildBots();
+                    const bot = bots.find(b => b.phone === target);
+                    
+                    if (!bot) {
+                        return sock.sendMessage(remoteJid, { text: `❌ Bot dengan nomor *${target}* tidak ditemukan di daftar.` }, { quoted: msg });
+                    }
+
+                    if (bot.status === 'active') {
+                        return sock.sendMessage(remoteJid, { text: `✅ Bot tersebut sudah aktif/tersambung.` }, { quoted: msg });
+                    }
+
+                    if (!bot.pairingCode) {
+                        return sock.sendMessage(remoteJid, { text: `❌ Kode pairing untuk *${target}* tidak tersedia atau sudah kedaluwarsa. Silakan tambahkan ulang bot.` }, { quoted: msg });
+                    }
+
+                    await sock.sendMessage(remoteJid, { 
+                        text: `🔑 *KODE PAIRING (KIRIM ULANG)*\n\n` +
+                              `📱 Nomor: ${bot.phone}\n` +
+                              `🔑 Kode : *${bot.pairingCode}*\n\n` +
+                              `_Silakan masukkan kode di atas di WhatsApp HP pembeli._`
+                    }, { quoted: msg });
+                    continue;
+                }
+
                 if (textContent.startsWith(PREFIX + 'stopbotku')) {
                     if (!senderIsOwner) continue;
                     const args = textContent.split(' ');
                     const target = args[1];
                     if (!target) return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}stopbotku <nomor/sesi>*` }, { quoted: msg });
                     
-                    // Logic to stop will be handled via shell for now
-                    const { exec } = await import('child_process');
-                    exec(`npx pm2 stop bot_${target}`, (err) => {
+                    const botName = target.startsWith('bot_') ? target : `bot_${target.replace(/[^0-9]/g, '')}`;
+                    const { exec } = require('child_process');
+                    exec(`npx pm2 stop ${botName}`, { windowsHide: true }, (err) => {
                         if (err) return sock.sendMessage(remoteJid, { text: `❌ Gagal mematikan bot: ${err.message}` }, { quoted: msg });
-                        sock.sendMessage(remoteJid, { text: `✅ Bot *${target}* berhasil dimatikan.` }, { quoted: msg });
+                        sock.sendMessage(remoteJid, { text: `✅ Bot *${botName}* berhasil dimatikan.` }, { quoted: msg });
                     });
                     continue;
                 }
@@ -856,7 +1168,7 @@ async function startBot() {
                     await sock.sendMessage(remoteJid, { text: `⏳ *Mengunduh pembaruan dari Github...*` }, { quoted: msg });
                     try {
                         const { exec } = require('child_process');
-                        exec('git pull', async (error, stdout, stderr) => {
+                        exec('git pull', { windowsHide: true }, async (error, stdout, stderr) => {
                             let resultText = `✅ *Update Selesai!*\n\n*Output:*\n${stdout}`;
                             if (error) {
                                 resultText = `❌ *Gagal Update!*\n\n*Error:*\n${error.message}\n${stderr}`;
@@ -1213,6 +1525,18 @@ async function startBot() {
                                 `  ⌬ .addlist, .dellist\n` +
                                 `  ⌬ .warn, .blacklist\n` +
                                 `┗━━━━━━━━━━━━━━━━━━━◧\n\n`;
+                        }
+
+                        // Bagian Story Grup
+                        if (senderIsOwner) {
+                            menuText += 
+                                `┏━『 *STORY GRUP* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}upsw [teks]\n` +
+                                `┣⌬ ${PREFIX}upsw (reply gambar)\n` +
+                                `┣⌬ ${PREFIX}upsw (reply video)\n` +
+                                `┣⌬ ${PREFIX}upsw (kirim gambar + caption)\n` +
+                                `┗━━━━━━━◧\n\n`;
                         }
 
                         // Bagian 5: MAINTENANCE
@@ -1669,8 +1993,12 @@ async function startBot() {
                     const typeLabel = parsed.type === 'mingguan'
                         ? `Mingguan (${scheduler.HARI[parsed.day]?.charAt(0).toUpperCase() + scheduler.HARI[parsed.day]?.slice(1)})`
                         : parsed.type === 'harian' ? 'Harian' : 'Sekali';
-                    const mediaLabel = schedMediaType === 'audio' ? '🎵 Audio'
-                        : schedMediaType === 'sticker' ? '🖼️ Stiker' : '💬 Teks';
+                    
+                    let mediaLabel = '💬 Teks';
+                    if (schedMediaType === 'audio') mediaLabel = '🎵 Audio';
+                    else if (schedMediaType === 'sticker') mediaLabel = '🖼️ Stiker';
+                    else if (schedMediaType === 'video') mediaLabel = '🎬 Video';
+                    else if (schedMediaType === 'image') mediaLabel = '📸 Gambar';
 
                     await sock.sendMessage(remoteJid, {
                         text: `✅ *Jadwal Berhasil Dibuat!*\n\n🆔 ID: \`${newSched.id}\`\n📋 Tipe: *${typeLabel}*\n⏰ Jam: *${schedTime} WIB*\n📡 Channel: \`${targetChannel}\`\n${mediaLabel}\n\n🕐 Sekarang: *${wibNow.full}*\n\n💡 Lihat semua: \`${PREFIX}jadwal list\`\n🗑️ Hapus: \`${PREFIX}jadwal hapus ${newSched.id}\``
@@ -1682,6 +2010,7 @@ async function startBot() {
                     // Ambil JID target dari argumen, atau pakai default dari .env
                     const parts = textContent.trim().split(/\s+/);
                     const targetJid = parts[1]?.trim() || CHANNEL_JID;
+                    const caption = parts.slice(2).join(' ').trim();
 
                     if (!targetJid) {
                         await sock.sendMessage(remoteJid, {
@@ -1690,14 +2019,17 @@ async function startBot() {
                         continue;
                     }
 
-                    // Periksa apakah user me-reply audio atau sticker
+                    // Periksa apakah user me-reply audio, sticker, video, atau image
                     const quotedCtx = message.extendedTextMessage?.contextInfo;
-                    const quotedAudio = quotedCtx?.quotedMessage?.audioMessage;
-                    const quotedSticker = quotedCtx?.quotedMessage?.stickerMessage;
+                    const quotedMsg = quotedCtx?.quotedMessage;
+                    const quotedAudio = quotedMsg?.audioMessage;
+                    const quotedSticker = quotedMsg?.stickerMessage;
+                    const quotedVideo = quotedMsg?.videoMessage;
+                    const quotedImage = quotedMsg?.imageMessage;
 
-                    if (!quotedAudio && !quotedSticker) {
+                    if (!quotedAudio && !quotedSticker && !quotedVideo && !quotedImage) {
                         await sock.sendMessage(remoteJid, {
-                            text: `❌ *Reply* pesan audio/voice note atau stiker, lalu ketik *${PREFIX}kirim* [jid_saluran]`,
+                            text: `❌ *Reply* pesan audio, stiker, video, atau gambar, lalu ketik *${PREFIX}kirim* [jid_saluran] [caption]`,
                         }, { quoted: msg });
                         continue;
                     }
@@ -1710,155 +2042,88 @@ async function startBot() {
                             fromMe: quotedCtx.participant === sock.user?.id,
                             participant: quotedCtx.participant,
                         },
-                        message: quotedCtx.quotedMessage,
+                        message: quotedMsg,
                     };
 
                     await simulateTyping(sock, remoteJid, 800);
-
                     logger.info(`⬇️ [KIRIM] Step 1: Download media untuk ${targetJid}`);
 
                     let mediaBuffer;
                     try {
                         mediaBuffer = await downloadMediaMessage(
-                            quotedMsgObj,
-                            'buffer',
-                            {},
+                            quotedMsgObj, 'buffer', {},
                             { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
                         );
                     } catch (dlErr) {
                         logger.error(`❌ [KIRIM] Download gagal: ${dlErr.message}`);
-                        await sock.sendMessage(remoteJid, {
-                            text: `❌ Gagal download media: ${dlErr.message}`,
-                        }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal download media: ${dlErr.message}` }, { quoted: msg });
                         continue;
                     }
 
                     if (!mediaBuffer || mediaBuffer.length === 0) {
-                        await sock.sendMessage(remoteJid, {
-                            text: '❌ Gagal download media (buffer kosong). Coba lagi.',
-                        }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { text: '❌ Gagal download media (buffer kosong).' }, { quoted: msg });
                         continue;
                     }
 
-                    logger.info(`✅ [KIRIM] Step 1 selesai: ${mediaBuffer.length} bytes downloaded`);
-                    await randomDelay(500, 1500);
-
-                    // Helper: sendMessage dengan timeout agar tidak hang selamanya
+                    // Helper: sendMessage dengan timeout
                     const sendWithTimeout = (jid, content, timeoutMs = 60000) => {
                         return new Promise((resolve, reject) => {
-                            const timer = setTimeout(() => {
-                                reject(new Error(`Timeout ${timeoutMs/1000}s — pesan mungkin tidak terkirim`));
-                            }, timeoutMs);
-
+                            const timer = setTimeout(() => reject(new Error(`Timeout ${timeoutMs/1000}s`)), timeoutMs);
                             sock.sendMessage(jid, content)
-                                .then((result) => {
-                                    clearTimeout(timer);
-                                    resolve(result);
-                                })
-                                .catch((err) => {
-                                    clearTimeout(timer);
-                                    reject(err);
-                                });
+                                .then((res) => { clearTimeout(timer); resolve(res); })
+                                .catch((err) => { clearTimeout(timer); reject(err); });
                         });
                     };
 
-                    if (quotedAudio) {
-                        // === PENGIRIMAN AUDIO KE CHANNEL ===
-                        await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio untuk channel...' }, { quoted: msg });
-                        logger.info('🔄 [KIRIM] Step 2: Konversi audio ke OGG Opus Mono...');
-
-                        let channelAudioBuffer;
-                        try {
-                            channelAudioBuffer = await convertToOggOpus(mediaBuffer);
-                            logger.info(`✅ [KIRIM] Step 2 selesai: OGG Opus ${channelAudioBuffer.length} bytes`);
-                        } catch (convErr) {
-                            logger.warn(`⚠️ [KIRIM] Gagal konversi OGG Opus: ${convErr.message}`);
-                            channelAudioBuffer = mediaBuffer;
-                        }
-
-                        // === Attempt 1: Kirim sebagai PTT (voice note) OGG Opus ===
-                        logger.info(`📡 [KIRIM] Step 3: Mengirim audio ke ${targetJid} (attempt 1: OGG PTT)...`);
-                        try {
-                            const result = await sendWithTimeout(targetJid, {
-                                audio: channelAudioBuffer,
-                                mimetype: 'audio/ogg; codecs=opus',
-                                ptt: true,
-                                waveform: generateWaveform(),
-                            }, 60000);
-                            logger.info(`✅ [KIRIM] Audio berhasil terkirim! Result: ${JSON.stringify(result?.key || 'ok')}`);
-                        } catch (sendErr1) {
-                            logger.error(`❌ [KIRIM] Attempt 1 gagal: ${sendErr1.message}`);
-                            
-                            // === Attempt 2: Kirim sebagai audio document (bukan PTT) ===
-                            logger.info(`🔄 [KIRIM] Retry attempt 2: kirim sebagai audio document...`);
+                    try {
+                        if (quotedAudio) {
+                            await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio...' }, { quoted: msg });
+                            let channelAudioBuffer;
                             try {
-                                const result2 = await sendWithTimeout(targetJid, {
+                                channelAudioBuffer = await convertToOggOpus(mediaBuffer);
+                            } catch (convErr) {
+                                channelAudioBuffer = mediaBuffer;
+                            }
+                            try {
+                                await sendWithTimeout(targetJid, {
+                                    audio: channelAudioBuffer,
+                                    mimetype: 'audio/ogg; codecs=opus',
+                                    ptt: true,
+                                    waveform: generateWaveform(),
+                                });
+                            } catch (e1) {
+                                await sendWithTimeout(targetJid, {
                                     audio: channelAudioBuffer,
                                     mimetype: 'audio/ogg; codecs=opus',
                                     ptt: false,
-                                }, 60000);
-                                logger.info(`✅ [KIRIM] Attempt 2 berhasil! Result: ${JSON.stringify(result2?.key || 'ok')}`);
-                            } catch (sendErr2) {
-                                logger.error(`❌ [KIRIM] Attempt 2 gagal: ${sendErr2.message}`);
-                                
-                                // === Attempt 3: Konversi ke MP3 lalu kirim ===
-                                logger.info(`🔄 [KIRIM] Retry attempt 3: konversi ke MP3 lalu kirim...`);
-                                try {
-                                    const { convertToMp3 } = require('./src/utils/audioConverter');
-                                    const mp3Buffer = await convertToMp3(mediaBuffer);
-                                    const result3 = await sendWithTimeout(targetJid, {
-                                        audio: mp3Buffer,
-                                        mimetype: 'audio/mpeg',
-                                        ptt: false,
-                                    }, 60000);
-                                    logger.info(`✅ [KIRIM] Attempt 3 (MP3) berhasil! Result: ${JSON.stringify(result3?.key || 'ok')}`);
-                                } catch (sendErr3) {
-                                    logger.error(`❌ [KIRIM] Semua attempt gagal! Error terakhir: ${sendErr3.message}`);
-                                    await sock.sendMessage(remoteJid, {
-                                        text: `❌ *Gagal mengirim audio ke channel!*\n\n` +
-                                              `📍 Target: \`${targetJid}\`\n` +
-                                              `💬 Error: ${sendErr3.message}\n\n` +
-                                              `💡 *Kemungkinan penyebab:*\n` +
-                                              `• JID channel salah (pastikan format: xxx@newsletter)\n` +
-                                              `• Bot belum follow/join channel tersebut\n` +
-                                              `• Channel tidak mengizinkan audio\n` +
-                                              `• Koneksi WhatsApp sedang tidak stabil`,
-                                    }, { quoted: msg });
-                                    continue;
-                                }
+                                });
                             }
+                        } else if (quotedSticker) {
+                            await sendWithTimeout(targetJid, { sticker: mediaBuffer });
+                        } else if (quotedVideo) {
+                            await sendWithTimeout(targetJid, {
+                                video: mediaBuffer,
+                                caption: caption || quotedVideo.caption || '',
+                                gifPlayback: quotedVideo.gifPlayback || false
+                            });
+                        } else if (quotedImage) {
+                            await sendWithTimeout(targetJid, {
+                                image: mediaBuffer,
+                                caption: caption || quotedImage.caption || ''
+                            });
                         }
 
-                    } else if (quotedSticker) {
-                        // === PENGIRIMAN STIKER KE CHANNEL ===
-                        await sock.sendMessage(remoteJid, { text: '⏳ Mengirim stiker ke channel...' }, { quoted: msg });
-                        logger.info(`📡 [KIRIM] Step 3: Mengirim stiker ke ${targetJid}...`);
-
-                        try {
-                            const result = await sendWithTimeout(targetJid, {
-                                sticker: mediaBuffer
-                            }, 60000);
-                            logger.info(`✅ [KIRIM] Stiker berhasil terkirim! Result: ${JSON.stringify(result?.key || 'ok')}`);
-                        } catch (stickerErr) {
-                            logger.error(`❌ [KIRIM] Gagal kirim stiker: ${stickerErr.message}`);
-                            await sock.sendMessage(remoteJid, {
-                                text: `❌ *Gagal mengirim stiker ke channel!*\n\n` +
-                                      `📍 Target: \`${targetJid}\`\n` +
-                                      `💬 Error: ${stickerErr.message}\n\n` +
-                                      `💡 *Tips:* Pastikan JID benar dan bot sudah follow channel.`,
-                            }, { quoted: msg });
-                            continue;
-                        }
+                        const typeLabel = quotedAudio ? 'Audio' : (quotedSticker ? 'Stiker' : (quotedVideo ? 'Video' : 'Gambar'));
+                        await sock.sendMessage(remoteJid, { text: `✅ ${typeLabel} berhasil dikirim ke saluran:\n\`${targetJid}\`` }, { quoted: msg });
+                    } catch (err) {
+                        logger.error(`❌ [KIRIM] Gagal: ${err.message}`);
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ *Gagal mengirim media ke saluran!*\n\n💬 Error: ${err.message}\n\n💡 Pastikan bot sudah follow saluran tersebut.`
+                        }, { quoted: msg });
                     }
-
-                    // Konfirmasi ke pengirim
-                    await sock.sendMessage(remoteJid, {
-                        text: `✅ ${quotedAudio ? 'Audio' : 'Stiker'} berhasil dikirim ke saluran:\n\`${targetJid}\``,
-                    }, { quoted: msg });
-
-                    logger.info(`📤 [KIRIM] Media berhasil dikirim ke saluran: ${targetJid}`);
                     continue;
                 }
+
 
                 // -----------------------------------------------
                 // FITUR: HD ENHANCER — .hd (reply foto/video)
@@ -2473,19 +2738,12 @@ async function startBot() {
                     try {
                         let downloadKey;
                         if (message.imageMessage) {
-                            // Jika pesan aslinya adalah gambar (dan mungkin membalas gambar lain)
                             downloadKey = msg;
                         } else {
-                            // Jika pesan aslinya adalah teks yang membalas gambar
                             if (!contextInfo?.stanzaId) throw new Error('Informasi pesan balasan tidak ditemukan');
-
                             downloadKey = {
                                 message: quotedMsg,
-                                key: {
-                                    remoteJid: remoteJid,
-                                    id: contextInfo.stanzaId,
-                                    participant: contextInfo.participant
-                                }
+                                key: { remoteJid, id: contextInfo.stanzaId, participant: contextInfo.participant }
                             };
                         }
 
@@ -2494,17 +2752,107 @@ async function startBot() {
 
                         if (fullImage && baitThumb) {
                             await sock.sendMessage(remoteJid, {
-                                image: fullImage,
+                                document: fullImage,
+                                fileName: `${baitText}.jpg`,
+                                mimetype: 'application/octet-stream',
                                 jpegThumbnail: baitThumb,
-                                caption: `✨ *Hidden Image Berhasil!*\n\n💡 _Klik gambar untuk melihat aslinya_`
+                                caption: `✨ *Hidden Image Berhasil!*\n\n💡 _Klik file di atas untuk melihat kejutan aslinya_`,
+                                contextInfo: {
+                                    externalAdReply: {
+                                        title: baitText,
+                                        body: 'File Rahasia (Terenskripsi)',
+                                        thumbnail: baitThumb,
+                                        mediaType: 1,
+                                        renderLargerThumbnail: false,
+                                        showAdAttribution: true
+                                    }
+                                }
                             }, { quoted: msg });
-                            logger.info(`🎭 Fake Preview dikirim ke ${remoteJid} dengan bait: "${baitText}"`);
-                        } else {
-                            throw new Error('Gagal memproses gambar atau thumbnail');
                         }
                     } catch (err) {
                         logger.error(`❌ fake error: ${err.message}`);
-                        await sock.sendMessage(remoteJid, { text: `❌ Gagal membuat fake preview: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // --- FITUR: FAKE IMAGE (LONG IMAGE) — .fakeimg ---
+                // Gabungkan gambar pancingan (atas) + gambar rahasia (bawah) jadi satu gambar panjang
+                // WhatsApp otomatis crop preview-nya, jadi orang hanya lihat bagian atas
+                if (textContent.startsWith(PREFIX + 'fakeimg')) {
+                    const ctx = message.imageMessage?.contextInfo || message.extendedTextMessage?.contextInfo;
+                    const quotedMsg = ctx?.quotedMessage;
+                    
+                    const baitImageMsg = message.imageMessage;
+                    const realImageMsg = quotedMsg?.imageMessage;
+
+                    if (!baitImageMsg || !realImageMsg) {
+                        await sock.sendMessage(remoteJid, { 
+                            text: `🎭 *Fake Image (Gambar Panjang)*\n\nSembunyikan gambar di balik gambar lain!\n\n📌 *Cara pakai:*\n1. Cari gambar *RAHASIA* yang mau disembunyikan.\n2. Klik *Balas (Reply)* pada gambar rahasia tersebut.\n3. Lampirkan *Gambar PANCINGAN* (sampul).\n4. Ketik caption \`${PREFIX}fakeimg\` lalu kirim.\n\n💡 _Gambar pancingan akan muncul di preview chat, gambar rahasia tersembunyi di bawahnya!_` 
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    await sock.sendMessage(remoteJid, { text: '⏳ Menjahit dua gambar menjadi satu kejutan...' }, { quoted: msg });
+
+                    try {
+                        const sharp = require('sharp');
+                        
+                        // 1. Download gambar rahasia (dari reply)
+                        const realBuffer = await downloadMediaMessage({
+                            message: quotedMsg,
+                            key: { remoteJid, id: ctx.stanzaId, participant: ctx.participant }
+                        }, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+
+                        // 2. Download gambar pancingan (dari pesan ini)
+                        const baitBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+
+                        // 3. Resize kedua gambar ke lebar yang sama (800px)
+                        const TARGET_WIDTH = 800;
+                        
+                        const baitResized = await sharp(baitBuffer)
+                            .resize(TARGET_WIDTH, null, { fit: 'inside' })
+                            .png()
+                            .toBuffer();
+                        const baitMeta = await sharp(baitResized).metadata();
+
+                        const realResized = await sharp(realBuffer)
+                            .resize(TARGET_WIDTH, null, { fit: 'inside' })
+                            .png()
+                            .toBuffer();
+                        const realMeta = await sharp(realResized).metadata();
+
+                        // 4. Buat "Ruang Kosong" (padding) besar antara keduanya
+                        //    agar gambar rahasia benar-benar jauh di bawah
+                        const PADDING = 2000; // 2000px ruang kosong putih
+                        const totalHeight = baitMeta.height + PADDING + realMeta.height;
+
+                        // 5. Gabungkan: Pancingan (atas) + Padding + Rahasia (bawah)
+                        const combined = await sharp({
+                            create: {
+                                width: TARGET_WIDTH,
+                                height: totalHeight,
+                                channels: 4,
+                                background: { r: 255, g: 255, b: 255, alpha: 1 }
+                            }
+                        })
+                        .composite([
+                            { input: baitResized, top: 0, left: 0 },
+                            { input: realResized, top: baitMeta.height + PADDING, left: 0 }
+                        ])
+                        .jpeg({ quality: 80 })
+                        .toBuffer();
+
+                        // 6. Kirim sebagai gambar biasa (bukan dokumen!)
+                        await sock.sendMessage(remoteJid, {
+                            image: combined,
+                            caption: `🎭 *Scroll ke bawah untuk melihat kejutannya~*`
+                        }, { quoted: msg });
+
+                        logger.info(`🎭 FakeImg (Long Image) dikirim ke ${remoteJid}`);
+
+                    } catch (err) {
+                        logger.error(`❌ fakeimg error: ${err.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal memproses: ${err.message}` }, { quoted: msg });
                     }
                     continue;
                 }
@@ -3831,68 +4179,61 @@ async function startBot() {
                     await simulateTyping(sock, remoteJid, 1000);
                     await randomDelay(500, 1200);
 
-                    const helpText =
-                        `🤖 *${cfg.getConfig().botName}* — Daftar Perintah\n\n` +
-                        `┏━『 *STICKER & LOTTIE* 』\n` +
-                        `┃\n` +
-                        `┣⌬ ${PREFIX}sticker\n` +
-                        `┣⌬ ${PREFIX}toimg\n` +
-                        `┣⌬ ${PREFIX}tovid\n` +
-                        `┣⌬ ${PREFIX}lottie\n` +
-                        `┗━━━━━━━◧\n\n` + 
-                        `┏━『 *STICKER COOL* 』\n` +
-                        `┃\n` +
-                        `┣⌬ ${PREFIX}s bulat / .s kotak\n` +
-                        `┣⌬ ${PREFIX}s gray / .s sepia / .s invert\n` +
-                        `┣⌬ ${PREFIX}s teksAtas | teksBawah (Meme)\n` +
-                        `┣⌬ ${PREFIX}fake [teks] (Hidden Image)\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `┏━『 *EDIT & AI* 』\n` +
-                        `┃\n` +
-                        `┣⌬ ${PREFIX}rmbgstatus\n` +
-                        `┣⌬ ${PREFIX}teks / .quote\n` +
-                        `┣⌬ ${PREFIX}brat / .hd\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `┏━『 *DOWNLOADER* 』\n` +
-                        `┃\n` +
-                        `┣⌬ ${PREFIX}tiktok / .ttaudio\n` +
-                        `┣⌬ ${PREFIX}ig / .instagram\n` +
-                        `┣⌬ ${PREFIX}ytmp3 / .ytmp4\n` +
-                        `┣⌬ ${PREFIX}play / .spotify\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `┏━『 *GRUP (MEMBER)* 』\n` +
-                        `┃\n` +
-                        `┣⌬ ${PREFIX}afk [alasan]\n` +
-                        `┣⌬ ${PREFIX}absen / .cekabsen\n` +
-                        `┣⌬ ${PREFIX}list / .[kunci_list]\n` +
-                        `┣⌬ ${PREFIX}hidetag / .tagall\n` +
-                        `┣⌬ ${PREFIX}cekwarn / .listblacklist\n` +
-                        `┣⌬ ${PREFIX}groupinfo / .myid\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `┏━『 *GAMES* 』\n` +
-                        `┃\n` +
-                        `┣⌬ .tebakgambar / .tebaktebakan\n` +
-                        `┣⌬ .caklontong / .tebakkata\n` +
-                        `┣⌬ .tebakbendera / .tebaklirik\n` +
-                        `┣⌬ .tebakkimia / .nyerah\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `┏━『 *AUDIO TOOLS* 』\n` +
-                        `┃\n` +
-                        `┣⌬ .tovn [filter] / .ttaudio\n` +
-                        `┣⌬ .kirim / .ceksaluran / .cekjid\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `┏━『 *TOOLS & SEARCH* 』\n` +
-                        `┃\n` +
-                        `┣⌬ .pin [kueri] / .google\n` +
-                        `┣⌬ .ssweb [url] / .sholat\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `┏━『 *LAINNYA* 』\n` +
-                        `┃\n` +
-                        `┣⌬ .owner / .myid\n` +
-                        `┗━━━━━━━◧\n\n` +
-                        `*Info Tambahan:*\n` +
-                        `• Bot 24/7 dengan session tersimpan\n` +
-                        `• Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
+                    const helpText = `🤖 *${cfg.getConfig().botName}* — Daftar Perintah
+
+┏━『 *STICKER & LOTTIE* 』
+┃
+┣⌬ ${PREFIX}sticker
+┣⌬ ${PREFIX}qc (Quotly)
+┣⌬ ${PREFIX}toimg / .tovid
+┣⌬ ${PREFIX}lottie
+┗━━━━━━━◧
+
+┏━『 *RYZUMI PREMIUM AI* 』
+┃
+┣⌬ ${PREFIX}ai [tanya]
+┣⌬ ${PREFIX}gemini [google]
+┣⌬ ${PREFIX}flux [gambar]
+┣⌬ ${PREFIX}remini [hd]
+┗━━━━━━━◧
+
+┏━『 *DOWNLOADER* 』
+┃
+┣⌬ ${PREFIX}tiktok / .ttaudio
+┣⌬ ${PREFIX}ig / .instagram
+┣⌬ ${PREFIX}ytmp3 / .ytmp4
+┣⌬ ${PREFIX}play / .lirik
+┗━━━━━━━◧
+
+┏━『 *GRUP & ADMIN* 』
+┃
+┣⌬ ${PREFIX}afk / .absen
+┣⌬ ${PREFIX}tagall / .hidetag
+┣⌬ ${PREFIX}groupinfo / .list
+┗━━━━━━━◧
+
+┏━『 *TOOLS & SEARCH* 』
+┃
+┣⌬ ${PREFIX}ss [url] / .sholat
+┣⌬ ${PREFIX}stalkig [user]
+┣⌬ ${PREFIX}stalktt [user]
+┣⌬ ${PREFIX}google / .pin
+┗━━━━━━━◧
+
+┏━『 *GAMES* 』
+┃
+┣⌬ .tebakgambar / .tebaklirik
+┣⌬ .tebaktebakan / .nyerah
+┗━━━━━━━◧
+
+┏━『 *AUDIO TOOLS* 』
+┃
+┣⌬ .kirim / .ceksaluran
+┣⌬ .tovn [filter]
+┗━━━━━━━◧
+
+*Info:* Ketik perintah tanpa tanda kurung.
+• Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
 
                     const { useMenuImage, menuImage } = cfg.getConfig();
                     

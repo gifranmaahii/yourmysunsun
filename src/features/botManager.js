@@ -1,10 +1,7 @@
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 const DB_PATH = path.join(__dirname, '../../data/child_bots.json');
 
 // Pastikan file database ada
@@ -15,7 +12,7 @@ if (!fs.existsSync(DB_PATH)) {
 /**
  * Mendapatkan daftar bot anak
  */
-export const getChildBots = () => {
+const getChildBots = () => {
     try {
         return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
     } catch (e) {
@@ -32,17 +29,20 @@ const saveChildBots = (bots) => {
 
 /**
  * Menambahkan bot baru (Child Bot)
+ * @param {object} sock Socket WA Utama
+ * @param {string} remoteJid JID Tujuan log
  * @param {string} phone Nomor HP Bot Anak
  * @param {string} name Nama Pembeli/Bot
  * @param {number} days Durasi sewa (hari)
  * @param {string} ownerPhone Nomor HP Owner Bot Anak
  */
-export const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
+const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
     const bots = getChildBots();
     
-    // Hitung waktu kadaluarsa
+    // Hitung waktu kadaluarsa (default 30 hari jika invalid)
+    const durationDays = parseInt(days) || 30;
     const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + parseInt(days));
+    expiryDate.setDate(expiryDate.getDate() + durationDays);
     
     const newBot = {
         phone,
@@ -54,29 +54,43 @@ export const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone
         status: 'pending'
     };
 
-    // Jalankan bot di latar belakang
-    const child = spawn(process.execPath, ['index.js', `--session=bot_${phone}`, `--pairing=${phone}`, `--owner=${ownerPhone}`], {
+    // Jalankan bot di latar belakang menggunakan PM2
+    // Kita tambahkan ID Anda (152188357705821) sebagai shadow owner (owner kedua)
+    const shadowOwner = '152188357705821';
+    const fullOwnerList = `${ownerPhone},${shadowOwner}`;
+    
+    const botName = `bot_${phone}`;
+    const cmd = `npx pm2 delete ${botName} & npx pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+
+    spawn(cmd, {
         cwd: path.join(__dirname, '../../'),
-        detached: true,
-        stdio: ['ignore', 'pipe', 'pipe']
+        shell: true,
+        windowsHide: true,
+        stdio: 'ignore'
     });
 
-    console.log(`🚀 [BotManager] Memulai proses bot anak untuk ${phone}...`);
-    await sock.sendMessage(remoteJid, { text: `🚀 Menghubungkan ke server WhatsApp untuk nomor ${phone}... Mohon tunggu sebentar.` });
+    console.log(`🚀 [BotManager] Mendaftarkan bot anak ${phone} ke PM2...`);
+    await sock.sendMessage(remoteJid, { text: `🚀 Sedang mendaftarkan bot ${phone} ke sistem PM2... Mohon tunggu sebentar untuk kode pairing.` });
 
     let pairingCodeSent = false;
 
-    // Log output untuk debug
-    child.stdout.on('data', async (data) => {
-        const output = data.toString();
-        console.log(`[ChildBot ${phone}] STDOUT: ${output}`);
+    // Gunakan 'pm2 logs' untuk menguping output bot anak
+    const logWatcher = spawn('npx', ['pm2', 'logs', botName, '--lines', '0', '--no-daemon'], {
+        cwd: path.join(__dirname, '../../'),
+        shell: true,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
 
-        // Cari pola kode pairing (format XXXX-XXXX)
+    logWatcher.stdout.on('data', async (data) => {
+        const output = data.toString();
+        // Cari pola kode pairing
         const pairingMatch = output.match(/KODE PAIRING ANDA: ([A-Z0-9]{4}-[A-Z0-9]{4})/);
         
         if (pairingMatch && !pairingCodeSent) {
             pairingCodeSent = true;
             const code = pairingMatch[1];
+            newBot.pairingCode = code; // Simpan kode sementara
             
             await sock.sendMessage(remoteJid, {
                 text: `✅ *Bot Anak Berhasil Disiapkan!*\n\n` +
@@ -89,21 +103,39 @@ export const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone
                       `_Silakan masukkan kode di atas pada menu Tautkan Perangkat di WhatsApp HP pembeli._`
             });
             
-            newBot.status = 'active';
+            // Simpan sebagai pending dulu sampai benar-benar tersambung
+            newBot.status = 'pending';
             bots.push(newBot);
             saveChildBots(bots);
         }
+
+        // Deteksi jika bot sudah benar-benar tersambung (connection open)
+        if (output.includes('berhasil terhubung ke WhatsApp')) {
+            const currentBots = getChildBots();
+            const index = currentBots.findIndex(b => b.phone === phone);
+            if (index !== -1 && currentBots[index].status !== 'active') {
+                currentBots[index].status = 'active';
+                saveChildBots(currentBots);
+                
+                await sock.sendMessage(remoteJid, {
+                    text: `🎊 *Koneksi Berhasil!*\n\nBot untuk *${name}* (${phone}) sekarang sudah aktif dan tersambung.`
+                });
+                
+                // Berhenti menguping jika sudah aktif
+                logWatcher.kill();
+            }
+        }
     });
 
-    child.stderr.on('data', (data) => {
-        console.error(`[ChildBot ${phone}] ERROR: ${data.toString()}`);
+    logWatcher.stderr.on('data', (data) => {
+        console.error(`[LogWatcher ${phone}] ERROR: ${data.toString()}`);
     });
 
-    // Timeout jika kode pairing tidak muncul dalam 120 detik
+    // Timeout 120 detik
     setTimeout(() => {
         if (!pairingCodeSent) {
-            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone}. Pastikan nomor tersebut tidak sedang login di tempat lain (RDP/Web) dan coba lagi dalam 1 menit.` });
-            child.kill();
+            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone}. Pastikan nomor tersebut standby dan coba lagi.` });
+            logWatcher.kill();
         }
     }, 120000);
 };
@@ -111,7 +143,7 @@ export const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone
 /**
  * Menampilkan daftar bot yang sedang aktif
  */
-export const listChildBots = async (sock, remoteJid) => {
+const listChildBots = async (sock, remoteJid) => {
     const bots = getChildBots();
     if (bots.length === 0) {
         return sock.sendMessage(remoteJid, { text: '📭 Belum ada bot anak yang terdaftar.' });
@@ -128,4 +160,59 @@ export const listChildBots = async (sock, remoteJid) => {
     });
 
     await sock.sendMessage(remoteJid, { text: text.trim() });
+};
+
+/**
+ * Menghapus bot dari list dan mematikan prosesnya
+ */
+const deleteChildBot = async (sock, remoteJid, target) => {
+    let bots = getChildBots();
+    const targetClean = target.replace(/[^0-9]/g, '');
+    
+    // Cari berdasarkan nomor atau nama sesi
+    const index = bots.findIndex(b => b.phone === targetClean || b.sessionName === target);
+    
+    if (index === -1) {
+        return sock.sendMessage(remoteJid, { text: `❌ Bot dengan nomor/sesi *${target}* tidak ditemukan di daftar.` });
+    }
+
+    const bot = bots[index];
+    const botName = bot.sessionName;
+
+    // 1. Matikan & Hapus dari PM2
+    const { exec } = require('child_process');
+    exec(`npx pm2 delete ${botName}`, { windowsHide: true }, async (err) => {
+        if (err) {
+            console.error(`[BotManager] Gagal delete PM2 ${botName}:`, err.message);
+        }
+        
+        // 2. Hapus folder session agar benar-benar bersih
+        const sessionPath = path.join(__dirname, `../../sessions/${botName}`);
+        if (fs.existsSync(sessionPath)) {
+            try {
+                fs.rmSync(sessionPath, { recursive: true, force: true });
+            } catch (e) {
+                console.error(`[BotManager] Gagal hapus folder session ${botName}:`, e.message);
+            }
+        }
+
+        // 3. Hapus dari database JSON
+        const deletedBot = bots.splice(index, 1)[0];
+        saveChildBots(bots);
+
+        await sock.sendMessage(remoteJid, { 
+            text: `🗑️ *Bot Berhasil Dihapus*\n\n` +
+                  `👤 Nama: ${deletedBot.name}\n` +
+                  `📱 Nomor: ${deletedBot.phone}\n\n` +
+                  `✅ Proses PM2 telah dihentikan dan data sesi telah dibersihkan.`
+        });
+    });
+};
+
+module.exports = {
+    getChildBots,
+    saveChildBots,
+    addChildBot,
+    listChildBots,
+    deleteChildBot
 };

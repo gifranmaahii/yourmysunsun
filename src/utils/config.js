@@ -13,7 +13,7 @@
 const fs   = require('fs');
 const path = require('path');
 
-const CONFIG_FILE = path.join(__dirname, '../../data/config.json');
+let CONFIG_FILE = path.join(__dirname, '../../data/config.json');
 
 // ── State in-memory ───────────────────────────────────────────────────────────
 let _cfg = {
@@ -45,10 +45,16 @@ function _save() {
 // Menghapus @domain, format :device, dan karakter non-angka.
 // Normalisasi nomor lokal Indonesia: 08xxx → 628xxx
 function cleanNumber(raw) {
-    let n = String(raw || '')
+    if (!raw) return '';
+    let n = String(raw)
         .replace(/:[0-9]+/g, '')    // handle 628xxx:12 (hapus device ID)
-        .replace(/@.*$/, '')        // hapus @s.whatsapp.net, @lid, dsb.
-        .replace(/[^0-9]/g, '');    // hanya angka
+        .replace(/@.*$/, '');        // hapus @s.whatsapp.net, @lid, dsb.
+    
+    // Jika mengandung koma, ini adalah daftar. Jangan bersihkan karakter non-angka dulu
+    // karena kita ingin split di level pemanggil.
+    if (n.includes(',')) return n; 
+
+    n = n.replace(/[^0-9]/g, '');    // hanya angka untuk nomor individu
 
     // Normalisasi: 08xxx → 628xxx (format lokal Indonesia → format WA internasional)
     if (n.startsWith('0') && n.length >= 9) {
@@ -59,7 +65,12 @@ function cleanNumber(raw) {
 }
 
 // ── Init: load dari .env defaults + file tersimpan ────────────────────────────
-function initConfig(envDefaults = {}) {
+function initConfig(envDefaults = {}, sessionName = 'default') {
+    // Jika ada sessionName, gunakan file config spesifik session
+    if (sessionName && sessionName !== 'default') {
+        CONFIG_FILE = path.join(__dirname, `../../data/config_${sessionName}.json`);
+    }
+
     // Merge env defaults dulu
     _cfg = { ..._cfg, ...envDefaults };
 

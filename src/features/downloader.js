@@ -48,8 +48,30 @@ async function fetchJson(url) {
  * @param {string} originalUrl - The media URL to download
  */
 async function fallbackDownload(freeUrl, btzEndpoint, originalUrl) {
-    // Try Free API first if provided
-    if (freeUrl) {
+    // ============================================================
+    // ATTEMPT 0: RYZUMI PREMIUM (Donator - IP Based)
+    // ============================================================
+    try {
+        const ryzumiUrl = `https://api.ryzumi.net/api/downloader/all-in-one?url=${encodeURIComponent(originalUrl)}`;
+        const res = await fetchWithTimeout(ryzumiUrl, { timeout: 10000 });
+        const json = await res.json();
+        
+        if (json.medias && Array.isArray(json.medias) && json.medias.length > 0) {
+            // Pilih media yang relevan (misal video untuk TikTok/FB, atau media pertama)
+            const media = json.medias.find(m => m.type === 'video') || json.medias[0];
+            if (media && media.url) {
+                return {
+                    title: json.title || 'Downloaded Media',
+                    url: media.url,
+                    source: 'Ryzumi'
+                };
+            }
+        }
+    } catch (e) {
+        logger.warn(`[DOWNLOADER] Ryzumi fallback failed for ${originalUrl}: ${e.message}`);
+    }
+
+    // Try Free API next
         try {
             const json = await fetchJson(`${freeUrl}${encodeURIComponent(originalUrl)}`);
             if (json.status && (json.data || json.result)) {
@@ -129,6 +151,18 @@ async function ytmp3(query) {
     const url = await searchYouTube(query);
     const encodedUrl = encodeURIComponent(url);
     
+    // Attempt 0: Ryzumi Premium
+    try {
+        const ryzumiRes = await fetchWithTimeout(`https://api.ryzumi.net/api/downloader/all-in-one?url=${encodedUrl}`, { timeout: 15000 });
+        const ryzumiJson = await ryzumiRes.json();
+        if (ryzumiJson.medias && Array.isArray(ryzumiJson.medias)) {
+            const audioMedia = ryzumiJson.medias.find(m => m.type === 'audio') || ryzumiJson.medias[0];
+            if (audioMedia && audioMedia.url) {
+                return { title: ryzumiJson.title || 'YouTube Audio', url: audioMedia.url };
+            }
+        }
+    } catch (e) { logger.warn('[YTMP3] Ryzumi API failed: ' + e.message); }
+
     // Attempt 1: Magma API (Free & Stable)
     try {
         const res = await fetchWithTimeout(`https://www.magma-api.biz.id/download/ytmp3?url=${encodedUrl}`, { timeout: 8000 });
@@ -157,6 +191,18 @@ async function ytmp4(query) {
     const url = await searchYouTube(query);
     const encodedUrl = encodeURIComponent(url);
     
+    // Attempt 0: Ryzumi Premium
+    try {
+        const ryzumiRes = await fetchWithTimeout(`https://api.ryzumi.net/api/downloader/all-in-one?url=${encodedUrl}`, { timeout: 15000 });
+        const ryzumiJson = await ryzumiRes.json();
+        if (ryzumiJson.medias && Array.isArray(ryzumiJson.medias)) {
+            const videoMedia = ryzumiJson.medias.find(m => m.type === 'video') || ryzumiJson.medias[0];
+            if (videoMedia && videoMedia.url) {
+                return { title: ryzumiJson.title || 'YouTube Video', url: videoMedia.url };
+            }
+        }
+    } catch (e) { logger.warn('[YTMP4] Ryzumi API failed: ' + e.message); }
+
     // Attempt 1: Magma API
     try {
         const res = await fetchWithTimeout(`https://www.magma-api.biz.id/download/ytmp4?url=${encodedUrl}`, { timeout: 8000 });

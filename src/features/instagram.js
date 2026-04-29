@@ -9,7 +9,23 @@ async function getInstagramMedia(url) {
     const encodedUrl = encodeURIComponent(url);
 
     // ============================================================
-    // LAYER 0: DELINE API (Murni Gratis & Terverifikasi)
+    // LAYER 0: RYZUMI PREMIUM (Donator - IP Based)
+    // ============================================================
+    try {
+        const res = await fetch(`https://api.ryzumi.net/api/downloader/all-in-one?url=${encodedUrl}`);
+        const json = await res.json();
+        console.log('[IG] Ryzumi response:', JSON.stringify(json).substring(0, 300));
+        
+        if (json.medias && Array.isArray(json.medias) && json.medias.length > 0) {
+            // Ryzumi mengembalikan array media (foto/video)
+            return json.medias.map(m => ({ url: m.url }));
+        }
+    } catch (e) { 
+        errors.push(`Layer 0 (Ryzumi) Gagal: ${e.message}`); 
+    }
+
+    // ============================================================
+    // LAYER 1: DELINE API (Murni Gratis & Terverifikasi)
     // ============================================================
     try {
         const res = await fetch(`https://api.deline.web.id/downloader/ig?url=${encodedUrl}`);
@@ -24,7 +40,7 @@ async function getInstagramMedia(url) {
                 return allMedia.map(url => ({ url }));
             }
         }
-    } catch (e) { errors.push(`Layer 0 (Deline) Gagal: ${e.message}`); }
+    } catch (e) { errors.push(`Layer 1 (Deline) Gagal: ${e.message}`); }
 
     // ============================================================
     // LAYER 1: MAGMA API (Cadangan Gratis)
