@@ -60,25 +60,23 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
     
     const botName = `bot_${phone}`;
     const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
 
-    // 1. Hapus proses PM2 lama (jika ada) — diam-diam
-    exec(`npx pm2 delete ${botName}`, { windowsHide: true }, () => {
-        // 2. Jalankan bot baru via PM2 dengan pairing number
-        //    index.js akan otomatis pakai Chrome browser + tunggu handshake
-        //    karena kita pass --pairing=<nomor>
-        const startCmd = `npx pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+    try {
+        // Hapus secara diam-diam (abaikan error kalau tidak ada)
+        await execPromise(`npx pm2 delete ${botName}`, { windowsHide: true }).catch(() => {});
         
-        exec(startCmd, {
+        // Start PM2
+        const startCmd = `npx pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+        await execPromise(startCmd, {
             cwd: path.join(__dirname, '../../'),
             windowsHide: true
-        }, (err) => {
-            if (err) {
-                console.error(`[BotManager] Gagal start PM2 ${botName}:`, err.message);
-            } else {
-                console.log(`🚀 [BotManager] Bot anak ${phone} berhasil didaftarkan ke PM2`);
-            }
         });
-    });
+        console.log(`🚀 [BotManager] Bot anak ${phone} berhasil didaftarkan ke PM2`);
+    } catch (err) {
+        console.error(`[BotManager] Gagal start PM2 ${botName}:`, err.message);
+    }
 
     await sock.sendMessage(remoteJid, { 
         text: `🚀 Sedang mendaftarkan bot *${name}* (${phone}) ke sistem...\n⏳ Menunggu kode pairing (±15-20 detik)...` 
