@@ -68,7 +68,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         await execPromise(`npx pm2 delete ${botName}`, { windowsHide: true }).catch(() => {});
         
         // Start PM2
-        const startCmd = `npx pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+        const startCmd = `npx pm2 start index.js --name ${botName} -- -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
         await execPromise(startCmd, {
             cwd: path.join(__dirname, '../../'),
             windowsHide: true
