@@ -426,12 +426,20 @@ async function startBot() {
     }
 
     // Buat socket WA
+    // PENTING: Untuk Pairing Code, browser HARUS diset ke Chrome/Ubuntu
+    // Jika pakai 'WhatsApp Desktop', server WA tidak akan mengirim notif ke HP
+    const browserConfig = usePairingCode
+        ? Browsers.ubuntu('Chrome')
+        : ['WhatsApp', 'Desktop', '3.0'];
+    
+    logger.info(`🌐 Browser config: ${JSON.stringify(browserConfig)} (pairing: ${usePairingCode})`);
+
     const sock = makeWASocket({
         version,
         auth: state,
         logger: baileyLogger,
         printQRInTerminal: !usePairingCode,
-        browser: ['WhatsApp', 'Desktop', '3.0'], 
+        browser: browserConfig,
         syncFullHistory: false,
         markOnlineOnConnect: false,
         connectTimeoutMs: 60000,
@@ -443,29 +451,51 @@ async function startBot() {
 
     currentSock = sock;
 
-    // Request Pairing Code (With Auto-Resend every 2 minutes)
+    // Request Pairing Code — tunggu WebSocket terhubung dulu baru minta kode
     let pairingTimer = null;
     if (usePairingCode && !hasSession && !state.creds.registered) {
         const requestPairing = async () => {
             try {
+                console.log(' ⏳ Meminta kode pairing ke server WhatsApp...');
                 const code = await sock.requestPairingCode(phoneNumber);
                 const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
                 console.log(`\n========================================================`);
                 console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
-                console.log(` 💡 Masukkan kode ini di WhatsApp HP Anda (Tautkan Perangkat)`);
-                console.log(` ⏳ Kode akan otomatis dikirim ulang dalam 2 menit jika belum dipakai.`);
+                console.log(` 📞 Nomor: ${phoneNumber}`);
+                console.log(` 💡 Buka WhatsApp HP → Setelan → Perangkat Tertaut`);
+                console.log(`    → Tautkan Perangkat → Tautkan dengan nomor telepon`);
+                console.log(` ⏳ Kode berlaku ±2 menit. Akan dikirim ulang otomatis.`);
                 console.log(`========================================================\n`);
             } catch (err) {
                 logger.error('❌ Gagal mendapatkan pairing code: ' + err.message);
+                console.log(' ⚠️ Coba tunggu beberapa detik, kode akan diminta ulang...');
             }
         };
 
-        // Kirim pertama kali setelah 6 detik (memberi waktu koneksi stabil)
-        console.log(' ⏳ Sedang meminta kode pairing dari server WhatsApp... Mohon tunggu.');
-        setTimeout(requestPairing, 6000);
+        // Tunggu WebSocket benar-benar terhubung sebelum minta kode
+        // Polling cek setiap 1 detik, maksimal 15 detik
+        console.log(' ⏳ Menunggu koneksi WebSocket ke server WhatsApp...');
+        let wsReady = false;
+        for (let i = 0; i < 15; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            if (sock.ws?.readyState === sock.ws?.OPEN) {
+                wsReady = true;
+                console.log(' ✅ WebSocket terhubung! Meminta kode pairing...');
+                break;
+            }
+            console.log(` ⏳ Menunggu koneksi... (${i + 1}/15)`);
+        }
+
+        if (wsReady) {
+            // Minta kode pertama kali setelah WS siap (tunggu 2 detik lagi)
+            setTimeout(requestPairing, 2000);
+        } else {
+            console.log(' ⚠️ WebSocket belum siap, tetap mencoba minta kode...');
+            setTimeout(requestPairing, 3000);
+        }
         
-        // Setup interval resend setiap 10 menit (agar sangat stabil untuk user)
-        pairingTimer = setInterval(requestPairing, 600000);
+        // Resend kode otomatis setiap 2 menit jika belum login
+        pairingTimer = setInterval(requestPairing, 120000);
     }
 
     // ============================================================
