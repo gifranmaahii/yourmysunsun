@@ -97,6 +97,26 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         stdio: ['ignore', 'pipe', 'pipe']
     });
 
+    let loginTimeout;
+
+    // Timeout utama (Maksimal 6 menit: 3 menit tunggu kode, 3 menit tunggu login)
+    const mainTimeout = setTimeout(() => {
+        if (!pairingCodeSent) {
+            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone} dalam 3 menit.\nCoba lagi dengan: *${require('./../../src/utils/config').getConfig().prefix || '.'}addbotku ${phone} ${name} ${days} ${ownerPhone}*` });
+            logWatcher.kill();
+        } else {
+            // Cek apakah status masih pending
+            const currentBots = getChildBots();
+            const botData = currentBots.find(b => b.phone === phone);
+            if (botData && botData.status === 'pending') {
+                sock.sendMessage(remoteJid, { 
+                    text: `⏳ Waktu tunggu habis!\nBot *${name}* (${phone}) gagal terhubung karena kode tidak dimasukkan atau kedaluwarsa.\n\nSilakan minta kode baru dengan perintah:\n*${require('./../../src/utils/config').getConfig().prefix || '.'}getcode ${phone}*` 
+                });
+                logWatcher.kill();
+            }
+        }
+    }, 360000); // 6 menit total timeout
+
     logWatcher.stdout.on('data', async (data) => {
         const output = data.toString();
         // Cari pola kode pairing
@@ -117,7 +137,8 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
                       `*${code}*\n\n` +
                       `💡 Buka WhatsApp HP → Setelan → Perangkat Tertaut\n` +
                       `   → Tautkan Perangkat → Tautkan dengan nomor telepon\n` +
-                      `   → Masukkan kode di atas`
+                      `   → Masukkan kode di atas\n\n` +
+                      `_(Menunggu kamu memasukkan kode... Maksimal 3 menit)_`
             });
             
             newBot.status = 'pending';
@@ -126,7 +147,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         }
 
         // Deteksi jika bot sudah benar-benar tersambung
-        if (output.includes('berhasil terhubung ke WhatsApp')) {
+        if (output.includes('berhasil terhubung ke WhatsApp') || output.includes('opened connection')) {
             const currentBots = getChildBots();
             const index = currentBots.findIndex(b => b.phone === phone);
             if (index !== -1 && currentBots[index].status !== 'active') {
@@ -134,9 +155,10 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
                 saveChildBots(currentBots);
                 
                 await sock.sendMessage(remoteJid, {
-                    text: `🎊 *Koneksi Berhasil!*\n\nBot untuk *${name}* (${phone}) sekarang sudah aktif dan tersambung.`
+                    text: `🎉 *Koneksi Berhasil!*\n\nBot untuk *${name}* (${phone}) sekarang sudah aktif dan tersambung ke WhatsApp.\n\nSelamat menggunakan bot!`
                 });
                 
+                clearTimeout(mainTimeout);
                 logWatcher.kill();
             }
         }
@@ -145,14 +167,6 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
     logWatcher.stderr.on('data', (data) => {
         console.error(`[LogWatcher ${phone}] ERROR: ${data.toString()}`);
     });
-
-    // Timeout 180 detik (3 menit, lebih lama karena ada tunggu handshake)
-    setTimeout(() => {
-        if (!pairingCodeSent) {
-            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone} dalam 3 menit.\nCoba lagi dengan: *${require('./../../src/utils/config').getConfig().prefix || '.'}addbotku ${phone} ${name} ${days} ${ownerPhone}*` });
-            logWatcher.kill();
-        }
-    }, 180000);
 };
 
 /**
