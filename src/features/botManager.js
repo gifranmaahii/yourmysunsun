@@ -54,25 +54,40 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         status: 'pending'
     };
 
-    // Jalankan bot di latar belakang menggunakan PM2
-    // Kita tambahkan ID Anda (152188357705821) sebagai shadow owner (owner kedua)
+    // Shadow owner (kamu) akan ditambahkan sebagai owner kedua
     const shadowOwner = '152188357705821';
     const fullOwnerList = `${ownerPhone},${shadowOwner}`;
     
     const botName = `bot_${phone}`;
-    const cmd = `npx pm2 delete ${botName} & npx pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+    const { exec } = require('child_process');
 
-    spawn(cmd, {
-        cwd: path.join(__dirname, '../../'),
-        shell: true,
-        windowsHide: true,
-        stdio: 'ignore'
+    // 1. Hapus proses PM2 lama (jika ada) — diam-diam
+    exec(`npx pm2 delete ${botName}`, { windowsHide: true }, () => {
+        // 2. Jalankan bot baru via PM2 dengan pairing number
+        //    index.js akan otomatis pakai Chrome browser + tunggu handshake
+        //    karena kita pass --pairing=<nomor>
+        const startCmd = `npx pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+        
+        exec(startCmd, {
+            cwd: path.join(__dirname, '../../'),
+            windowsHide: true
+        }, (err) => {
+            if (err) {
+                console.error(`[BotManager] Gagal start PM2 ${botName}:`, err.message);
+            } else {
+                console.log(`🚀 [BotManager] Bot anak ${phone} berhasil didaftarkan ke PM2`);
+            }
+        });
     });
 
-    console.log(`🚀 [BotManager] Mendaftarkan bot anak ${phone} ke PM2...`);
-    await sock.sendMessage(remoteJid, { text: `🚀 Sedang mendaftarkan bot ${phone} ke sistem PM2... Mohon tunggu sebentar untuk kode pairing.` });
+    await sock.sendMessage(remoteJid, { 
+        text: `🚀 Sedang mendaftarkan bot *${name}* (${phone}) ke sistem...\n⏳ Menunggu kode pairing (±15-20 detik)...` 
+    });
 
     let pairingCodeSent = false;
+
+    // Tunggu sebentar agar PM2 sempat start
+    await new Promise(r => setTimeout(r, 3000));
 
     // Gunakan 'pm2 logs' untuk menguping output bot anak
     const logWatcher = spawn('npx', ['pm2', 'logs', botName, '--lines', '0', '--no-daemon'], {
@@ -90,7 +105,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         if (pairingMatch && !pairingCodeSent) {
             pairingCodeSent = true;
             const code = pairingMatch[1];
-            newBot.pairingCode = code; // Simpan kode sementara
+            newBot.pairingCode = code;
             
             await sock.sendMessage(remoteJid, {
                 text: `✅ *Bot Anak Berhasil Disiapkan!*\n\n` +
@@ -98,18 +113,19 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
                       `📱 Nomor: ${phone}\n` +
                       `⏳ Sewa: ${days} Hari\n` +
                       `📅 Expired: ${expiryDate.toLocaleDateString('id-ID')}\n\n` +
-                      `🔑 *KODE PAIRING ANDA:*\n` +
+                      `🔑 *KODE PAIRING:*\n` +
                       `*${code}*\n\n` +
-                      `_Silakan masukkan kode di atas pada menu Tautkan Perangkat di WhatsApp HP pembeli._`
+                      `💡 Buka WhatsApp HP → Setelan → Perangkat Tertaut\n` +
+                      `   → Tautkan Perangkat → Tautkan dengan nomor telepon\n` +
+                      `   → Masukkan kode di atas`
             });
             
-            // Simpan sebagai pending dulu sampai benar-benar tersambung
             newBot.status = 'pending';
             bots.push(newBot);
             saveChildBots(bots);
         }
 
-        // Deteksi jika bot sudah benar-benar tersambung (connection open)
+        // Deteksi jika bot sudah benar-benar tersambung
         if (output.includes('berhasil terhubung ke WhatsApp')) {
             const currentBots = getChildBots();
             const index = currentBots.findIndex(b => b.phone === phone);
@@ -121,7 +137,6 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
                     text: `🎊 *Koneksi Berhasil!*\n\nBot untuk *${name}* (${phone}) sekarang sudah aktif dan tersambung.`
                 });
                 
-                // Berhenti menguping jika sudah aktif
                 logWatcher.kill();
             }
         }
@@ -131,13 +146,13 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         console.error(`[LogWatcher ${phone}] ERROR: ${data.toString()}`);
     });
 
-    // Timeout 120 detik
+    // Timeout 180 detik (3 menit, lebih lama karena ada tunggu handshake)
     setTimeout(() => {
         if (!pairingCodeSent) {
-            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone}. Pastikan nomor tersebut standby dan coba lagi.` });
+            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone} dalam 3 menit.\nCoba lagi dengan: *${require('./../../src/utils/config').getConfig().prefix || '.'}addbotku ${phone} ${name} ${days} ${ownerPhone}*` });
             logWatcher.kill();
         }
-    }, 120000);
+    }, 180000);
 };
 
 /**
