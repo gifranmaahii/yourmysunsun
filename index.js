@@ -972,10 +972,15 @@ async function startBot() {
 ┣⌬ ${PREFIX}google / .pin
 ┗━━━━━━━◧
 
-┏━『 *GAMES* 』
+┏━『 *GAMES (2000+ Soal!)* 』
 ┃
 ┣⌬ .tebakgambar / .tebaklirik
-┣⌬ .tebaktebakan / .nyerah
+┣⌬ .tebaktebakan / .tebakbendera
+┣⌬ .asahotak / .siapakahaku
+┣⌬ .susunkata / .tekateki
+┣⌬ .caklontong / .family100
+┣⌬ .math / .tebakangka / .tod
+┣⌬ .gamelist — Daftar lengkap
 ┗━━━━━━━◧
 
 ┏━『 *AUDIO TOOLS* 』
@@ -3828,34 +3833,25 @@ async function startBot() {
                 }
 
                 // -----------------------------------------------
-                // FITUR: GAMES
+                // FITUR: GAMES (16 GAME, 2000+ SOAL!)
                 // -----------------------------------------------
-                if (textContent.startsWith(PREFIX + 'tebakgambar')) {
-                    await games.startGame(sock, remoteJid, msg, 'tebakgambar');
+                if (textContent.trim() === PREFIX + 'gamelist') {
+                    await sock.sendMessage(remoteJid, { text: games.getGameList(PREFIX) }, { quoted: msg });
                     continue;
                 }
-                if (textContent.startsWith(PREFIX + 'tebaktebakan')) {
-                    await games.startGame(sock, remoteJid, msg, 'tebaktebakan');
+                const allGameCmds = [
+                    'tebaktebakan', 'tebakgambar', 'tebakkata', 'tebakbendera',
+                    'tebakkimia', 'tebaklirik', 'tebakkalimat', 'caklontong',
+                    'asahotak', 'siapakahaku', 'susunkata', 'tekateki',
+                    'family100', 'math', 'tebakangka'
+                ];
+                const matchedGame = allGameCmds.find(cmd => textContent.trim() === PREFIX + cmd);
+                if (matchedGame) {
+                    await games.startGame(sock, remoteJid, msg, matchedGame);
                     continue;
                 }
-                if (textContent.startsWith(PREFIX + 'tebakkata')) {
-                    await games.startGame(sock, remoteJid, msg, 'tebakkata');
-                    continue;
-                }
-                if (textContent.startsWith(PREFIX + 'tebakbendera')) {
-                    await games.startGame(sock, remoteJid, msg, 'tebakbendera');
-                    continue;
-                }
-                if (textContent.startsWith(PREFIX + 'caklontong')) {
-                    await games.startGame(sock, remoteJid, msg, 'caklontong');
-                    continue;
-                }
-                if (textContent.startsWith(PREFIX + 'tebaklirik')) {
-                    await games.startGame(sock, remoteJid, msg, 'tebaklirik');
-                    continue;
-                }
-                if (textContent.startsWith(PREFIX + 'tebakkimia')) {
-                    await games.startGame(sock, remoteJid, msg, 'tebakkimia');
+                if (textContent.trim() === PREFIX + 'tod' || textContent.trim() === PREFIX + 'truthordare') {
+                    await games.startGame(sock, remoteJid, msg, 'truthordare');
                     continue;
                 }
 
@@ -4450,14 +4446,8 @@ async function startBot() {
                     continue;
                 }
                 // -----------------------------------------------
-                // FITUR: GAME TEBAK-TEBAKAN
+                // FITUR: GAME TEBAK-TEBAKAN (FALLBACK — handled above)
                 // -----------------------------------------------
-                const gameCmds = ['tebaktebakan', 'tebakkata', 'tebakbendera', 'tebakkimia', 'tebaklirik', 'tebakgambar'];
-                const triggeredGame = gameCmds.find(cmd => textContent.trim() === PREFIX + cmd);
-                if (triggeredGame) {
-                    await games.startGame(sock, remoteJid, msg, triggeredGame);
-                    continue;
-                }
 
                 // -----------------------------------------------
                 // FITUR: TAGALL & HIDETAG (KHUSUS GRUP & ADMIN)
@@ -4578,10 +4568,15 @@ async function startBot() {
 ┣⌬ ${PREFIX}google / .pin
 ┗━━━━━━━◧
 
-┏━『 *GAMES* 』
+┏━『 *GAMES (2000+ Soal!)* 』
 ┃
 ┣⌬ .tebakgambar / .tebaklirik
-┣⌬ .tebaktebakan / .nyerah
+┣⌬ .tebaktebakan / .tebakbendera
+┣⌬ .asahotak / .siapakahaku
+┣⌬ .susunkata / .tekateki
+┣⌬ .caklontong / .family100
+┣⌬ .math / .tebakangka / .tod
+┣⌬ .gamelist — Daftar lengkap
 ┗━━━━━━━◧
 
 ┏━『 *AUDIO TOOLS* 』
