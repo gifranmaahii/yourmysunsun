@@ -35,8 +35,10 @@ const saveChildBots = (bots) => {
  * @param {string} name Nama Pembeli/Bot
  * @param {number} days Durasi sewa (hari)
  * @param {string} ownerPhone Nomor HP Owner Bot Anak
+ * @param {string} method Metode login (qr/pairing)
  */
-const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
+const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, method = 'pairing') => {
+    const loginMethod = (method || 'pairing').toLowerCase();
     const bots = getChildBots();
     
     // Hitung waktu kadaluarsa (default 30 hari jika invalid)
@@ -68,7 +70,10 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         await execPromise(`npx pm2 delete ${botName}`, { windowsHide: true }).catch(() => {});
         
         // Start PM2
-        const startCmd = `npx pm2 start index.js --name ${botName} -- -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+        const startCmd = loginMethod === 'qr'
+            ? `npx pm2 start index.js --name ${botName} -- -- --session=${botName} --owner=${fullOwnerList}`
+            : `npx pm2 start index.js --name ${botName} -- -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+        
         await execPromise(startCmd, {
             cwd: path.join(__dirname, '../../'),
             windowsHide: true
@@ -79,10 +84,10 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
     }
 
     await sock.sendMessage(remoteJid, { 
-        text: `🚀 Sedang mendaftarkan bot *${name}* (${phone}) ke sistem...\n⏳ Menunggu kode pairing (±15-20 detik)...` 
+        text: `🚀 Sedang mendaftarkan bot *${name}* (${phone}) ke sistem...\n⏳ Menunggu ${loginMethod === 'qr' ? 'QR Code' : 'kode pairing'} (±15-20 detik)...` 
     });
 
-    let pairingCodeSent = false;
+    let authDataSent = false;
 
     // Tunggu sebentar agar PM2 sempat start
     await new Promise(r => setTimeout(r, 3000));
@@ -99,8 +104,8 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
 
     // Timeout utama (Maksimal 6 menit: 3 menit tunggu kode, 3 menit tunggu login)
     const mainTimeout = setTimeout(() => {
-        if (!pairingCodeSent) {
-            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan kode pairing untuk ${phone} dalam 3 menit.\nCoba lagi dengan: *${require('./../../src/utils/config').getConfig().prefix || '.'}addbotku ${phone} ${name} ${days} ${ownerPhone}*` });
+        if (!authDataSent) {
+            sock.sendMessage(remoteJid, { text: `❌ Gagal mendapatkan ${loginMethod === 'qr' ? 'QR Code' : 'kode pairing'} untuk ${phone} dalam 3 menit.\nCoba lagi dengan: *${require('./../../src/utils/config').getConfig().prefix || '.'}addbotku ${phone} ${name} ${days} ${ownerPhone} ${loginMethod}*` });
             logWatcher.kill();
         } else {
             // Cek apakah status masih pending
@@ -108,7 +113,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
             const botData = currentBots.find(b => b.phone === phone);
             if (botData && botData.status === 'pending') {
                 sock.sendMessage(remoteJid, { 
-                    text: `⏳ Waktu tunggu habis!\nBot *${name}* (${phone}) gagal terhubung karena kode tidak dimasukkan atau kedaluwarsa.\n\nSilakan minta kode baru dengan perintah:\n*${require('./../../src/utils/config').getConfig().prefix || '.'}getcode ${phone}*` 
+                    text: `⏳ Waktu tunggu habis!\nBot *${name}* (${phone}) gagal terhubung karena kedaluwarsa.\n\nSilakan minta kode/QR baru.` 
                 });
                 logWatcher.kill();
             }
@@ -119,9 +124,11 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
         const output = data.toString();
         // Cari pola kode pairing
         const pairingMatch = output.match(/KODE PAIRING ANDA: ([A-Z0-9]{4}-[A-Z0-9]{4})/);
+        // Cari pola QR Code
+        const qrMatch = output.match(/RAW_QR_CODE:(.+)/);
         
-        if (pairingMatch && !pairingCodeSent) {
-            pairingCodeSent = true;
+        if (pairingMatch && !authDataSent) {
+            authDataSent = true;
             const code = pairingMatch[1];
             newBot.pairingCode = code;
             
@@ -138,6 +145,32 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone) => {
                       `   → Masukkan kode di atas\n\n` +
                       `_(Menunggu kamu memasukkan kode... Maksimal 3 menit)_`
             });
+            
+            newBot.status = 'pending';
+            bots.push(newBot);
+            saveChildBots(bots);
+        } else if (qrMatch && !authDataSent) {
+            authDataSent = true;
+            const qrRaw = qrMatch[1];
+            newBot.pairingCode = "QR_CODE";
+            
+            try {
+                const qrcode = require('qrcode');
+                const qrBuffer = await qrcode.toBuffer(qrRaw, { scale: 8 });
+                
+                await sock.sendMessage(remoteJid, {
+                    image: qrBuffer,
+                    caption: `✅ *Bot Anak Berhasil Disiapkan!*\n\n` +
+                          `👤 Nama: ${name}\n` +
+                          `📱 ID Sesi: ${phone}\n` +
+                          `⏳ Sewa: ${days} Hari\n` +
+                          `📅 Expired: ${expiryDate.toLocaleDateString('id-ID')}\n\n` +
+                          `💡 Silakan Scan QR Code ini dari fitur Perangkat Tertaut WhatsApp HP tujuan.\n\n` +
+                          `_(Menunggu kamu scan... Maksimal 3 menit)_`
+                });
+            } catch (qrErr) {
+                await sock.sendMessage(remoteJid, { text: `❌ Gagal memproses gambar QR Code.` });
+            }
             
             newBot.status = 'pending';
             bots.push(newBot);

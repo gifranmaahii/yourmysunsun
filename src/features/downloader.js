@@ -87,7 +87,6 @@ async function fallbackDownload(freeUrl, btzEndpoint, originalUrl) {
         } catch (e) {
             logger.warn(`[DOWNLOADER] Free API failed for ${btzEndpoint}, falling back to BetaBotz...`);
         }
-    }
 
     // Fallback to BetaBotz
     const btzUrl = `${BETABOTZ_URL}${btzEndpoint}?url=${encodeURIComponent(originalUrl)}&apikey=${API_KEY}`;

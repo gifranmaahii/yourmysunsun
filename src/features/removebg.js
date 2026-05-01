@@ -101,70 +101,20 @@ async function removeViaRemoteBgApi(imageBuffer, apiKeyToUse) {
 }
 
 // ============================================================
-// METODE 2: AI Lokal — @imgly/background-removal-node
-// ============================================================
-
-let localBgRemovalModule = null;
-
-async function loadLocalBgRemoval() {
-    if (localBgRemovalModule) return localBgRemovalModule;
-    try {
-        logger.info('📦 Memuat modul AI lokal remove background...');
-        localBgRemovalModule = await import('@imgly/background-removal-node');
-        logger.info('✅ Modul AI lokal berhasil dimuat');
-        return localBgRemovalModule;
-    } catch (err) {
-        throw new Error(`Gagal memuat modul AI lokal: ${err.message}`);
-    }
-}
-
-/**
- * Hapus background via AI lokal
- * @param {Buffer} imageBuffer
- * @returns {Promise<Buffer>} Buffer PNG transparan
- */
-async function removeViaLocalAI(imageBuffer) {
-    const mod = await loadLocalBgRemoval();
-    const removeBackground = mod.removeBackground || mod.default?.removeBackground || mod.default;
-
-    if (typeof removeBackground !== 'function') {
-        throw new Error('Fungsi removeBackground tidak ditemukan di modul');
-    }
-
-    logger.info('🤖 Memproses remove background dengan AI lokal...');
-    
-    // Gunakan require('buffer').Blob agar kompatibel dengan Node.js 16+
-    const BlobClass = globalThis.Blob || require('buffer').Blob;
-    const blob = new BlobClass([imageBuffer], { type: 'image/jpeg' });
-    
-    let resultBlob;
-    try {
-        resultBlob = await removeBackground(blob, {
-            model: 'medium',
-            output: { format: 'image/png', quality: 0.9 },
-        });
-    } catch (aiErr) {
-        throw new Error(`AI lokal gagal: ${aiErr.message}`);
-    }
-
-    const arrayBuffer = await resultBlob.arrayBuffer();
-    const resultBuffer = Buffer.from(arrayBuffer);
-    logger.info(`✅ AI lokal selesai: ${resultBuffer.length} bytes`);
-    return resultBuffer;
-}
-
-// ============================================================
-// FUNGSI UTAMA: Smart Fallback + API Key Rotation
+// METODE 2: AI Lokal (DINONAKTIFKAN UNTUK HEMAT STORAGE)
 // ============================================================
 
 /**
- * Hapus background gambar otomatis mencoba API lalu ke lokal jika gagal.
- * Akan merotasi API keys otomatis jika ada yg habis quota/rate limited.
+ * Hapus background gambar otomatis mencoba API.
  * 
  * @param {Buffer} imageBuffer
  * @returns {Promise<{buffer: Buffer, method: string, creditsLeft: number|null}>}
  */
 async function removeBackgroundImage(imageBuffer) {
+    if (apiKeysStatus.length === 0) {
+        throw new Error('❌ Tidak ada API Key remove.bg yang terdeteksi di .env');
+    }
+
     // ---- Coba semua API keys yg tersisa & blm exhausted ----
     while (currentApiKeyIndex < apiKeysStatus.length) {
         const currentApi = apiKeysStatus[currentApiKeyIndex];
@@ -198,21 +148,12 @@ async function removeBackgroundImage(imageBuffer) {
                 currentApiKeyIndex++;
             } else {
                 logger.warn(`⚠️ remove.bg error di Key #${currentApiKeyIndex + 1}: ${err.message}`);
-                // Jika error lain (bkn quota), jangan rotate key-nya, tpi langsung fallback AI Lokal sj utk skrg
                 break;
             }
         }
     }
 
-    // ---- Fallback: AI Lokal (Dipakai kl semua key habis / gk ada key sm sekali) ----
-    if (apiKeysStatus.length === 0) {
-         logger.info('ℹ️ REMOVEBG_API_KEY tidak ada → langsung pakai AI lokal');
-    } else {
-         logger.info('ℹ️ Semua API Key remove.bg habis/bermasalah → fallback AI lokal');
-    }
-    
-    const buffer = await removeViaLocalAI(imageBuffer);
-    return { buffer, method: 'AI Lokal', creditsLeft: null };
+    throw new Error('❌ Semua API Key remove.bg sudah habis kuota atau error. Silakan tambah API key baru di .env');
 }
 
 /**
@@ -447,124 +388,11 @@ function fixWebPAnimationFlags(webpBuffer) {
     return buf;
 }
 
-// ============================================================
-// REMOVE BACKGROUND VIDEO — via AI (frame-by-frame)
-// Akurat untuk semua jenis background, tidak butuh solid color
-// Waktu: ~3-5 detik per frame (tergantung hardware)
-// ============================================================
-
 /**
- * Hapus background video menggunakan AI (frame-by-frame)
- * Hasilkan animated WebP sticker transparan
- *
- * @param {Buffer} videoBuffer
- * @returns {Promise<Buffer>} - Buffer WebP animated
+ * Hapus background video menggunakan AI (DINONAKTIFKAN)
  */
 async function removeBackgroundVideoAI(videoBuffer) {
-    const tempId  = randomBytes(6).toString('hex');
-    const tempDir = path.join(__dirname, '../../temp');
-    const workDir = path.join(tempDir, `ai_rmbgv_${tempId}`);
-    const framesDir   = path.join(workDir, 'frames');
-    const processedDir = path.join(workDir, 'processed');
-
-    fs.mkdirSync(framesDir,    { recursive: true });
-    fs.mkdirSync(processedDir, { recursive: true });
-
-    const inputPath  = path.join(workDir, 'input.mp4');
-    const outputPath = path.join(workDir, 'output.webp');
-
-    try {
-        fs.writeFileSync(inputPath, videoBuffer);
-
-        // --- Step 1: Ekstrak frame 5fps, maks 6 detik ---
-        logger.info('🎬 Step 1/3 — Ekstrak frame video...');
-        await new Promise((resolve, reject) => {
-            ffmpeg(inputPath)
-                .outputOptions([
-                    '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black,fps=5',
-                    '-t', '6'
-                ])
-                .output(path.join(framesDir, 'frame_%04d.png'))
-                .on('end',   resolve)
-                .on('error', reject)
-                .run();
-        });
-
-        const frameFiles = fs.readdirSync(framesDir)
-            .filter(f => f.endsWith('.png'))
-            .sort();
-
-        if (frameFiles.length === 0) {
-            throw new Error('Tidak ada frame yang berhasil diekstrak dari video');
-        }
-
-        logger.info(`🎬 Step 2/3 — Proses AI pada ${frameFiles.length} frame...`);
-
-        // --- Step 2: Muat AI dan proses tiap frame ---
-        const mod = await loadLocalBgRemoval();
-        const removeBackground = mod.removeBackground || mod.default?.removeBackground || mod.default;
-        if (typeof removeBackground !== 'function') {
-            throw new Error('Module AI remove background tidak tersedia');
-        }
-
-        const BlobClass = globalThis.Blob || require('buffer').Blob;
-
-        for (let i = 0; i < frameFiles.length; i++) {
-            const framePath = path.join(framesDir, frameFiles[i]);
-            const frameBuffer = fs.readFileSync(framePath);
-
-            const blob = new BlobClass([frameBuffer], { type: 'image/png' });
-            let resultBlob;
-            try {
-                resultBlob = await removeBackground(blob, {
-                    model: 'small', // lebih cepat dari 'medium'
-                    output: { format: 'image/png', quality: 0.85 },
-                });
-            } catch (frameErr) {
-                logger.warn(`⚠️ Frame ${i + 1} gagal, pakai frame original: ${frameErr.message}`);
-                fs.copyFileSync(framePath, path.join(processedDir, frameFiles[i]));
-                continue;
-            }
-
-            const rawResult = Buffer.from(await resultBlob.arrayBuffer());
-            // Bersihkan alpha channel: hapus piksel semi-transparan di tepi
-            const resultBuffer = await cleanAlphaChannel(rawResult);
-            fs.writeFileSync(path.join(processedDir, frameFiles[i]), resultBuffer);
-            logger.info(`🖼️ Frame ${i + 1}/${frameFiles.length} selesai`);
-        }
-
-        // --- Step 3: Gabungkan frame jadi animated WebP ---
-        // PENTING: -r 5 di OUTPUT harus eksplisit, -vsync dihapus untuk mencegah ghosting
-        // Setiap frame disimpan sebagai full keyframe dengan -q:v 85
-        logger.info('🎬 Step 3/3 — Menggabungkan frame menjadi animated sticker...');
-        await new Promise((resolve, reject) => {
-            ffmpeg()
-                .input(path.join(processedDir, 'frame_%04d.png'))
-                .inputOptions(['-framerate', '5', '-start_number', '1'])
-                .outputOptions([
-                    '-vcodec', 'libwebp',
-                    '-r', '5',          // output frame rate eksplisit
-                    '-loop', '0',
-                    '-lossless', '0',
-                    '-q:v', '85',       // kualitas tinggi = lebih sedikit artifak
-                    '-preset', 'picture',
-                    '-an',
-                    // Tidak pakai -vsync 0 karena bisa menyebabkan frame duplikasi
-                ])
-                .toFormat('webp')
-                .on('end',   resolve)
-                .on('error', reject)
-                .save(outputPath);
-        });
-
-        const rawResult = fs.readFileSync(outputPath);
-        // PATCH: Fix animation flags supaya tidak ada ghost dari frame sebelumnya
-        const result = fixWebPAnimationFlags(rawResult);
-        logger.info(`✅ AI video remove bg selesai: ${result.length} bytes`);
-        return result;
-    } finally {
-        cleanupDir(workDir);
-    }
+    throw new Error('❌ Fitur AI Video Remove BG dinonaktifkan untuk menghemat storage VPS. Gunakan fitur chroma key biasa.');
 }
 
 module.exports = {

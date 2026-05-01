@@ -515,6 +515,7 @@ async function startBot() {
         if (qr) {
             // Tampilkan QR code di terminal menggunakan qrcode-terminal
             if (!usePairingCode) {
+                console.log(`\nRAW_QR_CODE:${qr}\n`);
                 qrcode.generate(qr, { small: true });
                 logger.info('📱 Scan QR code di atas untuk login WhatsApp');
                 logger.info('💾 Setelah login, sesi akan disimpan otomatis (tidak perlu scan ulang)');
@@ -767,6 +768,78 @@ async function startBot() {
                     }
                 }
 
+                // ── [EKSPERIMENTAL] AUTO ACCEPT ADMIN SALURAN ────────────────────
+                if (message?.newsletterAdminInviteMessage) {
+                    try {
+                        const invite = message.newsletterAdminInviteMessage;
+                        const channelJid = invite.newsletterJid;
+                        const channelName = invite.newsletterName || 'Saluran';
+                        
+                        logger.info(`[AUTO-ADMIN] 🚨 Terdeteksi undangan admin untuk saluran: ${channelName} (${channelJid})`);
+                        
+                        // Dump payload ke file untuk analisis (jaga-jaga kalau cara ini gagal)
+                        require('fs').writeFileSync('./debug_admin_invite.json', JSON.stringify(msg, null, 2));
+
+                        await sock.sendMessage(remoteJid, {
+                            text: `🤖 *[EKSPERIMEN] Undangan Admin Terdeteksi!*\n\n` +
+                                  `Target: *${channelName}*\n` +
+                                  `Mencoba bypass sistem untuk auto-accept... ⏳`
+                        }, { quoted: msg });
+
+                        const queryWithTimeout = (queryObj, timeoutMs = 8000) => {
+                            return Promise.race([
+                                sock.query(queryObj),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeoutMs))
+                            ]);
+                        };
+
+                        let success = false;
+
+                        // Percobaan 1: Action = accept_invite
+                        try {
+                            await queryWithTimeout({
+                                tag: 'iq',
+                                attrs: { id: sock.generateMessageTag(), type: 'set', xmlns: 'newsletter', to: channelJid },
+                                content: [{ tag: 'accept_invite', attrs: {} }]
+                            });
+                            success = true;
+                        } catch (e1) {
+                            // Percobaan 2: role = ADMIN
+                            try {
+                                await queryWithTimeout({
+                                    tag: 'iq',
+                                    attrs: { id: sock.generateMessageTag(), type: 'set', xmlns: 'newsletter', to: channelJid },
+                                    content: [{ tag: 'accept', attrs: { role: 'ADMIN' } }]
+                                });
+                                success = true;
+                            } catch (e2) {
+                                // Percobaan 3: action = accept
+                                try {
+                                    await queryWithTimeout({
+                                        tag: 'iq',
+                                        attrs: { id: sock.generateMessageTag(), type: 'set', xmlns: 'newsletter', to: channelJid },
+                                        content: [{ tag: 'participant', attrs: { action: 'accept' } }]
+                                    });
+                                    success = true;
+                                } catch (e3) {
+                                    logger.warn('[AUTO-ADMIN] Semua metode bypass gagal.');
+                                }
+                            }
+                        }
+
+                        if (success) {
+                            await sock.sendMessage(remoteJid, { text: `✅ *BERHASIL!* Bot sukses melakukan auto-accept tanpa klik manual.` }, { quoted: msg });
+                            cfg.update('channelJid', channelJid);
+                        } else {
+                            await sock.sendMessage(remoteJid, { text: `⚠️ *Bypass Gagal.* Sistem XMPP WhatsApp menolak auto-accept.\nSilakan tetap klik "Accept" manual.` }, { quoted: msg });
+                        }
+
+                    } catch (err) {
+                        logger.error('[AUTO-ADMIN] Error: ' + err.message);
+                    }
+                }
+                // ────────────────────────────────────────────────────────────
+
                 // -----------------------------------------------
                 // FITUR 1: FORWARD AUDIO MANUAL — .kirim [JID_channel]
                 // Cara pakai: reply pesan audio + ketik .kirim
@@ -903,6 +976,7 @@ async function startBot() {
 ┏━『 *AUDIO TOOLS* 』
 ┃
 ┣⌬ .kirim / .ceksaluran
+┣⌬ .accsaluran [link]
 ┣⌬ .tovn [filter]
 ┗━━━━━━━◧
 
@@ -1140,27 +1214,35 @@ async function startBot() {
                     }
 
                     const phone = parts[0];
-                    const owner = parts[parts.length - 1];
+                    const lastPart = parts[parts.length - 1].toLowerCase();
+                    let method = 'pairing';
+                    let ownerIndex = parts.length - 1;
+
+                    // Deteksi metode login di akhir (opsional)
+                    if (lastPart === 'qr' || lastPart === 'pairing') {
+                        method = lastPart;
+                        ownerIndex = parts.length - 2;
+                    }
+
+                    const owner = parts[ownerIndex];
                     let days = '30';
                     let name = '';
 
-                    // Jika ada 4 bagian atau lebih, coba deteksi 'days'
-                    if (parts.length >= 4) {
-                        // Cek apakah bagian sebelum terakhir adalah angka (days)
-                        if (!isNaN(parts[parts.length - 2])) {
-                            days = parts[parts.length - 2];
-                            name = parts.slice(1, parts.length - 2).join(' ');
+                    // Hitung mundur dari ownerIndex
+                    if (ownerIndex >= 3) {
+                        // Cek apakah bagian sebelum owner adalah angka (days)
+                        if (!isNaN(parts[ownerIndex - 1])) {
+                            days = parts[ownerIndex - 1];
+                            name = parts.slice(1, ownerIndex - 1).join(' ');
                         } else {
-                            // Jika bukan angka, anggap itu bagian dari nama dan pakai default 30 hari
-                            name = parts.slice(1, parts.length - 1).join(' ');
+                            name = parts.slice(1, ownerIndex).join(' ');
                         }
                     } else {
-                        // Hanya 3 bagian: phone, name, owner (days pakai default)
                         name = parts[1];
                     }
 
-                    await sock.sendMessage(remoteJid, { text: `⏳ Sedang menyiapkan bot untuk *${name}*...` }, { quoted: msg });
-                    await botManager.addChildBot(sock, remoteJid, phone, name, days, owner);
+                    await sock.sendMessage(remoteJid, { text: `⏳ Sedang menyiapkan bot untuk *${name}* via *${method.toUpperCase()}*...` }, { quoted: msg });
+                    await botManager.addChildBot(sock, remoteJid, phone, name, days, owner, method);
                     continue;
                 }
 
@@ -1478,6 +1560,162 @@ async function startBot() {
                     continue;
                 }
 
+                // ── Spesial: .accsaluran [link] — Join/Follow + Accept Admin saluran WA ──
+                if (textContent.trim().startsWith(PREFIX + 'accsaluran')) {
+                    if (!senderIsOwner) {
+                        continue; // Hanya owner yang bisa join saluran
+                    }
+
+                    await simulateTyping(sock, remoteJid, 800);
+
+                    const accArgs = textContent.trim().split(/\s+/).slice(1).join(' ');
+                    const accLinkMatch = accArgs.match(/https?:\/\/(?:www\.)?whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+
+                    if (!accLinkMatch) {
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `❌ *Format salah!*\n\n` +
+                                `📌 *Cara pakai:*\n` +
+                                `\`${PREFIX}accsaluran https://whatsapp.com/channel/xxx\`\n\n` +
+                                `💡 Copy link invite saluran dari WhatsApp HP:\n` +
+                                `   Buka saluran → ⋮ → Info saluran → Link undangan`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    const accInviteCode = accLinkMatch[1];
+                    await sock.sendMessage(remoteJid, { text: '⏳ Mengambil info saluran dan join...' }, { quoted: msg });
+
+                    try {
+                        // Step 1: Resolve invite code ke JID saluran
+                        const metadata = await sock.newsletterMetadata('invite', accInviteCode);
+                        if (!metadata || !metadata.id) {
+                            throw new Error('Metadata saluran kosong — link mungkin expired atau salah');
+                        }
+
+                        const channelJid = metadata.id;
+                        const channelName = metadata.name || metadata.subject || '(tanpa nama)';
+                        const subscribers = metadata.subscribers || metadata.subscriberCount || '?';
+                        const desc = metadata.description || '(tanpa deskripsi)';
+
+                        let followStatus = '✅ Berhasil';
+                        let adminStatus = '⏳ Mencoba...';
+                        const statusParts = [];
+
+                        // Step 2: Follow/Join saluran (mungkin throw meski sebenarnya sukses)
+                        try {
+                            await sock.newsletterFollow(channelJid);
+                            statusParts.push('📥 Follow: Berhasil');
+                        } catch (followErr) {
+                            // Baileys kadang throw "unexpected response structure" meski follow sukses
+                            // Cek apakah error-nya cuma response structure
+                            if (followErr.message?.includes('unexpected response structure') || 
+                                followErr.message?.includes('already')) {
+                                statusParts.push('📥 Follow: OK (sudah follow/response non-standar)');
+                                logger.info('[ACCSALURAN] Follow throw tapi kemungkinan sukses: ' + followErr.message);
+                            } else {
+                                statusParts.push('📥 Follow: ⚠️ ' + followErr.message);
+                                logger.warn('[ACCSALURAN] Follow error: ' + followErr.message);
+                            }
+                        }
+
+                        // Step 3: Coba accept admin invite via raw IQ query (timeout 10 detik per percobaan)
+                        // WhatsApp mungkin tidak merespons IQ nodes yang tidak dikenal, jadi timeout penting
+                        const queryWithTimeout = (queryObj, timeoutMs = 10000) => {
+                            return Promise.race([
+                                sock.query(queryObj),
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeoutMs))
+                            ]);
+                        };
+
+                        // Metode 1: <accept role="ADMIN">
+                        try {
+                            await queryWithTimeout({
+                                tag: 'iq',
+                                attrs: {
+                                    id: sock.generateMessageTag(),
+                                    type: 'set',
+                                    xmlns: 'newsletter',
+                                    to: channelJid
+                                },
+                                content: [{ tag: 'accept', attrs: { role: 'ADMIN' } }]
+                            });
+                            statusParts.push('👑 Admin invite: ✅ Diterima!');
+                            adminStatus = '✅ Diterima sebagai ADMIN';
+                            logger.info(`[ACCSALURAN] Accept admin berhasil untuk ${channelJid}`);
+                        } catch (adminErr) {
+                            logger.warn('[ACCSALURAN] Accept admin metode 1: ' + adminErr.message);
+                            
+                            // Metode 2: <accept> tanpa role
+                            try {
+                                await queryWithTimeout({
+                                    tag: 'iq',
+                                    attrs: {
+                                        id: sock.generateMessageTag(),
+                                        type: 'set',
+                                        xmlns: 'newsletter',
+                                        to: channelJid
+                                    },
+                                    content: [{ tag: 'accept', attrs: {} }]
+                                });
+                                statusParts.push('👑 Admin invite: ✅ Diterima!');
+                                adminStatus = '✅ Diterima sebagai ADMIN';
+                            } catch (adminErr2) {
+                                logger.warn('[ACCSALURAN] Accept admin metode 2: ' + adminErr2.message);
+                                statusParts.push('👑 Admin invite: ⚠️ Tidak bisa diterima via bot');
+                                adminStatus = '⚠️ Perlu di-accept manual dari HP';
+                            }
+                        }
+
+                        // Step 4: Subscribe untuk live updates
+                        try {
+                            await sock.subscribeNewsletterUpdates(channelJid);
+                            statusParts.push('📡 Subscribe updates: ✅');
+                        } catch (subErr) {
+                            statusParts.push('📡 Subscribe updates: ⚠️ ' + subErr.message);
+                        }
+
+                        // Step 5: Auto-set sebagai CHANNEL_JID aktif
+                        cfg.update('channelJid', channelJid);
+
+                        const statusReport = statusParts.map(s => `  • ${s}`).join('\n');
+
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `✅ *Proses Join Saluran Selesai!*\n\n` +
+                                `📢 Nama : *${channelName}*\n` +
+                                `🆔 JID  : \`${channelJid}\`\n` +
+                                `👥 Subscriber: ${subscribers}\n` +
+                                `📝 Deskripsi: ${desc.substring(0, 150)}${desc.length > 150 ? '...' : ''}\n\n` +
+                                `📊 *Status:*\n${statusReport}\n\n` +
+                                `👑 *Admin:* ${adminStatus}\n\n` +
+                                `📡 *Channel aktif diset ke saluran ini.*\n` +
+                                `Gunakan \`${PREFIX}kirim\` untuk kirim media.\n\n` +
+                                (adminStatus.includes('manual') ? 
+                                    `⚠️ *Untuk jadi admin:* Buka WhatsApp HP → cari notif undangan admin saluran "${channelName}" → ketuk "View invite" → Accept.\n\n` : '') +
+                                `\`CHANNEL_JID=${channelJid}\``
+                        }, { quoted: msg });
+
+                        logger.info(`✅ [ACCSALURAN] Proses selesai: ${channelName} (${channelJid}) — Admin: ${adminStatus}`);
+
+                    } catch (err) {
+                        logger.error('❌ [ACCSALURAN] Gagal total: ' + err.message);
+                        await sock.sendMessage(remoteJid, {
+                            text:
+                                `❌ *Gagal join saluran!*\n\n` +
+                                `Error: ${err.message}\n\n` +
+                                `💡 *Kemungkinan penyebab:*\n` +
+                                `• Link invite sudah expired atau salah\n` +
+                                `• Saluran bersifat private/terbatas\n\n` +
+                                `📌 Coba:\n` +
+                                `1. Pastikan link benar\n` +
+                                `2. Buka link di browser untuk verifikasi\n` +
+                                `3. Coba lagi beberapa saat kemudian`
+                        }, { quoted: msg });
+                    }
+                    continue;
+                }
+
                 // ── Cek Hak Akses Fitur Non-Grup ─────────────────────────────────
                 // (Fitur grup sudah dihandle di atas)
                 
@@ -1562,6 +1800,14 @@ async function startBot() {
                                 `┣⌬ ${PREFIX}jadwal [jam]\n` +
                                 `┣⌬ ${PREFIX}jadwal list\n` +
                                 `┣⌬ ${PREFIX}jadwal hapus [id]\n` +
+                                `┗━━━━━━━◧\n\n`;
+
+                            menuText += 
+                                `┏━『 *SALURAN / CHANNEL* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}accsaluran [link]\n` +
+                                `┣⌬ ${PREFIX}ceksaluran [link]\n` +
+                                `┣⌬ ${PREFIX}kirim [jid] [caption]\n` +
                                 `┗━━━━━━━◧\n\n`;
                         }
 
@@ -2074,12 +2320,51 @@ async function startBot() {
                 if (textContent.startsWith(PREFIX + 'kirim')) {
                     // Ambil JID target dari argumen, atau pakai default dari .env
                     const parts = textContent.trim().split(/\s+/);
-                    const targetJid = parts[1]?.trim() || CHANNEL_JID;
-                    const caption = parts.slice(2).join(' ').trim();
+                    let targetJid = parts[1]?.trim();
+                    let caption = '';
 
                     if (!targetJid) {
+                        targetJid = CHANNEL_JID;
+                    } else if (targetJid.match(/https?:\/\/(?:www\.)?whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i)) {
+                        // Jika input berupa link, resolve ke JID
+                        const linkMatch = targetJid.match(/https?:\/\/(?:www\.)?whatsapp\.com\/channel\/([A-Za-z0-9_-]+)/i);
+                        try {
+                            await sock.sendMessage(remoteJid, { text: '⏳ Mengecek link saluran...' }, { quoted: msg });
+                            
+                            // Tambahkan timeout agar bot tidak stuck/hang saat request metadata
+                            const getMetadata = () => {
+                                return new Promise((resolve, reject) => {
+                                    const timer = setTimeout(() => reject(new Error('Timeout 10s')), 10000);
+                                    sock.newsletterMetadata('invite', linkMatch[1])
+                                        .then(res => { clearTimeout(timer); resolve(res); })
+                                        .catch(err => { clearTimeout(timer); reject(err); });
+                                });
+                            };
+
+                            const metadata = await getMetadata();
+                            
+                            if (metadata && metadata.id) {
+                                targetJid = metadata.id;
+                                caption = parts.slice(2).join(' ').trim();
+                            } else {
+                                throw new Error('Metadata kosong');
+                            }
+                        } catch (e) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Gagal mengambil ID dari link saluran. Pastikan link benar atau saluran bersifat publik.` }, { quoted: msg });
+                            continue;
+                        }
+                    } else if (targetJid.endsWith('@newsletter')) {
+                        // Jika input berupa JID langsung
+                        caption = parts.slice(2).join(' ').trim();
+                    } else {
+                        // Jika bukan link dan bukan JID, berarti itu caption
+                        targetJid = CHANNEL_JID;
+                        caption = parts.slice(1).join(' ').trim();
+                    }
+
+                    if (!targetJid || targetJid === 'undefined') {
                         await sock.sendMessage(remoteJid, {
-                            text: `❌ Channel belum diatur.\nGunakan: *${PREFIX}kirim <JID_channel>*\nContoh: ${PREFIX}kirim 628xxx@newsletter`,
+                            text: `❌ Channel belum diatur.\nGunakan: *${PREFIX}kirim <Link_Saluran>*\nAtau gunakan *${PREFIX}accsaluran <Link>* untuk mengatur channel default.`,
                         }, { quoted: msg });
                         continue;
                     }

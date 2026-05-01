@@ -13,11 +13,14 @@ const { logger } = require('../utils/logger');
  */
 async function aiChat(prompt, model = 'chatgpt') {
     try {
+        console.log(`[RYZUMI] 🤖 Memanggil AI Chat: ${model} | Prompt: ${prompt}`);
         const endpoint = model === 'gemini' ? '/api/ai/gemini' : '/api/ai/chatgpt';
         const res = await fetch(`https://api.ryzumi.net${endpoint}?prompt=${encodeURIComponent(prompt)}`);
+        console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
         const json = await res.json();
         return json.result || json.response || '❌ Tidak ada respon dari AI.';
     } catch (e) {
+        console.log(`[RYZUMI] ❌ Error AI Chat: ${e.message}`);
         logger.error(`[RYZUMI AI] Error: ${e.message}`);
         throw new Error('Gagal menghubungi AI. Coba lagi nanti.');
     }
@@ -28,14 +31,16 @@ async function aiChat(prompt, model = 'chatgpt') {
  */
 async function textToImage(prompt) {
     try {
+        console.log(`[RYZUMI] 🎨 Membuat Gambar (Flux): ${prompt}`);
         const res = await fetch(`https://api.ryzumi.net/api/ai/flux-diffusion?prompt=${encodeURIComponent(prompt)}`);
-        // Ryzumi biasanya return buffer langsung atau JSON berisi URL
+        console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
         if (res.headers.get('content-type').includes('application/json')) {
             const json = await res.json();
             return json.result || json.url;
         }
         return await res.buffer();
     } catch (e) {
+        console.log(`[RYZUMI] ❌ Error Image Gen: ${e.message}`);
         logger.error(`[RYZUMI T2I] Error: ${e.message}`);
         throw new Error('Gagal membuat gambar.');
     }
@@ -46,13 +51,16 @@ async function textToImage(prompt) {
  */
 async function ssWeb(url) {
     try {
+        console.log(`[RYZUMI] 🌐 Screenshot Web: ${url}`);
         const res = await fetch(`https://api.ryzumi.net/api/tool/ssweb?url=${encodeURIComponent(url)}`);
+        console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
         if (res.headers.get('content-type').includes('application/json')) {
             const json = await res.json();
             return json.result || json.url;
         }
         return await res.buffer();
     } catch (e) {
+        console.log(`[RYZUMI] ❌ Error SSWeb: ${e.message}`);
         logger.error(`[RYZUMI SSWEB] Error: ${e.message}`);
         throw new Error('Gagal mengambil screenshot.');
     }
@@ -63,13 +71,16 @@ async function ssWeb(url) {
  */
 async function remini(imageUrl) {
     try {
+        console.log(`[RYZUMI] 🔍 Upscaling Image (Remini): ${imageUrl}`);
         const res = await fetch(`https://api.ryzumi.net/api/ai/remini?url=${encodeURIComponent(imageUrl)}`);
+        console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
         if (res.headers.get('content-type').includes('application/json')) {
             const json = await res.json();
             return json.result || json.url;
         }
         return await res.buffer();
     } catch (e) {
+        console.log(`[RYZUMI] ❌ Error Remini: ${e.message}`);
         logger.error(`[RYZUMI REMINI] Error: ${e.message}`);
         throw new Error('Gagal memproses Remini.');
     }
@@ -80,18 +91,21 @@ async function remini(imageUrl) {
  */
 async function quotly(text, name, avatar) {
     try {
+        console.log(`[RYZUMI] 💬 Membuat Quotly: "${text}" dari ${name}`);
         const params = new URLSearchParams({
             text: text,
             name: name || 'User',
             avatar: avatar || 'https://i.ibb.co/0m0x0x0/user.png'
         });
         const res = await fetch(`https://api.ryzumi.net/api/image/quotly?${params.toString()}`);
+        console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
         if (res.headers.get('content-type').includes('application/json')) {
             const json = await res.json();
             return json.result || json.url;
         }
         return await res.buffer();
     } catch (e) {
+        console.log(`[RYZUMI] ❌ Error Quotly: ${e.message}`);
         logger.error(`[RYZUMI QUOTLY] Error: ${e.message}`);
         throw new Error('Gagal membuat stiker Quotly.');
     }
@@ -102,11 +116,14 @@ async function quotly(text, name, avatar) {
  */
 async function stalk(username, type = 'instagram') {
     try {
+        console.log(`[RYZUMI] 🕵️ Stalking ${type}: ${username}`);
         const endpoint = type === 'tiktok' ? '/api/stalk/tiktok' : '/api/stalk/instagram';
         const res = await fetch(`https://api.ryzumi.net${endpoint}?username=${encodeURIComponent(username)}`);
+        console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
         const json = await res.json();
         return json.result || json.data;
     } catch (e) {
+        console.log(`[RYZUMI] ❌ Error Stalk: ${e.message}`);
         logger.error(`[RYZUMI STALK] Error: ${e.message}`);
         throw new Error(`Gagal stalking ${type}.`);
     }

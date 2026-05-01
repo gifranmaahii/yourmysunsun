@@ -10,7 +10,6 @@
   "dependencies": {
     "@bochilteam/scraper": "^5.0.1",
     "@faouzkk/tiktok-dl": "^1.0.1",
-    "@imgly/background-removal-node": "^1.4.5",
     "@lottiefiles/lottie-js": "^0.4.2",
     "@napi-rs/canvas": "^0.1.65",
     "@sasmeee/igdl": "^0.0.1-security",
@@ -29,6 +28,7 @@
     "node-webpmux": "^3.2.1",
     "pino": "^9.6.0",
     "priyansh-ig-downloader": "^2.0.4",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "sharp": "^0.33.5",
     "unzipper": "^0.12.3",
