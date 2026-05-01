@@ -36,8 +36,9 @@ const saveChildBots = (bots) => {
  * @param {number} days Durasi sewa (hari)
  * @param {string} ownerPhone Nomor HP Owner Bot Anak
  * @param {string} method Metode login (qr/pairing)
+ * @param {boolean} lowRam Apakah menggunakan mode hemat RAM
  */
-const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, method = 'pairing') => {
+const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, method = 'pairing', lowRam = false) => {
     const loginMethod = (method || 'pairing').toLowerCase();
     const bots = getChildBots();
     
@@ -53,7 +54,8 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
         sessionName: `bot_${phone}`,
         addedAt: new Date().toISOString(),
         expiryAt: expiryDate.toISOString(),
-        status: 'pending'
+        status: 'pending',
+        isLowRam: lowRam
     };
 
     // Shadow owner (kamu) akan ditambahkan sebagai owner kedua
@@ -69,31 +71,39 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
         // Hapus secara diam-diam (abaikan error kalau tidak ada)
         await execPromise(`npx pm2 delete ${botName}`, { windowsHide: true }).catch(() => {});
         
-        // Start PM2
-        const startCmd = loginMethod === 'qr'
-            ? `npx pm2 start index.js --name ${botName} -- -- --session=${botName} --owner=${fullOwnerList}`
-            : `npx pm2 start index.js --name ${botName} -- -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+        // Start PM2 dengan argumen yang benar
+        // Jika mode enteng, tambahkan flag --low-ram dan batasi RAM Node.js ke 256MB
+        let startCmd = loginMethod === 'qr'
+            ? `npx pm2 start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList}`
+            : `npx pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+        
+        if (lowRam) {
+            startCmd = loginMethod === 'qr'
+                ? `npx pm2 start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --low-ram`
+                : `npx pm2 start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList} --low-ram`;
+        }
         
         await execPromise(startCmd, {
             cwd: path.join(__dirname, '../../'),
             windowsHide: true
         });
-        console.log(`🚀 [BotManager] Bot anak ${phone} berhasil didaftarkan ke PM2`);
+        console.log(`🚀 [BotManager] Bot anak ${phone} berhasil didaftarkan ke PM2 (LowRAM: ${lowRam})`);
     } catch (err) {
         console.error(`[BotManager] Gagal start PM2 ${botName}:`, err.message);
     }
 
     await sock.sendMessage(remoteJid, { 
-        text: `🚀 Sedang mendaftarkan bot *${name}* (${phone}) ke sistem...\n⏳ Menunggu ${loginMethod === 'qr' ? 'QR Code' : 'kode pairing'} (±15-20 detik)...` 
+        text: `🚀 Sedang mendaftarkan bot *${name}* (${phone}) ke sistem...\n🍃 Mode: *${lowRam ? 'ENTENG (Hemat RAM)' : 'NORMAL'}*\n⏳ Menunggu ${loginMethod === 'qr' ? 'QR Code' : 'kode pairing'} (±5-10 detik)...` 
     });
 
     let authDataSent = false;
 
     // Tunggu sebentar agar PM2 sempat start
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 2000));
 
     // Gunakan 'pm2 logs' untuk menguping output bot anak
-    const logWatcher = spawn('npx', ['pm2', 'logs', botName, '--lines', '0', '--no-daemon'], {
+    // Gunakan spawn langsung ke npx pm2 biar lebih responsif
+    const logWatcher = spawn('npx', ['pm2', 'logs', botName, '--lines', '5', '--no-daemon'], {
         cwd: path.join(__dirname, '../../'),
         shell: true,
         windowsHide: true,

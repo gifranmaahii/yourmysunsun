@@ -434,14 +434,20 @@ async function startBot() {
     
     logger.info(`🌐 Browser config: ${JSON.stringify(browserConfig)} (pairing: ${usePairingCode})`);
 
+    // Ambil konfigurasi Low RAM
+    const IS_LOW_RAM = argv['low-ram'] || false;
+    if (IS_LOW_RAM) {
+        logger.info(`🍃 [MODE ENTENG] Mengaktifkan pengoptimalan memori untuk bot ${SESSION_NAME}...`);
+    }
+
     const sock = makeWASocket({
         version,
         auth: state,
         logger: baileyLogger,
         printQRInTerminal: !usePairingCode,
         browser: browserConfig,
-        syncFullHistory: false,
-        markOnlineOnConnect: false,
+        syncFullHistory: !IS_LOW_RAM, // Matikan sinkronisasi history kalau mode enteng
+        markOnlineOnConnect: !IS_LOW_RAM,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
         getMessage: async (key) => {
@@ -455,26 +461,25 @@ async function startBot() {
     let pairingTimer = null;
     if (usePairingCode && !hasSession && !state.creds.registered) {
 
-        // Tunggu WebSocket benar-benar terhubung (maks 15 detik)
+        // Tunggu WebSocket benar-benar terhubung (maks 5 detik)
         console.log(' ⏳ Menunggu koneksi WebSocket ke server WhatsApp...');
         let wsReady = false;
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 5; i++) {
             await new Promise(r => setTimeout(r, 1000));
             if (sock.ws?.readyState === sock.ws?.OPEN) {
                 wsReady = true;
                 console.log(' ✅ WebSocket terhubung!');
                 break;
             }
-            console.log(` ⏳ Menunggu koneksi... (${i + 1}/15)`);
+            console.log(` ⏳ Menunggu koneksi... (${i + 1}/5)`);
         }
 
         if (!wsReady) {
             console.log(' ❌ WebSocket gagal terhubung. Coba jalankan ulang bot.');
         } else {
-            // Tunggu 5 detik lagi agar handshake internal WA selesai
-            // Ini mencegah notif ganda (request terlalu cepat = server belum siap)
-            console.log(' ⏳ Menunggu handshake selesai (5 detik)...');
-            await new Promise(r => setTimeout(r, 5000));
+            // Tunggu 2 detik saja agar handshake internal WA selesai
+            console.log(' ⏳ Menunggu handshake selesai (2 detik)...');
+            await new Promise(r => setTimeout(r, 2000));
 
             // Fungsi request pairing — hanya dipanggil 1x, retry jika gagal
             const requestPairing = async (attempt = 1) => {
@@ -1187,6 +1192,7 @@ async function startBot() {
                     const secretMenu = `🔒 *OWNER SECRET PANEL*\n\n` +
                                      `*Bot Management:*\n` +
                                      `┣⌬ ${PREFIX}addbotku <no_bot> <nama> <hari> <no_owner>\n` +
+                                     `┣⌬ ${PREFIX}addbotenteng <no_bot> <nama> <hari> <no_owner>\n` +
                                      `┣⌬ ${PREFIX}listbotku\n` +
                                      `┣⌬ ${PREFIX}delbotku <nomor/sesi>\n` +
                                      `┣⌬ ${PREFIX}getcode <nomor>\n` +
@@ -1200,13 +1206,15 @@ async function startBot() {
                 }
 
                 // ── [RAHASIA] BOT MANAGER ──
-                if (textContent.startsWith(PREFIX + 'addbotku')) {
+                if (textContent.startsWith(PREFIX + 'addbotku') || textContent.startsWith(PREFIX + 'addbotenteng')) {
                     if (!senderIsOwner) continue;
+                    const isLowRam = textContent.startsWith(PREFIX + 'addbotenteng');
+                    const cmdUsed = isLowRam ? 'addbotenteng' : 'addbotku';
                     
                     // Parsing lebih cerdas untuk menangani nama dengan spasi
                     // Format: .addbotku <phone> <name> <days> <owner>
                     // Contoh: .addbotku 628xxx Ria Maharani 30 12345@lid
-                    const fullText = textContent.slice((PREFIX + 'addbotku').length).trim();
+                    const fullText = textContent.slice((PREFIX + cmdUsed).length).trim();
                     const parts = fullText.split(/\s+/);
                     
                     if (parts.length < 3) {
@@ -1241,8 +1249,8 @@ async function startBot() {
                         name = parts[1];
                     }
 
-                    await sock.sendMessage(remoteJid, { text: `⏳ Sedang menyiapkan bot untuk *${name}* via *${method.toUpperCase()}*...` }, { quoted: msg });
-                    await botManager.addChildBot(sock, remoteJid, phone, name, days, owner, method);
+                    await sock.sendMessage(remoteJid, { text: `⏳ Sedang menyiapkan bot untuk *${name}* via *${method.toUpperCase()}* ${isLowRam ? '(MODE ENTENG) ' : ''}...` }, { quoted: msg });
+                    await botManager.addChildBot(sock, remoteJid, phone, name, days, owner, method, isLowRam);
                     continue;
                 }
 
