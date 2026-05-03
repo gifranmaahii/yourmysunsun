@@ -548,6 +548,7 @@ async function startBot() {
                     setTimeout(() => startBot().catch(e => logger.error(`💥 Reconnect gagal: ${e.message}`)), 30000);
                 } else if (!isRestarting) {
                 // Logika Reconnect yang Lebih Tangguh
+                isRestarting = true;
                 const delay = getReconnectDelay(reconnectAttempts);
                 reconnectAttempts++;
                 
@@ -578,6 +579,7 @@ async function startBot() {
                         setTimeout(() => startBot(), 10000);
                     });
                 }, delay);
+                }
             } else {
                 // Jika benar-benar Logout (un-linked dari HP)
                 logger.error('🚫 Session Logout atau Tidak Valid. Menghapus folder session...');
