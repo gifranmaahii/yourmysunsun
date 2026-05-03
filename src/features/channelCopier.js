@@ -90,6 +90,11 @@ async function handleCopier(sock, msg) {
 
     // Cari tugas yang menggunakan newsletter ini sebagai sumber
     const activeJobs = db.jobs.filter(j => j.active && j.sourceJid === remoteJid);
+    
+    // DEBUG LOG
+    console.log(`\n[DEBUG COPIER] Mendeteksi pesan dari saluran: ${remoteJid}`);
+    console.log(`[DEBUG COPIER] Jumlah tugas aktif untuk saluran ini: ${activeJobs.length}`);
+
     if (activeJobs.length === 0) return false;
 
     // Unwrap message
@@ -98,6 +103,11 @@ async function handleCopier(sock, msg) {
     if (message?.viewOnceMessage?.message) message = message.viewOnceMessage.message;
     if (message?.viewOnceMessageV2?.message) message = message.viewOnceMessageV2.message;
     if (message?.documentWithCaptionMessage?.message) message = message.documentWithCaptionMessage.message;
+    
+    // Log tipe pesan yang masuk
+    const msgType = Object.keys(message || {})[0];
+    console.log(`[DEBUG COPIER] Tipe pesan: ${msgType}`);
+
     if (!message || message.protocolMessage) return false;
 
     const textContent = message.conversation || message.extendedTextMessage?.text || message.imageMessage?.caption || message.videoMessage?.caption || '';
@@ -232,9 +242,9 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
                 delayMinutes: 0,
                 rewriteText: true,
                 skipLinks: true,
-                allowText: true,
-                allowImage: isVIP,
-                allowVideo: isVIP,
+                allowText: false,
+                allowImage: false,
+                allowVideo: false,
                 allowSticker: true,
                 stickerPack: 'Copied By Robby',
                 stickerAuthor: 'Robby Bot'
