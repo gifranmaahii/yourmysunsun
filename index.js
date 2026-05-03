@@ -687,33 +687,13 @@ async function startBot() {
                 const _fromMe = msg.key.fromMe || false;
                 const _sender = msg.key.participant || _remoteJid;
                 
-                // LOG CHAT (Hanya Saluran atau Owner agar tidak spam)
+                // LOG CHAT (Tampilkan semua untuk debug agar Bos bisa lihat ID-nya)
                 const isNewsletter = _remoteJid.endsWith('@newsletter');
+                const isOwner = cfg.isOwner(_sender) || _fromMe; // Bot sendiri dianggap owner juga
                 
-                // Ambil nomor HP asli jika ada (untuk identifikasi @lid)
-                const senderPn = msg.key.participantPn ? cfg.cleanNumber(msg.key.participantPn) : '';
-                const senderRaw = cfg.cleanNumber(_sender);
+                console.log(`\n💬 [CHAT-IN] From: ${_sender}, isOwner: ${isOwner}, JID: ${_remoteJid}`);
                 
-                // Cek apakah ini Owner
-                let isOwner = cfg.isOwner(_sender);
-                
-                // Jika belum dikenali sebagai owner via LID, coba cek via nomor HP (Pn)
-                if (!isOwner && senderPn) {
-                    if (cfg.isOwner(senderPn)) {
-                        // Jika nomor HP cocok, berarti @lid ini adalah milik Owner!
-                        // Simpan @lid ini secara otomatis agar kedepannya lancar.
-                        cfg.update('ownerLid', senderRaw);
-                        isOwner = true;
-                        logger.info(`✨ [AUTO-BIND] Mengenali @lid baru untuk Owner: ${senderRaw}`);
-                    }
-                }
-                
-                if (isNewsletter || isOwner) {
-                    const displayName = isNewsletter ? 'Saluran' : 'Owner';
-                    console.log(`\n💬 [CHAT-IN] From: ${senderPn || _sender} (${displayName}), JID: ${_remoteJid}`);
-                }
-                
-                // Cek Anti-Ban (Owner selalu lolos)
+                // Cek Anti-Ban (Owner & Bot sendiri selalu lolos)
                 if (!isOwner && !shouldProcess(msg, sock)) continue;
                 
                 // Newsletter: cek dulu apakah channelCopier mau tangkap
