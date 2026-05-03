@@ -1,0 +1,343 @@
+const fs = require('fs');
+const path = require('path');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { logger, baileyLogger } = require('../utils/logger');
+const { addExif } = require('./sticker');
+const cfg = require('../utils/config');
+
+const DATABASE_PATH = path.join(__dirname, '../../data/channelCopierDB.json');
+
+// Kunci API Gemini (Rotasi)
+const GEMINI_KEYS = [
+    "AIzaSyARVEABPQZ3MLE4zpFTawUt-05z51G1U4Q",
+    "AIzaSyAvUSJDwYc6YHyhzdoAqGEPKfKCm_bkqpU",
+    "AIzaSyCogQpWi53F4VZtNnbqVIw8GwleFLh27tE",
+    "AIzaSyBkeCVQrwIOezK0SfNuN1ZOIr713VCIhVU",
+    "AIzaSyBXpKCecgXeDNNkaz7s4k4vh5PVbPyhdd0",
+    "AIzaSyCsNhvkv4_VNXZOVAnOxOGjVR-a_OPqycQ",
+    "AIzaSyDl6YD6Fo2FEoHaVeHqj9rdbXhSQLY7SF4",
+    "AIzaSyDvMusM4UzOrVJFnRE54uikwYgbeRO1EhM",
+    "AIzaSyCh_X_MaQkvlMn-sEWuVrvH7qYG84a_OSk",
+    "AIzaSyB8XiH8OH6WcDY79aZcpDgcbvLLLmKYaqY",
+    "AIzaSyC5BjyOoBm9jZ6YO3unR7IraEBYxHPw4ic",
+    "AIzaSyCBksWq4gsVO8xL76PQS4uYFY-TnxSdE1U",
+    "AIzaSyCReA33hQaYQJQ5u4CLFjjQEP1fSMspZD8",
+    "AIzaSyAVwHKkWaMr4UPYZ24Jmq7RSYasL1Nk9BQ",
+    "AIzaSyANkr2-_34k0AUSYUFP2WEM5_YnyABa0jo",
+    "AIzaSyBVkv2ERQKZyETL4Ydk8R12fiF2VWiwZwQ",
+    "AIzaSyCo7l-JdJgcbIZ4NFOsR5YCwqcu69G9BBg",
+    "AIzaSyBRt2Ibf_BoQFjKFSQfZTjat2daG_mBQy0",
+    "AIzaSyB446c71Q1SxvpytkPAen_rc9RbpafBm7w",
+    "AIzaSyCoeoPOSDlWacqzBGfPdIijS2sxHYZU1eU",
+    "AIzaSyAu-qE-IqG0aGzmervEwY4tdmnKOLWA7ZE",
+    "AIzaSyDUNqEQB5smyuOUOsvI2-IkHCP8mtb1zPc",
+    "AIzaSyCHnXneMMHf4mi8eAiMx4w3tStI0jGWhCE",
+    "AIzaSyDOtUE5Hzr5FUYfe8QIpwE2zn2e_4hYVMs",
+    "AIzaSyA_wUq77ngM6FmXr-CJez6epThORJq3IEE"
+];
+
+let db = {
+    jobs: [], // { id, creator, sourceJid, targetJid, active, settings }
+    vips: []  // List nomor JID yang boleh akses media/video
+};
+
+function loadDB() {
+    try {
+        const dir = path.dirname(DATABASE_PATH);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        if (fs.existsSync(DATABASE_PATH)) {
+            const data = fs.readFileSync(DATABASE_PATH, 'utf8');
+            db = { ...db, ...JSON.parse(data) };
+        }
+    } catch (e) {
+        logger.error('Gagal meload database channelCopier: ' + e.message);
+    }
+}
+
+function saveDB() {
+    try {
+        fs.writeFileSync(DATABASE_PATH, JSON.stringify(db, null, 2));
+    } catch (e) {
+        logger.error('Gagal menyimpan database channelCopier: ' + e.message);
+    }
+}
+
+loadDB();
+
+async function rewriteWithGemini(text) {
+    if (!text || text.trim() === '') return text;
+    const prompt = `Tulis ulang (rewrite) kata-kata berikut agar natural dan tidak terlihat hasil copy-paste, tapi pertahankan inti informasinya:\n\n${text}`;
+    for (let i = 0; i < 3; i++) {
+        const key = GEMINI_KEYS[Math.floor(Math.random() * GEMINI_KEYS.length)];
+        try {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+            const data = await res.json();
+            if (data.candidates?.[0]?.content) {
+                return data.candidates[0].content.parts[0].text.trim();
+            }
+        } catch (e) { logger.warn(`Gemini Error: ${e.message}`); }
+    }
+    return text;
+}
+
+async function handleCopier(sock, msg) {
+    const remoteJid = msg.key.remoteJid;
+    if (!remoteJid.endsWith('@newsletter')) return false;
+
+    // Cari tugas yang menggunakan newsletter ini sebagai sumber
+    const activeJobs = db.jobs.filter(j => j.active && j.sourceJid === remoteJid);
+    if (activeJobs.length === 0) return false;
+
+    // Unwrap message
+    let message = msg.message;
+    if (message?.ephemeralMessage?.message) message = message.ephemeralMessage.message;
+    if (message?.viewOnceMessage?.message) message = message.viewOnceMessage.message;
+    if (message?.viewOnceMessageV2?.message) message = message.viewOnceMessageV2.message;
+    if (message?.documentWithCaptionMessage?.message) message = message.documentWithCaptionMessage.message;
+    if (!message || message.protocolMessage) return false;
+
+    const textContent = message.conversation || message.extendedTextMessage?.text || message.imageMessage?.caption || message.videoMessage?.caption || '';
+    const isLink = /(https?:\/\/[^\s]+)/g.test(textContent);
+
+    const isText = !!(message.conversation || message.extendedTextMessage);
+    const isImage = !!message.imageMessage;
+    const isVideo = !!message.videoMessage;
+    const isSticker = !!message.stickerMessage;
+
+    // Jalankan tiap tugas yang cocok
+    for (const job of activeJobs) {
+        const s = job.settings;
+        
+        // Filter Dasar
+        if (s.skipLinks && isLink) continue;
+        if (isText && !isImage && !isVideo && !isSticker && !s.allowText) continue;
+        if (isImage && !s.allowImage) continue;
+        if (isVideo && !s.allowVideo) continue;
+        if (isSticker && !s.allowSticker) continue;
+
+        // Cek Limit Video (Maks 30MB)
+        if (isVideo && message.videoMessage?.fileLength > 30 * 1024 * 1024) {
+            logger.warn(`[COPIER] Video dari ${remoteJid} terlalu besar (${message.videoMessage.fileLength} bytes), skip.`);
+            continue;
+        }
+
+        // Proses pengiriman async per job
+        (async () => {
+            try {
+                let finalCaption = textContent;
+                if (s.rewriteText && finalCaption) finalCaption = await rewriteWithGemini(finalCaption);
+
+                let sendObj = null;
+                if (isText && !isImage && !isVideo && !isSticker) {
+                    sendObj = { text: finalCaption };
+                } else {
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+                    if (isSticker) {
+                        sendObj = { sticker: await addExif(buffer, s.stickerPack, s.stickerAuthor) };
+                    } else if (isImage) {
+                        sendObj = { image: buffer, caption: finalCaption };
+                    } else if (isVideo) {
+                        sendObj = { video: buffer, caption: finalCaption };
+                    }
+                }
+
+                if (sendObj) {
+                    const sendToTarget = async () => {
+                        try { await sock.sendMessage(job.targetJid, sendObj); } 
+                        catch (e) { logger.error(`[COPIER] Gagal kirim ke ${job.targetJid}: ${e.message}`); }
+                    };
+
+                    if (s.delayMinutes > 0) {
+                        setTimeout(sendToTarget, s.delayMinutes * 60000);
+                    } else {
+                        await sendToTarget();
+                    }
+                }
+            } catch (e) { logger.error(`[COPIER] Error processing job ${job.id}: ${e.message}`); }
+        })();
+    }
+    return true;
+}
+
+async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const cleanSender = cfg.cleanNumber(sender);
+    const prefix = cfg.getConfig().prefix || '.';
+    
+    if (!textContent.startsWith(prefix + 'copier')) return false;
+
+    const args = textContent.trim().split(/\s+/);
+    const cmd = args[1]?.toLowerCase();
+    const isVIP = db.vips.includes(cleanSender) || senderIsOwner;
+
+    // Akses publik terbatas: Hanya Owner atau yang diizinkan owner bisa pakai fitur ini
+    // Atau bisa juga: Siapapun boleh pakai tapi hanya Teks/Stiker. 
+    // Di sini saya buat: Hanya yang di-VIP/Owner yang bisa add job.
+    if (!isVIP && !senderIsOwner && cmd !== 'status' && cmd !== 'list') {
+        return sock.sendMessage(remoteJid, { text: `❌ Maaf, fitur Auto Copier ini terbatas. Hubungi Owner untuk mendapatkan akses.` }, { quoted: msg });
+    }
+
+    if (!cmd) {
+        const menu = `🔄 *MULTI-COPIER DASHBOARD*\n\n` +
+            `Fitur untuk menyalin otomatis pesan antar saluran.\n\n` +
+            `*Perintah:*\n` +
+            `┣⌬ ${prefix}copier add <src_jid> <target_jid>\n` +
+            `┣⌬ ${prefix}copier list (Cek ID tugasmu)\n` +
+            `┣⌬ ${prefix}copier status <id> (Cek detail)\n` +
+            `┣⌬ ${prefix}copier set <id> <key> <val>\n` +
+            `┣⌬ ${prefix}copier on/off <id>\n` +
+            `┣⌬ ${prefix}copier delete <id>\n\n` +
+            `*Keys for setting:*\n` +
+            `delay (menit), rewrite (on/off), skipurl (on/off),\n` +
+            `allowText, allowImage, allowVideo, allowSticker (on/off)\n\n` +
+            (senderIsOwner ? `*Owner Only:*\n┣⌬ ${prefix}copier vip add/del <nomor>` : '');
+        await sock.sendMessage(remoteJid, { text: menu }, { quoted: msg });
+        return true;
+    }
+
+    if (cmd === 'vip' && senderIsOwner) {
+        const sub = args[2]?.toLowerCase();
+        const num = cfg.cleanNumber(args[3]);
+        if (!num) return sock.sendMessage(remoteJid, { text: `❌ Masukkan nomor!` }, { quoted: msg });
+        if (sub === 'add') {
+            if (!db.vips.includes(num)) db.vips.push(num);
+            saveDB();
+            await sock.sendMessage(remoteJid, { text: `✅ ${num} sekarang punya akses VIP Copier.` }, { quoted: msg });
+        } else {
+            db.vips = db.vips.filter(v => v !== num);
+            saveDB();
+            await sock.sendMessage(remoteJid, { text: `✅ Akses VIP ${num} dicabut.` }, { quoted: msg });
+        }
+        return true;
+    }
+
+    if (cmd === 'add') {
+        const src = args[2];
+        const target = args[3];
+        if (!src?.endsWith('@newsletter') || !target?.endsWith('@newsletter')) {
+            return sock.sendMessage(remoteJid, { text: `❌ Format: ${prefix}copier add <src_jid> <target_jid>\nGunakan JID berakhiran @newsletter` }, { quoted: msg });
+        }
+        const id = 'CP-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+        const newJob = {
+            id,
+            creator: cleanSender,
+            sourceJid: src,
+            targetJid: target,
+            active: true,
+            settings: {
+                delayMinutes: 0,
+                rewriteText: true,
+                skipLinks: true,
+                allowText: true,
+                allowImage: isVIP,
+                allowVideo: isVIP,
+                allowSticker: true,
+                stickerPack: 'Copied By Robby',
+                stickerAuthor: 'Robby Bot'
+            }
+        };
+        db.jobs.push(newJob);
+        saveDB();
+        await sock.sendMessage(remoteJid, { text: `✅ Tugas ditambahkan!\nID: *${id}*\nSumber: ${src}\nTarget: ${target}\n\nKetik *${prefix}copier status ${id}* untuk detail.` }, { quoted: msg });
+        return true;
+    }
+
+    if (cmd === 'list') {
+        const myJobs = db.jobs.filter(j => j.creator === cleanSender || senderIsOwner);
+        if (myJobs.length === 0) return sock.sendMessage(remoteJid, { text: `❌ Kamu belum punya tugas copier.` }, { quoted: msg });
+        let txt = `📋 *DAFTAR TUGAS COPIER KAMU*\n\n`;
+        myJobs.forEach(j => {
+            txt += `┣⌬ ID: *${j.id}*\n┃  Target: ${j.targetJid.substring(0,15)}...\n┃  Status: ${j.active ? '✅ AKTIF' : '❌ MATI'}\n\n`;
+        });
+        await sock.sendMessage(remoteJid, { text: txt }, { quoted: msg });
+        return true;
+    }
+
+    if (cmd === 'status') {
+        const id = args[2]?.toUpperCase();
+        const job = db.jobs.find(j => j.id === id && (j.creator === cleanSender || senderIsOwner));
+        if (!job) return sock.sendMessage(remoteJid, { text: `❌ Tugas dengan ID ${id} tidak ditemukan.` }, { quoted: msg });
+        const s = job.settings;
+        const info = `📊 *CONFIG COPIER: ${id}*\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `• Status: *${job.active ? 'AKTIF' : 'MATI'}*\n` +
+            `• Sumber: ${job.sourceJid}\n` +
+            `• Tujuan: ${job.targetJid}\n` +
+            `• Creator: ${job.creator}\n\n` +
+            `*Media Terizinkan:*\n` +
+            `  [ Teks: ${s.allowText ? '✅' : '❌'} ] [ Gambar: ${s.allowImage ? '✅' : '❌'} ]\n` +
+            `  [ Video: ${s.allowVideo ? '✅' : '❌'} ] [ Stiker: ${s.allowSticker ? '✅' : '❌'} ]\n\n` +
+            `*Lainnya:*\n` +
+            `• Delay: ${s.delayMinutes} menit\n` +
+            `• AI Rewrite: ${s.rewriteText ? 'ON' : 'OFF'}\n` +
+            `• Skip Link: ${s.skipLinks ? 'ON' : 'OFF'}\n` +
+            `• Metadata Stiker: ${s.stickerPack} | ${s.stickerAuthor}\n` +
+            `━━━━━━━━━━━━━━━━━━━━\n` +
+            `_Gunakan perintah .copier set ${id} <key> <val> untuk mengubah._`;
+        await sock.sendMessage(remoteJid, { text: info }, { quoted: msg });
+        return true;
+    }
+
+    if (cmd === 'on' || cmd === 'off') {
+        const id = args[2]?.toUpperCase();
+        const job = db.jobs.find(j => j.id === id && (j.creator === cleanSender || senderIsOwner));
+        if (!job) return sock.sendMessage(remoteJid, { text: `❌ ID tidak valid.` }, { quoted: msg });
+        job.active = (cmd === 'on');
+        saveDB();
+        await sock.sendMessage(remoteJid, { text: `✅ Tugas ${id} telah di-*${job.active ? 'AKTIFKAN' : 'MATIKAN'}*.` }, { quoted: msg });
+        return true;
+    }
+
+    if (cmd === 'delete') {
+        const id = args[2]?.toUpperCase();
+        const idx = db.jobs.findIndex(j => j.id === id && (j.creator === cleanSender || senderIsOwner));
+        if (idx === -1) return sock.sendMessage(remoteJid, { text: `❌ ID tidak valid.` }, { quoted: msg });
+        db.jobs.splice(idx, 1);
+        saveDB();
+        await sock.sendMessage(remoteJid, { text: `✅ Tugas ${id} berhasil dihapus.` }, { quoted: msg });
+        return true;
+    }
+
+    if (cmd === 'set') {
+        const id = args[2]?.toUpperCase();
+        const key = args[3];
+        let val = args.slice(4).join(' ');
+        const job = db.jobs.find(j => j.id === id && (j.creator === cleanSender || senderIsOwner));
+        if (!job) return sock.sendMessage(remoteJid, { text: `❌ ID tidak valid.` }, { quoted: msg });
+
+        const s = job.settings;
+        let success = true;
+
+        switch(key) {
+            case 'delay': s.delayMinutes = parseInt(val) || 0; break;
+            case 'rewrite': s.rewriteText = (val === 'on'); break;
+            case 'skipurl': s.skipLinks = (val === 'on'); break;
+            case 'allowText': s.allowText = (val === 'on'); break;
+            case 'allowImage': if (isVIP) s.allowImage = (val === 'on'); else success = false; break;
+            case 'allowVideo': if (isVIP) s.allowVideo = (val === 'on'); else success = false; break;
+            case 'allowSticker': s.allowSticker = (val === 'on'); break;
+            case 'sticker': 
+                const p = val.split('|');
+                if (p.length < 2) { success = false; break; }
+                s.stickerPack = p[0].trim(); s.stickerAuthor = p[1].trim();
+                break;
+            default: success = false;
+        }
+
+        if (success) {
+            saveDB();
+            await sock.sendMessage(remoteJid, { text: `✅ Berhasil update settingan *${key}* untuk tugas ${id}.` }, { quoted: msg });
+        } else {
+            await sock.sendMessage(remoteJid, { text: `❌ Gagal update. Pastikan key/value benar dan kamu punya akses VIP jika ingin mengaktifkan Video.` }, { quoted: msg });
+        }
+        return true;
+    }
+
+    return false;
+}
+
+module.exports = { handleCopier, handleCommand };

