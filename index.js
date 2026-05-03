@@ -547,44 +547,46 @@ async function startBot() {
                     }
                     setTimeout(() => startBot().catch(e => logger.error(`💥 Reconnect gagal: ${e.message}`)), 30000);
                 } else if (!isRestarting) {
-                    isRestarting = true;
-                    const delay = getReconnectDelay(reconnectAttempts);
-                    reconnectAttempts++;
-                    logger.info(`🔄 Reconnect attempt #${reconnectAttempts} dalam ${Math.round(delay/1000)} detik...`);
-                    
-                    // Khusus untuk error timeout/lag: bersihkan session corrupt
-                    if (errorMsg.includes('Timed Out') || errorMsg.includes('timed out') || code === 408 || code === 503) {
-                        logger.info('⏱️ Error timeout terdeteksi — membersihkan cache session yang mungkin corrupt...');
-                        try {
-                            const sessionFiles = fs.readdirSync(SESSION_DIR);
-                            for (const file of sessionFiles) {
-                                // Hapus pre-key & sender-key cache yang bisa menyebabkan timeout
-                                // JANGAN hapus creds.json (master login)
-                                if (file.startsWith('pre-key-') || file.startsWith('sender-key-')) {
-                                    fs.unlinkSync(path.join(SESSION_DIR, file));
-                                }
+                // Logika Reconnect yang Lebih Tangguh
+                const delay = getReconnectDelay(reconnectAttempts);
+                reconnectAttempts++;
+                
+                // Jika error timeout atau lag, bersihkan file pre-key/sender-key yang bermasalah
+                if (errorMsg.includes('Timed Out') || errorMsg.includes('timed out') || code === 408 || code === 503) {
+                    logger.warn('⏱️ Koneksi Timeout! Membersihkan cache session agar lancar kembali...');
+                    try {
+                        const files = fs.readdirSync(SESSION_DIR);
+                        for (const file of files) {
+                            if (file.startsWith('pre-key-') || file.startsWith('sender-key-')) {
+                                fs.unlinkSync(path.join(SESSION_DIR, file));
                             }
-                        } catch (_) {}
-                    }
-                    
-                    setTimeout(() => {
-                        isRestarting = false;
-                        if (currentSock) {
-                            try { currentSock.ws?.close(); } catch (_) {}
-                            currentSock = null;
                         }
-                        startBot().catch(e => logger.error(`💥 Reconnect gagal: ${e.message}`));
-                    }, delay);
+                    } catch (_) {}
                 }
+
+                logger.info(`🔄 Mencoba Reconnect #${reconnectAttempts} dalam ${Math.round(delay/1000)} detik...`);
+                
+                setTimeout(() => {
+                    isRestarting = false;
+                    if (currentSock) {
+                        try { currentSock.ws?.close(); } catch (_) {}
+                        currentSock = null;
+                    }
+                    startBot().catch(e => {
+                        logger.error(`💥 Reconnect gagal: ${e.message}`);
+                        // Jika gagal parah pun, jangan exit. Coba lagi nanti.
+                        setTimeout(() => startBot(), 10000);
+                    });
+                }, delay);
             } else {
-                logger.error('🚫 Session logout. Auto-clean folder "session"...');
+                // Jika benar-benar Logout (un-linked dari HP)
+                logger.error('🚫 Session Logout atau Tidak Valid. Menghapus folder session...');
                 try {
                     fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-                    logger.info('✅ Folder session usang telah dihapus otomatis. SIlakan jalankan bot kembali!');
-                } catch (e) {
-                    logger.error('Gagal hapus session otomatis: ' + e.message);
-                }
-                process.exit(1);
+                } catch (_) {}
+                
+                logger.warn('⚠️ Bot terhenti karena Logout. Mencoba restart untuk scan ulang...');
+                setTimeout(() => startBot(), 5000);
             }
         }
 
@@ -681,11 +683,16 @@ async function startBot() {
                 const _fromMe = msg.key.fromMe || false;
                 const _sender = msg.key.participant || _remoteJid;
                 
-                // LOG SETIAP CHAT (TANPA FILTER)
-                console.log(`\n💬 [CHAT-IN] From: ${_sender}, toMe: ${!_fromMe}, JID: ${_remoteJid}`);
+                // LOG CHAT (Hanya Saluran atau Owner agar tidak spam)
+                const isNewsletter = _remoteJid.endsWith('@newsletter');
+                const isOwner = cfg.isOwner(_sender);
+                
+                if (isNewsletter || isOwner) {
+                    console.log(`\n💬 [CHAT-IN] From: ${_sender}${isNewsletter ? ' (Saluran)' : ''}, JID: ${_remoteJid}`);
+                }
                 
                 // Newsletter: cek dulu apakah channelCopier mau tangkap
-                if (_remoteJid.endsWith('@newsletter')) {
+                if (isNewsletter) {
                     try {
                         await channelCopier.handleCopier(sock, msg);
                     } catch (e) {
