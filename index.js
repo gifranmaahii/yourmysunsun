@@ -602,9 +602,11 @@ async function startBot() {
             // Reset counter reconnect karena berhasil tersambung
             reconnectAttempts = 0;
             isRestarting = false;
-            
+            const botNumber = sock.user.id.split(':')[0];
             console.log(`\n========================================================`);
-            console.log(` ✅ SUCCESS: ${BOT_NAME} [${SESSION_NAME}] TERHUBUNG!`);
+            console.log(` ✅ SUCCESS: ${BOT_NAME} [${SESSION_NAME}]`);
+            console.log(` 📱 Nomor   : ${botNumber}`);
+            console.log(` 🟢 Status  : TERHUBUNG!`);
             console.log(`========================================================\n`);
             
             logger.info(`✅ ${BOT_NAME} berhasil terhubung ke WhatsApp!`);
