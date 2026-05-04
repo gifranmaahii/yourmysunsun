@@ -980,9 +980,15 @@ async function startBot() {
 
 ┏━『 *GRUP & ADMIN* 』
 ┃
-┣⌬ ${PREFIX}afk / .absen
+┣⌬ ${PREFIX}kick / .add / .warn
+┣⌬ ${PREFIX}promote / .demote
+┣⌬ ${PREFIX}setnamegc / .setopen
+┣⌬ ${PREFIX}linkgc / .revokelink
+┣⌬ ${PREFIX}antilink / .antibot
+┣⌬ ${PREFIX}welcome / .antidelete
 ┣⌬ ${PREFIX}tagall / .hidetag
 ┣⌬ ${PREFIX}groupinfo / .list
+┣⌬ ${PREFIX}afk / .absen
 ┗━━━━━━━◧
 
 ┏━『 *TOOLS & SEARCH* 』
@@ -991,6 +997,13 @@ async function startBot() {
 ┣⌬ ${PREFIX}stalkig [user]
 ┣⌬ ${PREFIX}stalktt [user]
 ┣⌬ ${PREFIX}google / .pin
+┣⌬ ${PREFIX}gempa / .news
+┣⌬ ${PREFIX}jokes / .quotes
+┣⌬ ${PREFIX}shortlink [url]
+┣⌬ ${PREFIX}bot [teks]
+┣⌬ ${PREFIX}kbbi / .wiki / .tr
+┣⌬ ${PREFIX}cuaca / .zodiak
+┣⌬ ${PREFIX}stalkgh [user]
 ┗━━━━━━━◧
 
 ┏━『 *GAMES (2000+ Soal!)* 』
@@ -1183,6 +1196,251 @@ async function startBot() {
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
                     }
+                    continue;
+                }
+
+                // 7. INFO GEMPA (.gempa)
+                if (textContent.startsWith(PREFIX + 'gempa')) {
+                    await sock.sendMessage(remoteJid, { react: { text: '🌋', key: msg.key } });
+                    try {
+                        const data = await tools.infoGempa();
+                        if (!data) throw new Error('Gagal mengambil data gempa.');
+                        let caption = `🌋 *I N F O  G E M P A  B M K G*\n\n` +
+                                     `• *Waktu:* ${data.Tanggal} | ${data.Jam}\n` +
+                                     `• *Magnitude:* ${data.Magnitude}\n` +
+                                     `• *Kedalaman:* ${data.Kedalaman}\n` +
+                                     `• *Koordinat:* ${data.Coordinates}\n` +
+                                     `• *Lokasi:* ${data.Wilayah}\n` +
+                                     `• *Potensi:* ${data.Potensi}`;
+                        await sock.sendMessage(remoteJid, { image: { url: 'https://data.bmkg.go.id/DataMKG/TEWS/' + data.Shakemap }, caption }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 8. BERITA (.news)
+                if (textContent.startsWith(PREFIX + 'news')) {
+                    await sock.sendMessage(remoteJid, { react: { text: '📰', key: msg.key } });
+                    try {
+                        const posts = await tools.getNews();
+                        if (!posts) throw new Error('Gagal mengambil berita.');
+                        let caption = `📰 *B E R I T A  T E R B A R U*\n\n`;
+                        posts.forEach((p, i) => {
+                            caption += `${i+1}. *${p.title}*\n🔗 ${p.link}\n\n`;
+                        });
+                        await sock.sendMessage(remoteJid, { text: caption }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 9. JADWAL SHOLAT (.sholat)
+                if (textContent.startsWith(PREFIX + 'sholat')) {
+                    const kota = textContent.slice((PREFIX + 'sholat').length).trim();
+                    if (!kota) {
+                        await sock.sendMessage(remoteJid, { text: `Masukan nama kota!\nContoh: *${PREFIX}sholat depok*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🕌', key: msg.key } });
+                    try {
+                        const data = await tools.jadwalSholat(kota);
+                        if (!data) throw new Error('Kota tidak ditemukan.');
+                        let caption = `🕌 *J A D W A L  S H O L A T  ${kota.toUpperCase()}*\n\n` +
+                                     `• *Subuh:* ${data.subuh}\n` +
+                                     `• *Dzuhur:* ${data.dzuhur}\n` +
+                                     `• *Ashar:* ${data.ashar}\n` +
+                                     `• *Maghrib:* ${data.maghrib}\n` +
+                                     `• *Isya:* ${data.isya}\n\n` +
+                                     `_Semangat ibadahnya, Bos!_`;
+                        await sock.sendMessage(remoteJid, { text: caption }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 10. JOKES (.jokes)
+                if (textContent.startsWith(PREFIX + 'jokes')) {
+                    await sock.sendMessage(remoteJid, { react: { text: '🤣', key: msg.key } });
+                    try {
+                        const joke = await tools.getJoke();
+                        await sock.sendMessage(remoteJid, { text: joke }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 11. QUOTES (.quotes)
+                if (textContent.startsWith(PREFIX + 'quotes')) {
+                    await sock.sendMessage(remoteJid, { react: { text: '📜', key: msg.key } });
+                    try {
+                        const data = await tools.getQuote();
+                        await sock.sendMessage(remoteJid, { text: `_"${data.quote}"_\n\n— *${data.author}*` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 12. SHORTLINK (.shortlink)
+                if (textContent.startsWith(PREFIX + 'shortlink')) {
+                    const url = textContent.slice((PREFIX + 'shortlink').length).trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `🔗 Masukkan link yang ingin dipendekkan!\nContoh: *${PREFIX}shortlink https://google.com*` }, { quoted: msg });
+                        continue;
+                    }
+                    try {
+                        const short = await tools.shortlink(url);
+                        await sock.sendMessage(remoteJid, { text: `✅ *Link Berhasil Dipendekkan!*\n\n🔗 *Hasil:* ${short}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 13. SIMSIMI (.sim / .bot)
+                if (textContent.startsWith(PREFIX + 'sim') || textContent.startsWith(PREFIX + 'bot')) {
+                    const isBot = textContent.startsWith(PREFIX + 'bot');
+                    const text = textContent.slice(isBot ? (PREFIX + 'bot').length : (PREFIX + 'sim').length).trim();
+                    if (!text) {
+                        await sock.sendMessage(remoteJid, { text: `💬 Mau ngomong apa sama bot?` }, { quoted: msg });
+                        continue;
+                    }
+                    try {
+                        const response = await tools.simSimi(text);
+                        await sock.sendMessage(remoteJid, { text: response }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ SimSimi sedang lelah.` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 14. KBBI (.kbbi)
+                if (textContent.startsWith(PREFIX + 'kbbi')) {
+                    const kata = textContent.slice((PREFIX + 'kbbi').length).trim();
+                    if (!kata) {
+                        await sock.sendMessage(remoteJid, { text: `📖 Masukkan kata yang ingin dicari!\nContoh: *${PREFIX}kbbi bot*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📖', key: msg.key } });
+                    try {
+                        const res = await tools.getKBBI(kata);
+                        if (!res) throw new Error('Kata tidak ditemukan.');
+                        await sock.sendMessage(remoteJid, { text: `📖 *K B B I*\n\n*Kata:* ${kata}\n*Arti:* ${res}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 15. WIKIPEDIA (.wiki)
+                if (textContent.startsWith(PREFIX + 'wiki')) {
+                    const kueri = textContent.slice((PREFIX + 'wiki').length).trim();
+                    if (!kueri) {
+                        await sock.sendMessage(remoteJid, { text: `📚 Masukkan kueri!\nContoh: *${PREFIX}wiki Soekarno*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📚', key: msg.key } });
+                    try {
+                        const data = await tools.getWiki(kueri);
+                        if (!data) throw new Error('Informasi tidak ditemukan.');
+                        await sock.sendMessage(remoteJid, { text: `📚 *W I K I P E D I A*\n\n*Judul:* ${data.title}\n\n${data.extract}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 16. TRANSLATE (.tr)
+                if (textContent.startsWith(PREFIX + 'tr')) {
+                    const args = textContent.slice((PREFIX + 'tr').length).trim().split(' ');
+                    const to = args[0];
+                    const text = args.slice(1).join(' ');
+                    if (!to || !text) {
+                        await sock.sendMessage(remoteJid, { text: `🌐 *Google Translate*\n\nContoh: *${PREFIX}tr en Halo apa kabar* (ke Inggris)\nContoh: *${PREFIX}tr id Good morning* (ke Indo)` }, { quoted: msg });
+                        continue;
+                    }
+                    try {
+                        const result = await tools.translate(text, to);
+                        await sock.sendMessage(remoteJid, { text: `🌐 *T R A N S L A T E*\n\n*Hasil:* ${result}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 17. CUACA (.cuaca)
+                if (textContent.startsWith(PREFIX + 'cuaca')) {
+                    const kota = textContent.slice((PREFIX + 'cuaca').length).trim();
+                    if (!kota) {
+                        await sock.sendMessage(remoteJid, { text: `⛅ Masukkan nama kota!\nContoh: *${PREFIX}cuaca jakarta*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '⛅', key: msg.key } });
+                    try {
+                        const res = await tools.getWeather(kota);
+                        if (!res) throw new Error('Kota tidak ditemukan.');
+                        await sock.sendMessage(remoteJid, { text: `⛅ *I N F O  C U A C A*\n\n*Kota:* ${kota.toUpperCase()}\n*Status:* ${res}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 18. ZODIAK (.zodiak)
+                if (textContent.startsWith(PREFIX + 'zodiak')) {
+                    const zodiak = textContent.slice((PREFIX + 'zodiak').length).trim();
+                    if (!zodiak) {
+                        await sock.sendMessage(remoteJid, { text: `♈ Masukkan zodiak!\nContoh: *${PREFIX}zodiak leo*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '♈', key: msg.key } });
+                    try {
+                        const res = await tools.getZodiac(zodiak);
+                        if (!res) throw new Error('Zodiak tidak ditemukan.');
+                        await sock.sendMessage(remoteJid, { text: `♈ *Z O D I A K  H A R I  I N I*\n\n${res}` }, { quoted: msg });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 19. GITHUB STALK (.stalkgh)
+                if (textContent.startsWith(PREFIX + 'stalkgh')) {
+                    const user = textContent.slice((PREFIX + 'stalkgh').length).trim();
+                    if (!user) {
+                        await sock.sendMessage(remoteJid, { text: `🐙 Masukkan username GitHub!\nContoh: *${PREFIX}stalkgh torvalds*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🐙', key: msg.key } });
+                    try {
+                        const data = await tools.githubStalk(user);
+                        if (!data) throw new Error('User tidak ditemukan.');
+                        let caption = `🐙 *G I T H U B  S T A L K*\n\n` +
+                                     `• *Username:* ${data.login}\n` +
+                                     `• *Nama:* ${data.name || '-'}\n` +
+                                     `• *Bio:* ${data.bio || '-'}\n` +
+                                     `• *Public Repo:* ${data.public_repos}\n` +
+                                     `• *Follower:* ${data.followers}\n` +
+                                     `• *Following:* ${data.following}\n` +
+                                     `• *Lokasi:* ${data.location || '-'}\n` +
+                                     `• *Link:* ${data.html_url}`;
+                        await sock.sendMessage(remoteJid, { image: { url: data.avatar_url }, caption }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
                     continue;
                 }
 
@@ -4698,7 +4956,12 @@ async function startBot() {
 
 ┏━『 *GRUP & ADMIN* 』
 ┃
-┣⌬ ${PREFIX}afk / .absen
+┣⌬ ${PREFIX}kick / .add / .warn
+┣⌬ ${PREFIX}promote / .demote
+┣⌬ ${PREFIX}setnamegc / .setopen
+┣⌬ ${PREFIX}linkgc / .revokelink
+┣⌬ ${PREFIX}antilink / .antibot
+┣⌬ ${PREFIX}welcome / .antidelete
 ┣⌬ ${PREFIX}tagall / .hidetag
 ┣⌬ ${PREFIX}groupinfo / .list
 ┗━━━━━━━◧
@@ -4709,6 +4972,10 @@ async function startBot() {
 ┣⌬ ${PREFIX}stalkig [user]
 ┣⌬ ${PREFIX}stalktt [user]
 ┣⌬ ${PREFIX}google / .pin
+┣⌬ ${PREFIX}gempa / .news
+┣⌬ ${PREFIX}jokes / .quotes
+┣⌬ ${PREFIX}shortlink [url]
+┣⌬ ${PREFIX}bot [teks]
 ┗━━━━━━━◧
 
 ┏━『 *GAMES (2000+ Soal!)* 』
