@@ -323,6 +323,10 @@ async function tiktokSearch(query) {
     return json.result; // usually returns array of results
 }
 
+async function pinterestDl(url) {
+    return await fallbackDownload(`${FREE_API_URL}/d/pinterest?url=`, '/download/pinterest', url);
+}
+
 async function getBuffer(url) {
     const res = await fetch(url);
     const arrayBuffer = await res.arrayBuffer();
@@ -344,5 +348,6 @@ module.exports = {
     likeeDl,
     gdriveDl,
     tiktokSearch,
+    pinterestDl,
     getBuffer
 };

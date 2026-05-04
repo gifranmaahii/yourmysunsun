@@ -975,7 +975,7 @@ async function startBot() {
 ┣⌬ ${PREFIX}tiktok / .ttaudio
 ┣⌬ ${PREFIX}ig / .instagram
 ┣⌬ ${PREFIX}ytmp3 / .ytmp4
-┣⌬ ${PREFIX}play / .lirik
+┣⌬ ${PREFIX}play / .pinvideo
 ┗━━━━━━━◧
 
 ┏━『 *GRUP & ADMIN* 』
@@ -1004,6 +1004,7 @@ async function startBot() {
 ┣⌬ ${PREFIX}kbbi / .wiki / .tr
 ┣⌬ ${PREFIX}cuaca / .zodiak
 ┣⌬ ${PREFIX}stalkgh [user]
+┣⌬ ${PREFIX}doa / .anime
 ┗━━━━━━━◧
 
 ┏━『 *GAMES (2000+ Soal!)* 』
@@ -1434,6 +1435,100 @@ async function startBot() {
                                      `• *Lokasi:* ${data.location || '-'}\n` +
                                      `• *Link:* ${data.html_url}`;
                         await sock.sendMessage(remoteJid, { image: { url: data.avatar_url }, caption }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 21. PLAY (.play)
+                if (textContent.startsWith(PREFIX + 'play')) {
+                    const query = textContent.slice((PREFIX + 'play').length).trim();
+                    if (!query) {
+                        await sock.sendMessage(remoteJid, { text: `🎵 Masukkan judul lagu!\nContoh: *${PREFIX}play die with a smile*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🎵', key: msg.key } });
+                    try {
+                        const dl = require('./src/features/downloader');
+                        const data = await dl.ytmp3(query);
+                        await sock.sendMessage(remoteJid, { audio: { url: data.url }, mimetype: 'audio/mpeg', fileName: data.title }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 22. PINVIDEO (.pinvideo)
+                if (textContent.startsWith(PREFIX + 'pinvideo')) {
+                    const url = textContent.slice((PREFIX + 'pinvideo').length).trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `📌 Masukkan link Pinterest video!\nContoh: *${PREFIX}pinvideo https://pin.it/xxx*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📌', key: msg.key } });
+                    try {
+                        const dl = require('./src/features/downloader');
+                        const data = await dl.pinterestDl(url);
+                        await sock.sendMessage(remoteJid, { video: { url: data.url }, caption: `✅ *Pinterest Downloader*\n\n📌 *Source:* ${url}` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 23. DOA (.doa)
+                if (textContent.startsWith(PREFIX + 'doa')) {
+                    const query = textContent.slice((PREFIX + 'doa').length).trim();
+                    await sock.sendMessage(remoteJid, { react: { text: '🤲', key: msg.key } });
+                    try {
+                        const res = await tools.getDoa(query);
+                        if (!res) throw new Error('Doa tidak ditemukan.');
+                        
+                        // Jika berupa array (daftar doa), tampilkan daftarnya
+                        if (Array.isArray(res)) {
+                            let list = `🤲 *DAFTAR DOA HARIAN*\n\n`;
+                            res.forEach((d, i) => list += `${i + 1}. ${d}\n`);
+                            list += `\n💡 Ketik *${PREFIX}doa [nama_doa]* untuk melihat isinya.`;
+                            await sock.sendMessage(remoteJid, { text: list }, { quoted: msg });
+                        } else {
+                            // Jika berupa objek (detail doa)
+                            let caption = `🤲 *D O A  H A R I  I N I*\n\n` +
+                                         `*Doa:* ${res.doa}\n\n` +
+                                         `*Arab:* ${res.ayat}\n\n` +
+                                         `*Latin:* ${res.latin}\n\n` +
+                                         `*Artinya:* ${res.artinya}`;
+                            await sock.sendMessage(remoteJid, { text: caption }, { quoted: msg });
+                        }
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 24. ANIME (.anime)
+                if (textContent.startsWith(PREFIX + 'anime')) {
+                    const judul = textContent.slice((PREFIX + 'anime').length).trim();
+                    if (!judul) {
+                        await sock.sendMessage(remoteJid, { text: `🏮 Masukkan judul anime!\nContoh: *${PREFIX}anime naruto*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🏮', key: msg.key } });
+                    try {
+                        const data = await tools.getAnime(judul);
+                        if (!data) throw new Error('Anime tidak ditemukan.');
+                        let caption = `🏮 *A N I M E  I N F O*\n\n` +
+                                     `• *Judul:* ${data.title}\n` +
+                                     `• *Skor:* ${data.score || '-'}\n` +
+                                     `• *Episode:* ${data.episodes || '-'}\n` +
+                                     `• *Status:* ${data.status}\n` +
+                                     `• *Rating:* ${data.rating}\n\n` +
+                                     `*Sinopsis:* ${data.synopsis ? (data.synopsis.substring(0, 500) + '...') : '-'}\n\n` +
+                                     `🔗 *MAL URL:* ${data.url}`;
+                        await sock.sendMessage(remoteJid, { image: { url: data.images.jpg.large_image_url }, caption }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
@@ -4948,7 +5043,7 @@ async function startBot() {
 ┣⌬ ${PREFIX}tiktok / .ttaudio
 ┣⌬ ${PREFIX}ig / .instagram
 ┣⌬ ${PREFIX}ytmp3 / .ytmp4
-┣⌬ ${PREFIX}play / .lirik
+┣⌬ ${PREFIX}play / .pinvideo
 ┗━━━━━━━◧
 
 ┏━『 *GRUP & ADMIN* 』

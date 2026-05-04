@@ -269,6 +269,40 @@ async function githubStalk(username) {
     return null;
 }
 
+/**
+ * Kumpulan Doa Harian
+ */
+async function getDoa(query = '') {
+    try {
+        // Jika query kosong, ambil daftar random atau semua (tergantung API)
+        const endpoint = query ? `https://api.agatz.xyz/api/doa?message=${encodeURIComponent(query)}` : `https://api.agatz.xyz/api/doa`;
+        const res = await fetch(endpoint);
+        const json = await res.json();
+        if (json.status === 200 && json.data) {
+            return json.data;
+        }
+    } catch (e) {
+        logger.error('[TOOLS] Doa failed: ' + e.message);
+    }
+    return null;
+}
+
+/**
+ * Info Anime (Jikan MyAnimeList)
+ */
+async function getAnime(judul) {
+    try {
+        const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(judul)}&limit=1`);
+        const json = await res.json();
+        if (json.data && json.data.length > 0) {
+            return json.data[0];
+        }
+    } catch (e) {
+        logger.error('[TOOLS] Anime failed: ' + e.message);
+    }
+    return null;
+}
+
 module.exports = {
     pinterestSearch,
     ssweb,
@@ -285,5 +319,7 @@ module.exports = {
     translate,
     getWeather,
     getZodiac,
-    githubStalk
+    githubStalk,
+    getDoa,
+    getAnime
 };
