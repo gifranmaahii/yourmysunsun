@@ -341,6 +341,38 @@ async function getTTS(text, lang = 'id') {
     return null;
 }
 
+/**
+ * GSM Arena Search
+ */
+async function searchGsm(query) {
+    try {
+        const res = await fetch(`https://api.agatz.xyz/api/gsmarena?message=${encodeURIComponent(query)}`);
+        const json = await res.json();
+        if (json.status === 200 && json.data) {
+            return json.data;
+        }
+    } catch (e) {
+        logger.error('[TOOLS] GSM Search failed: ' + e.message);
+    }
+    return null;
+}
+
+/**
+ * GSM Arena Detail
+ */
+async function detailGsm(url) {
+    try {
+        const res = await fetch(`https://api.agatz.xyz/api/gsmarena/detail?url=${encodeURIComponent(url)}`);
+        const json = await res.json();
+        if (json.status === 200 && json.data) {
+            return json.data;
+        }
+    } catch (e) {
+        logger.error('[TOOLS] GSM Detail failed: ' + e.message);
+    }
+    return null;
+}
+
 module.exports = {
     pinterestSearch,
     ssweb,
@@ -362,5 +394,7 @@ module.exports = {
     getAnime,
     hilih,
     searchSticker,
-    getTTS
+    getTTS,
+    searchGsm,
+    detailGsm
 };

@@ -1002,10 +1002,12 @@ async function startBot() {
 ┣⌬ ${PREFIX}shortlink [url]
 ┣⌬ ${PREFIX}bot [teks]
 ┣⌬ ${PREFIX}kbbi / .wiki / .tr
-┣⌬ ${PREFIX}cuaca / .zodiak
+┣⌬ ${PREFIX}gsm / .cuaca / .zodiak
 ┣⌬ ${PREFIX}stalkgh [user]
 ┣⌬ ${PREFIX}doa / .anime
 ┣⌬ ${PREFIX}hilih / .tts
+┣⌬ ${PREFIX}ipstalk / .cekemail
+┣⌬ ${PREFIX}cekno / .kurs
 ┗━━━━━━━◧
 
 ┏━『 *GAMES (2000+ Soal!)* 』
@@ -1588,6 +1590,150 @@ async function startBot() {
                         for (let url of results) {
                             await sock.sendMessage(remoteJid, { sticker: { url } }, { quoted: msg });
                         }
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 28. GSM ARENA (.gsm)
+                if (textContent.startsWith(PREFIX + 'gsm')) {
+                    const query = textContent.slice((PREFIX + 'gsm').length).trim();
+                    if (!query) {
+                        await sock.sendMessage(remoteJid, { text: `📱 Masukkan nama HP!\nContoh: *${PREFIX}gsm iPhone 15*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📱', key: msg.key } });
+                    try {
+                        const data = await tools.searchGsm(query);
+                        if (!data || data.length === 0) throw new Error('HP tidak ditemukan.');
+                        
+                        if (data.length > 1 && !query.includes('gsmarena.com')) {
+                            let list = `📱 *HASIL PENCARIAN HP*\n\n`;
+                            data.slice(0, 10).forEach((h, i) => list += `${i + 1}. ${h.name}\n🔗 ${h.url}\n\n`);
+                            list += `💡 Salin link detail HP di atas dan gunakan *${PREFIX}gsm [link]* untuk spek lengkap.`;
+                            await sock.sendMessage(remoteJid, { text: list }, { quoted: msg });
+                        } else {
+                            const url = data[0]?.url || query;
+                            const detail = await tools.detailGsm(url);
+                            if (!detail) throw new Error('Gagal mengambil detail HP.');
+                            
+                            let caption = `📱 *D E T A I L  H P*\n\n` +
+                                         `• *Nama:* ${detail.name}\n` +
+                                         `• *Rilis:* ${detail.release_date}\n` +
+                                         `• *Dimensi:* ${detail.dimensions}\n` +
+                                         `• *OS:* ${detail.os}\n` +
+                                         `• *Storage:* ${detail.storage}\n` +
+                                         `• *Layar:* ${detail.display_size} (${detail.display_res})\n` +
+                                         `• *Kamera:* ${detail.camera_pixels} (Main), ${detail.video_pixels} (Video)\n` +
+                                         `• *Chipset:* ${detail.chipset}\n` +
+                                         `• *Baterai:* ${detail.battery_size} ${detail.battery_type}\n\n` +
+                                         `*Spesifikasi Lain:* \n${detail.specifications.slice(0, 5).map(s => `*${s.title}:* ${s.specs.slice(0, 2).map(ss => ss.val).join(', ')}`).join('\n')}`;
+                            
+                            await sock.sendMessage(remoteJid, { image: { url: detail.image }, caption }, { quoted: msg });
+                        }
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 29. IP STALK (.ipstalk)
+                if (textContent.startsWith(PREFIX + 'ipstalk')) {
+                    const ip = textContent.slice((PREFIX + 'ipstalk').length).trim();
+                    if (!ip) {
+                        await sock.sendMessage(remoteJid, { text: `🌐 Masukkan alamat IP!\nContoh: *${PREFIX}ipstalk 8.8.8.8*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🌐', key: msg.key } });
+                    try {
+                        const abstract = require('./src/features/abstract');
+                        const data = await abstract.ipGeolocation(ip);
+                        let res = `🌐 *I P  G E O L O C A T I O N*\n\n` +
+                                 `• *IP:* ${data.ip_address}\n` +
+                                 `• *Kota:* ${data.city || '-'}\n` +
+                                 `• *Region:* ${data.region || '-'}\n` +
+                                 `• *Negara:* ${data.country} (${data.country_code})\n` +
+                                 `• *ISP:* ${data.connection?.isp_name}\n` +
+                                 `• *Lat/Long:* ${data.latitude}, ${data.longitude}\n` +
+                                 `• *Zona Waktu:* ${data.timezone?.name}`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 30. CEK EMAIL (.cekemail)
+                if (textContent.startsWith(PREFIX + 'cekemail')) {
+                    const email = textContent.slice((PREFIX + 'cekemail').length).trim();
+                    if (!email) {
+                        await sock.sendMessage(remoteJid, { text: `📧 Masukkan email!\nContoh: *${PREFIX}cekemail test@gmail.com*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📧', key: msg.key } });
+                    try {
+                        const abstract = require('./src/features/abstract');
+                        const data = await abstract.emailVerification(email);
+                        let res = `📧 *E M A I L  V E R I F I C A T I O N*\n\n` +
+                                 `• *Email:* ${data.email}\n` +
+                                 `• *Format Valid:* ${data.is_valid_format.text}\n` +
+                                 `• *SMTP Valid:* ${data.is_smtp_valid.text}\n` +
+                                 `• *Disposable:* ${data.is_disposable_email.text}\n` +
+                                 `• *Deliverability:* ${data.deliverability}\n` +
+                                 `• *Score:* ${Math.round(data.quality_score * 100)}%`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 31. CEK NO TELP (.cekno)
+                if (textContent.startsWith(PREFIX + 'cekno')) {
+                    const phone = textContent.slice((PREFIX + 'cekno').length).trim();
+                    if (!phone) {
+                        await sock.sendMessage(remoteJid, { text: `📞 Masukkan nomor telp (dengan kode negara)!\nContoh: *${PREFIX}cekno 62812345678*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📞', key: msg.key } });
+                    try {
+                        const abstract = require('./src/features/abstract');
+                        const data = await abstract.phoneValidation(phone);
+                        let res = `📞 *P H O N E  V A L I D A T I O N*\n\n` +
+                                 `• *Nomor:* ${data.number}\n` +
+                                 `• *Valid:* ${data.valid}\n` +
+                                 `• *Lokasi:* ${data.location}\n` +
+                                 `• *Carrier:* ${data.carrier}\n` +
+                                 `• *Tipe:* ${data.type}\n` +
+                                 `• *Negara:* ${data.country.name}`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 32. KURS (.kurs)
+                if (textContent.startsWith(PREFIX + 'kurs')) {
+                    const args = textContent.slice((PREFIX + 'kurs').length).trim().split(' ');
+                    const base = args[0] || 'USD';
+                    const target = args[1] || 'IDR';
+                    await sock.sendMessage(remoteJid, { react: { text: '💱', key: msg.key } });
+                    try {
+                        const abstract = require('./src/features/abstract');
+                        const data = await abstract.exchangeRates(base, target);
+                        let res = `💱 *E X C H A N G E  R A T E*\n\n` +
+                                 `• *Base:* ${data.base}\n` +
+                                 `• *Target:* ${target}\n` +
+                                 `• *Rate:* ${data.exchange_rates[target]}\n` +
+                                 `• *Waktu:* ${data.last_updated}`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
