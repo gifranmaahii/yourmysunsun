@@ -1,5 +1,6 @@
 'use strict';
 
+const fetch = require('node-fetch');
 const { logger } = require('../utils/logger');
 
 const API_KEYS = [
@@ -39,9 +40,14 @@ async function fetchAbstract(urlBase, params = {}) {
             const res = await fetch(url.toString());
             const json = await res.json();
             
-            // Abstract API biasanya return 429 jika limit
+            // Abstract API returns 429 for limit, 401 for invalid key
             if (res.status === 429 || (json.error && json.error.code === 'quota_reached')) {
                 logger.warn(`[ABSTRACT] Key ${key.substring(0, 5)}... limit tercapai, mencoba key berikutnya.`);
+                continue;
+            }
+
+            if (res.status === 401 || (json.error && (json.error.code === 'unauthorized' || json.error.message.includes('API key')))) {
+                logger.warn(`[ABSTRACT] Key ${key.substring(0, 5)}... tidak valid untuk endpoint ini, mencoba key berikutnya.`);
                 continue;
             }
 
@@ -51,11 +57,12 @@ async function fetchAbstract(urlBase, params = {}) {
 
             return json;
         } catch (e) {
-            lastError = e;
+            // Jika error network atau JSON parsing, tetap log tapi coba key lain jika belum habis
             logger.error(`[ABSTRACT] Request failed with key ${key.substring(0, 5)}...: ${e.message}`);
+            lastError = e;
         }
     }
-    throw lastError || new Error('Semua API Key Abstract limit atau gagal.');
+    throw lastError || new Error('Semua API Key Abstract gagal atau tidak valid untuk fitur ini.');
 }
 
 /**
