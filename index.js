@@ -1713,13 +1713,15 @@ async function startBot() {
                     try {
                         const abstract = require('./src/features/abstract');
                         const data = await abstract.phoneValidation(phone);
-                        let res = `📞 *P H O N E  V A L I D A T I O N*\n\n` +
-                                 `• *Nomor:* ${data.number}\n` +
-                                 `• *Valid:* ${data.valid}\n` +
-                                 `• *Lokasi:* ${data.location}\n` +
-                                 `• *Carrier:* ${data.carrier}\n` +
-                                 `• *Tipe:* ${data.type}\n` +
-                                 `• *Negara:* ${data.country.name}`;
+                        let res = `📞 *P H O N E  I N T E L L I G E N C E*\n\n` +
+                                 `• *Nomor:* ${data.phone_number}\n` +
+                                 `• *Valid:* ${data.phone_validation.is_valid}\n` +
+                                 `• *Status:* ${data.phone_validation.line_status}\n` +
+                                 `• *Lokasi:* ${data.phone_location.city}, ${data.phone_location.region}\n` +
+                                 `• *Carrier:* ${data.phone_carrier.name}\n` +
+                                 `• *Tipe:* ${data.phone_carrier.line_type}\n` +
+                                 `• *Negara:* ${data.phone_location.country_name} (${data.phone_location.country_code})\n` +
+                                 `• *Risk Level:* ${data.phone_risk.risk_level}`;
                         await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
@@ -1856,8 +1858,8 @@ async function startBot() {
                         // However, let's assume it works like other endpoints for now.
                         // Actually, Abstract API Screenshot usually returns the image directly.
                         // Let's refine fetchAbstract or use a direct fetch here.
-                        const key = abstract.getApiKey('other');
-                        const ssUrl = `https://screenshots.abstractapi.com/v1/?api_key=${key}&url=${encodeURIComponent(url)}`;
+                        const key = abstract.getApiKey();
+                        const ssUrl = `https://screenshot.abstractapi.com/v1/?api_key=${key}&url=${encodeURIComponent(url)}`;
                         await sock.sendMessage(remoteJid, { image: { url: ssUrl }, caption: `📸 Screenshot: ${url}` }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
