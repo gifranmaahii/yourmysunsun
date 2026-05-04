@@ -1441,9 +1441,6 @@ async function startBot() {
                     continue;
                 }
 
-                    continue;
-                }
-
                 // --- FITUR STATUS/STORY ---
                 const statusHandled = await statusFeatures.handleStatusUpdate(sock, msg, textContent, remoteJid, senderIsOwner);
                 if (statusHandled) continue;
