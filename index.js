@@ -1856,7 +1856,7 @@ async function startBot() {
                         // However, let's assume it works like other endpoints for now.
                         // Actually, Abstract API Screenshot usually returns the image directly.
                         // Let's refine fetchAbstract or use a direct fetch here.
-                        const key = abstract.getApiKey ? abstract.getApiKey() : '14de089a3b224f2fa1ea2b55f28ff5af';
+                        const key = abstract.getApiKey('other');
                         const ssUrl = `https://screenshots.abstractapi.com/v1/?api_key=${key}&url=${encodeURIComponent(url)}`;
                         await sock.sendMessage(remoteJid, { image: { url: ssUrl }, caption: `📸 Screenshot: ${url}` }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
