@@ -1009,7 +1009,7 @@ async function startBot() {
 ┣⌬ ${PREFIX}doa / .anime
 ┣⌬ ${PREFIX}hilih / .tts
 ┣⌬ ${PREFIX}ipstalk / .cekemail
-┣⌬ ${PREFIX}cekno / .kurs
+┣⌬ ${PREFIX}lacakno / .cekno / .kurs
 ┣⌬ ${PREFIX}timezone [kota/negara]
 ┣⌬ ${PREFIX}vat [no_vat]
 ┣⌬ ${PREFIX}company [domain]
@@ -1701,9 +1701,10 @@ async function startBot() {
                     continue;
                 }
 
-                // 31. CEK NO TELP (.cekno)
-                if (textContent.startsWith(PREFIX + 'cekno')) {
-                    const phone = textContent.slice((PREFIX + 'cekno').length).trim();
+                // 31. CEK NO TELP (.cekno / .lacakno)
+                if (textContent.startsWith(PREFIX + 'cekno') || textContent.startsWith(PREFIX + 'lacakno')) {
+                    const isLacak = textContent.startsWith(PREFIX + 'lacakno');
+                    const phone = textContent.slice(isLacak ? (PREFIX + 'lacakno').length : (PREFIX + 'cekno').length).trim();
                     if (!phone) {
                         await sock.sendMessage(remoteJid, { text: `📞 Masukkan nomor telp (dengan kode negara)!\nContoh: *${PREFIX}cekno 62812345678*` }, { quoted: msg });
                         continue;

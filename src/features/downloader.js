@@ -1,7 +1,7 @@
 const { logger } = require('../utils/logger');
 const crypto = require('crypto');
 
-const API_KEY = 'Btz-7cYq3';
+const API_KEY = process.env.BETABOTZ_API_KEY || 'Btz-7cYq3';
 const BETABOTZ_URL = 'https://api.betabotz.eu.org/api';
 const FREE_API_URL = 'https://api.siputzx.my.id/api';
 
@@ -183,6 +183,27 @@ async function ytmp3(query) {
         }
     } catch (e) { logger.warn('[YTMP3] Deline API failed: ' + e.message); }
 
+    // Attempt 3: Vreden API (Free)
+    try {
+        const res = await fetchWithTimeout(`https://api.vreden.my.id/api/ytmp3?url=${encodedUrl}`, { timeout: 8000 });
+        const json = await res.json();
+        if (json.status === 200 && json.result?.download?.url) {
+            return { title: json.result.title || 'YouTube Audio', url: json.result.download.url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Vreden API failed: ' + e.message); }
+
+    // Attempt 4: Lolhuman (Premium/Key Based)
+    const LOL_KEY = process.env.LOLHUMAN_API_KEY;
+    if (LOL_KEY) {
+        try {
+            const res = await fetchWithTimeout(`https://api.lolhuman.xyz/api/ytaudio2?apikey=${LOL_KEY}&url=${encodedUrl}`, { timeout: 10000 });
+            const json = await res.json();
+            if (json.status === 200 && json.result?.link) {
+                return { title: json.result.title || 'YouTube Audio', url: json.result.link };
+            }
+        } catch (e) { logger.warn('[YTMP3] Lolhuman API failed: ' + e.message); }
+    }
+
     return await fallbackDownload(`${FREE_API_URL}/d/ytmp3?url=`, '/download/ytmp3', url);
 }
 
@@ -222,6 +243,27 @@ async function ytmp4(query) {
             return { title: json.result.title || 'YouTube Video', url: dlUrl };
         }
     } catch (e) { logger.warn('[YTMP4] Deline API failed: ' + e.message); }
+
+    // Attempt 3: Vreden API (Free)
+    try {
+        const res = await fetchWithTimeout(`https://api.vreden.my.id/api/ytmp4?url=${encodedUrl}`, { timeout: 8000 });
+        const json = await res.json();
+        if (json.status === 200 && json.result?.download?.url) {
+            return { title: json.result.title || 'YouTube Video', url: json.result.download.url };
+        }
+    } catch (e) { logger.warn('[YTMP4] Vreden API failed: ' + e.message); }
+
+    // Attempt 4: Lolhuman
+    const LOL_KEY = process.env.LOLHUMAN_API_KEY;
+    if (LOL_KEY) {
+        try {
+            const res = await fetchWithTimeout(`https://api.lolhuman.xyz/api/ytvideo2?apikey=${LOL_KEY}&url=${encodedUrl}`, { timeout: 10000 });
+            const json = await res.json();
+            if (json.status === 200 && json.result?.link) {
+                return { title: json.result.title || 'YouTube Video', url: json.result.link };
+            }
+        } catch (e) { logger.warn('[YTMP4] Lolhuman API failed: ' + e.message); }
+    }
 
     return await fallbackDownload(`${FREE_API_URL}/d/ytmp4?url=`, '/download/ytmp4', url);
 }
