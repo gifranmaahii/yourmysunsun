@@ -45,6 +45,8 @@ const groupFeatures = require('./src/features/group');
 const lyricsFeatures = require('./src/features/lyrics');
 const ryzumi = require('./src/features/ryzumi');
 const channelCopier = require('./src/features/channelCopier');
+const abstract = require('./src/features/abstract');
+const phonespecs = require('./src/features/phonespecs');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -1008,6 +1010,12 @@ async function startBot() {
 ┣⌬ ${PREFIX}hilih / .tts
 ┣⌬ ${PREFIX}ipstalk / .cekemail
 ┣⌬ ${PREFIX}cekno / .kurs
+┣⌬ ${PREFIX}timezone [kota/negara]
+┣⌬ ${PREFIX}vat [no_vat]
+┣⌬ ${PREFIX}company [domain]
+┣⌬ ${PREFIX}ua [ua_string] / .abss [url]
+┣⌬ ${PREFIX}phone [query] / .latest
+┣⌬ ${PREFIX}brands / .topinterest
 ┗━━━━━━━◧
 
 ┏━『 *GAMES (2000+ Soal!)* 』
@@ -1726,7 +1734,6 @@ async function startBot() {
                     const target = args[1] || 'IDR';
                     await sock.sendMessage(remoteJid, { react: { text: '💱', key: msg.key } });
                     try {
-                        const abstract = require('./src/features/abstract');
                         const data = await abstract.exchangeRates(base, target);
                         let res = `💱 *E X C H A N G E  R A T E*\n\n` +
                                  `• *Base:* ${data.base}\n` +
@@ -1734,6 +1741,225 @@ async function startBot() {
                                  `• *Rate:* ${data.exchange_rates[target]}\n` +
                                  `• *Waktu:* ${data.last_updated}`;
                         await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 33. TIMEZONE (.timezone)
+                if (textContent.startsWith(PREFIX + 'timezone')) {
+                    const loc = textContent.slice((PREFIX + 'timezone').length).trim();
+                    if (!loc) {
+                        await sock.sendMessage(remoteJid, { text: `🕒 Masukkan lokasi!\nContoh: *${PREFIX}timezone Jakarta*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🕒', key: msg.key } });
+                    try {
+                        const data = await abstract.timezone(loc);
+                        let res = `🕒 *T I M E Z O N E*\n\n` +
+                                 `• *Lokasi:* ${data.requested_location}\n` +
+                                 `• *Waktu:* ${data.datetime}\n` +
+                                 `• *Zona:* ${data.timezone_name} (${data.timezone_abbreviation})\n` +
+                                 `• *Offset:* ${data.gmt_offset}`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 34. VAT (.vat)
+                if (textContent.startsWith(PREFIX + 'vat')) {
+                    const vat = textContent.slice((PREFIX + 'vat').length).trim();
+                    if (!vat) {
+                        await sock.sendMessage(remoteJid, { text: `💳 Masukkan nomor VAT!\nContoh: *${PREFIX}vat IE6388090M*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '💳', key: msg.key } });
+                    try {
+                        const data = await abstract.vatValidation(vat);
+                        let res = `💳 *V A T  V A L I D A T I O N*\n\n` +
+                                 `• *VAT Number:* ${data.vat_number}\n` +
+                                 `• *Valid:* ${data.valid}\n` +
+                                 `• *Company:* ${data.company_name}\n` +
+                                 `• *Address:* ${data.company_address}`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 35. COMPANY (.company)
+                if (textContent.startsWith(PREFIX + 'company')) {
+                    const domain = textContent.slice((PREFIX + 'company').length).trim();
+                    if (!domain) {
+                        await sock.sendMessage(remoteJid, { text: `🏢 Masukkan domain perusahaan!\nContoh: *${PREFIX}company google.com*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🏢', key: msg.key } });
+                    try {
+                        const data = await abstract.companyEnrichment(domain);
+                        let res = `🏢 *C O M P A N Y  E N R I C H M E N T*\n\n` +
+                                 `• *Nama:* ${data.name}\n` +
+                                 `• *Domain:* ${data.domain}\n` +
+                                 `• *Industri:* ${data.industry}\n` +
+                                 `• *Karyawan:* ${data.employees_count}\n` +
+                                 `• *Lokasi:* ${data.locality}, ${data.country}`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 36. USER AGENT (.ua)
+                if (textContent.startsWith(PREFIX + 'ua')) {
+                    const ua = textContent.slice((PREFIX + 'ua').length).trim();
+                    if (!ua) {
+                        await sock.sendMessage(remoteJid, { text: `💻 Masukkan User Agent string!` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '💻', key: msg.key } });
+                    try {
+                        const data = await abstract.userAgent(ua);
+                        let res = `💻 *U S E R  A G E N T*\n\n` +
+                                 `• *Browser:* ${data.browser.name} ${data.browser.version}\n` +
+                                 `• *OS:* ${data.os.name} ${data.os.version}\n` +
+                                 `• *Device:* ${data.device.type} (${data.device.brand})`;
+                        await sock.sendMessage(remoteJid, { text: res }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 37. ABSTRACT SS (.abss)
+                if (textContent.startsWith(PREFIX + 'abss')) {
+                    const url = textContent.slice((PREFIX + 'abss').length).trim();
+                    if (!url) {
+                        await sock.sendMessage(remoteJid, { text: `📸 Masukkan URL!\nContoh: *${PREFIX}abss google.com*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📸', key: msg.key } });
+                    try {
+                        // Abstract Screenshot returns image URL or binary
+                        // In our abstract.js, fetchAbstract returns json. 
+                        // But for screenshots, it might return a different format or we need to use the URL directly.
+                        // However, let's assume it works like other endpoints for now.
+                        // Actually, Abstract API Screenshot usually returns the image directly.
+                        // Let's refine fetchAbstract or use a direct fetch here.
+                        const key = abstract.getApiKey ? abstract.getApiKey() : '14de089a3b224f2fa1ea2b55f28ff5af';
+                        const ssUrl = `https://screenshots.abstractapi.com/v1/?api_key=${key}&url=${encodeURIComponent(url)}`;
+                        await sock.sendMessage(remoteJid, { image: { url: ssUrl }, caption: `📸 Screenshot: ${url}` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 38. PHONE SPECS (.phone / .hp)
+                if (textContent.startsWith(PREFIX + 'phone') || textContent.startsWith(PREFIX + 'hp')) {
+                    const query = textContent.slice(textContent.startsWith(PREFIX + 'phone') ? (PREFIX + 'phone').length : (PREFIX + 'hp').length).trim();
+                    if (!query) {
+                        await sock.sendMessage(remoteJid, { text: `📱 Masukkan nama HP!\nContoh: *${PREFIX}phone iPhone 15*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '📱', key: msg.key } });
+                    try {
+                        const data = await phonespecs.searchPhones(query);
+                        if (!data || data.phones.length === 0) throw new Error('HP tidak ditemukan.');
+                        
+                        if (data.phones.length > 1) {
+                            let list = `📱 *HASIL PENCARIAN HP*\n\n`;
+                            data.phones.slice(0, 10).forEach((h, i) => list += `${i + 1}. ${h.phone_name}\n🔗 ID: ${h.slug}\n\n`);
+                            list += `💡 Gunakan *${PREFIX}phone [slug]* untuk spek lengkap.`;
+                            await sock.sendMessage(remoteJid, { text: list }, { quoted: msg });
+                        } else {
+                            const slug = data.phones[0].slug;
+                            const detail = await phonespecs.getPhoneDetail(slug);
+                            if (!detail) throw new Error('Gagal mengambil detail HP.');
+                            
+                            let caption = `📱 *D E T A I L  H P*\n\n` +
+                                         `• *Nama:* ${detail.phone_name}\n` +
+                                         `• *Brand:* ${detail.brand}\n` +
+                                         `• *Rilis:* ${detail.release_date}\n` +
+                                         `• *OS:* ${detail.os}\n` +
+                                         `• *Storage:* ${detail.storage}\n\n` +
+                                         `*Spesifikasi:* \n${detail.specifications.slice(0, 5).map(s => `*${s.title}:* ${s.specs.slice(0, 2).map(ss => `${ss.key}: ${ss.val}`).join(', ')}`).join('\n')}`;
+                            
+                            await sock.sendMessage(remoteJid, { image: { url: detail.phone_images[0] }, caption }, { quoted: msg });
+                        }
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        // Jika input berupa slug langsung
+                        try {
+                            const detail = await phonespecs.getPhoneDetail(query);
+                            if (detail) {
+                                let caption = `📱 *D E T A I L  H P*\n\n` +
+                                             `• *Nama:* ${detail.phone_name}\n` +
+                                             `• *Brand:* ${detail.brand}\n` +
+                                             `• *Rilis:* ${detail.release_date}\n` +
+                                             `• *OS:* ${detail.os}\n` +
+                                             `• *Storage:* ${detail.storage}\n\n` +
+                                             `*Spesifikasi:* \n${detail.specifications.slice(0, 5).map(s => `*${s.title}:* ${s.specs.slice(0, 2).map(ss => `${ss.key}: ${ss.val}`).join(', ')}`).join('\n')}`;
+                                await sock.sendMessage(remoteJid, { image: { url: detail.phone_images[0] }, caption }, { quoted: msg });
+                                await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                                continue;
+                            }
+                        } catch (_) {}
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 39. LATEST PHONES (.latest)
+                if (textContent.startsWith(PREFIX + 'latest')) {
+                    await sock.sendMessage(remoteJid, { react: { text: '🆕', key: msg.key } });
+                    try {
+                        const data = await phonespecs.getLatestPhones();
+                        let list = `🆕 *HP TERBARU*\n\n`;
+                        data.phones.slice(0, 10).forEach((h, i) => list += `${i + 1}. ${h.phone_name} (${h.slug})\n`);
+                        list += `\n💡 Gunakan *${PREFIX}phone [slug]* untuk spek lengkap.`;
+                        await sock.sendMessage(remoteJid, { text: list }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 40. BRANDS (.brands)
+                if (textContent.startsWith(PREFIX + 'brands')) {
+                    await sock.sendMessage(remoteJid, { react: { text: '🏷️', key: msg.key } });
+                    try {
+                        const data = await phonespecs.getBrands();
+                        let list = `🏷️ *DAFTAR BRAND HP*\n\n`;
+                        data.slice(0, 20).forEach((b, i) => list += `• ${b.brand_name} (${b.brand_slug})\n`);
+                        list += `\n_Dan masih banyak lagi..._`;
+                        await sock.sendMessage(remoteJid, { text: list }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 41. TOP PHONES (.topinterest)
+                if (textContent.startsWith(PREFIX + 'topinterest')) {
+                    await sock.sendMessage(remoteJid, { react: { text: '🔥', key: msg.key } });
+                    try {
+                        const data = await phonespecs.getTopPhones('interest');
+                        let list = `🔥 *HP PALING DIMINATI*\n\n`;
+                        data.phones.slice(0, 10).forEach((h, i) => list += `${i + 1}. ${h.phone_name} (${h.slug})\n`);
+                        await sock.sendMessage(remoteJid, { text: list }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });

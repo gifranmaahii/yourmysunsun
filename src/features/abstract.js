@@ -96,10 +96,51 @@ async function getHolidays(country, year, month, day) {
     return await fetchAbstract('https://holidays.abstractapi.com/v1/', params);
 }
 
+/**
+ * Timezone
+ */
+async function timezone(location) {
+    return await fetchAbstract('https://timezone.abstractapi.com/v1/', { location });
+}
+
+/**
+ * VAT Validation
+ */
+async function vatValidation(vat_number) {
+    return await fetchAbstract('https://vatvalidation.abstractapi.com/v1/', { vat_number });
+}
+
+/**
+ * Company Enrichment
+ */
+async function companyEnrichment(domain) {
+    return await fetchAbstract('https://companyenrichment.abstractapi.com/v1/', { domain });
+}
+
+/**
+ * Website Screenshot
+ */
+async function websiteScreenshot(url) {
+    return await fetchAbstract('https://screenshots.abstractapi.com/v1/', { url });
+}
+
+/**
+ * User Agent
+ */
+async function userAgent(ua_string) {
+    return await fetchAbstract('https://useragent.abstractapi.com/v1/', { ua_string });
+}
+
 module.exports = {
     ipGeolocation,
     emailVerification,
     phoneValidation,
     exchangeRates,
-    getHolidays
+    getHolidays,
+    timezone,
+    vatValidation,
+    companyEnrichment,
+    websiteScreenshot,
+    userAgent,
+    getApiKey
 };
