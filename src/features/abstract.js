@@ -47,11 +47,12 @@ async function fetchAbstract(urlBase, params = {}) {
             }
 
             if (res.status === 401 || (json.error && (json.error.code === 'unauthorized' || json.error.message.includes('API key')))) {
-                logger.warn(`[ABSTRACT] Key ${key.substring(0, 5)}... tidak valid untuk endpoint ini, mencoba key berikutnya.`);
+                logger.warn(`[ABSTRACT] Key ${key.substring(0, 5)}... tidak valid untuk endpoint ini. Response: ${JSON.stringify(json)}`);
                 continue;
             }
 
             if (!res.ok) {
+                logger.error(`[ABSTRACT] Error Response: ${JSON.stringify(json)}`);
                 throw new Error(json.error?.message || `HTTP Error ${res.status}`);
             }
 
