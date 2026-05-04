@@ -959,7 +959,7 @@ async function startBot() {
 ┣⌬ ${PREFIX}sticker
 ┣⌬ ${PREFIX}qc (Quotly)
 ┣⌬ ${PREFIX}toimg / .tovid
-┣⌬ ${PREFIX}lottie
+┣⌬ ${PREFIX}lottie / .ssearch
 ┗━━━━━━━◧
 
 ┏━『 *RYZUMI PREMIUM AI* 』
@@ -1005,6 +1005,7 @@ async function startBot() {
 ┣⌬ ${PREFIX}cuaca / .zodiak
 ┣⌬ ${PREFIX}stalkgh [user]
 ┣⌬ ${PREFIX}doa / .anime
+┣⌬ ${PREFIX}hilih / .tts
 ┗━━━━━━━◧
 
 ┏━『 *GAMES (2000+ Soal!)* 』
@@ -1529,6 +1530,64 @@ async function startBot() {
                                      `*Sinopsis:* ${data.synopsis ? (data.synopsis.substring(0, 500) + '...') : '-'}\n\n` +
                                      `🔗 *MAL URL:* ${data.url}`;
                         await sock.sendMessage(remoteJid, { image: { url: data.images.jpg.large_image_url }, caption }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 25. HILIH (.hilih)
+                if (textContent.startsWith(PREFIX + 'hilih')) {
+                    const text = textContent.slice((PREFIX + 'hilih').length).trim();
+                    if (!text) {
+                        await sock.sendMessage(remoteJid, { text: `ℹ️ Masukkan teks!\nContoh: *${PREFIX}hilih aku sayang kamu*` }, { quoted: msg });
+                        continue;
+                    }
+                    const result = tools.hilih(text);
+                    await sock.sendMessage(remoteJid, { text: result }, { quoted: msg });
+                    continue;
+                }
+
+                // 26. TTS (.tts)
+                if (textContent.startsWith(PREFIX + 'tts')) {
+                    const args = textContent.slice((PREFIX + 'tts').length).trim().split(' ');
+                    const lang = args[0];
+                    const text = args.slice(1).join(' ');
+                    if (!lang || !text) {
+                        await sock.sendMessage(remoteJid, { text: `🗣️ *Google TTS*\n\nContoh: *${PREFIX}tts id halo bos*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🗣️', key: msg.key } });
+                    try {
+                        const buffer = await tools.getTTS(text, lang);
+                        const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
+                        const opus = await convertToOggOpus(buffer);
+                        await sock.sendMessage(remoteJid, { audio: opus, mimetype: 'audio/ogg; codecs=opus', ptt: true, waveform: generateWaveform() }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
+                    } catch (e) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // 27. STICKER SEARCH (.ssearch)
+                if (textContent.startsWith(PREFIX + 'ssearch')) {
+                    const query = textContent.slice((PREFIX + 'ssearch').length).trim();
+                    if (!query) {
+                        await sock.sendMessage(remoteJid, { text: `🔍 Cari sticker apa?\nContoh: *${PREFIX}ssearch patrick*` }, { quoted: msg });
+                        continue;
+                    }
+                    await sock.sendMessage(remoteJid, { react: { text: '🔍', key: msg.key } });
+                    try {
+                        const data = await tools.searchSticker(query);
+                        if (!data || data.length === 0) throw new Error('Sticker tidak ditemukan.');
+                        
+                        // Kirim 3 sticker random dari hasil pencarian
+                        const results = data.slice(0, 3);
+                        for (let url of results) {
+                            await sock.sendMessage(remoteJid, { sticker: { url } }, { quoted: msg });
+                        }
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
@@ -5027,7 +5086,7 @@ async function startBot() {
 ┣⌬ ${PREFIX}sticker
 ┣⌬ ${PREFIX}qc (Quotly)
 ┣⌬ ${PREFIX}toimg / .tovid
-┣⌬ ${PREFIX}lottie
+┣⌬ ${PREFIX}lottie / .ssearch
 ┗━━━━━━━◧
 
 ┏━『 *RYZUMI PREMIUM AI* 』

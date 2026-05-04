@@ -303,6 +303,44 @@ async function getAnime(judul) {
     return null;
 }
 
+/**
+ * Hilih Generator
+ */
+function hilih(text) {
+    return text.replace(/[aeiou]/g, 'i').replace(/[AEIOU]/g, 'I');
+}
+
+/**
+ * Sticker Search
+ */
+async function searchSticker(query) {
+    try {
+        const res = await fetch(`https://api.agatz.xyz/api/sticker?message=${encodeURIComponent(query)}`);
+        const json = await res.json();
+        if (json.status === 200 && json.data) {
+            return json.data;
+        }
+    } catch (e) {
+        logger.error('[TOOLS] Sticker Search failed: ' + e.message);
+    }
+    return null;
+}
+
+/**
+ * Google TTS
+ */
+async function getTTS(text, lang = 'id') {
+    try {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
+        const res = await fetch(url);
+        const arrayBuffer = await res.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+    } catch (e) {
+        logger.error('[TOOLS] TTS failed: ' + e.message);
+    }
+    return null;
+}
+
 module.exports = {
     pinterestSearch,
     ssweb,
@@ -321,5 +359,8 @@ module.exports = {
     getZodiac,
     githubStalk,
     getDoa,
-    getAnime
+    getAnime,
+    hilih,
+    searchSticker,
+    getTTS
 };
