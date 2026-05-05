@@ -126,14 +126,15 @@ async function handleCopier(sock, msg) {
         unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'editedMessage';
     }
     
-    // Log tipe pesan yang masuk
-    const msgType = Object.keys(message || {})[0];
-    console.log(`[DEBUG COPIER] Tipe pesan: ${msgType}${unwrappedFrom ? ` (Unwrapped: ${unwrappedFrom})` : ''}`);
+    if (!message || message.protocolMessage) return false;
 
-    if (!message || message.protocolMessage) {
-        console.log(`[DEBUG COPIER] Pesan diabaikan (kosong atau protocolMessage)`);
-        return false;
-    }
+    // Deteksi Tipe & Extract Content
+    const isImage = !!message.imageMessage;
+    const isVideo = !!message.videoMessage;
+    const isSticker = !!(message.stickerMessage || message.lottieStickerMessage);
+    const isAudio = !!message.audioMessage;
+    const isDocument = !!message.documentMessage;
+    const isText = !!(message.conversation || message.extendedTextMessage) && !isImage && !isVideo && !isSticker && !isAudio && !isDocument;
 
     const textContent = 
         message.conversation || 
@@ -144,15 +145,10 @@ async function handleCopier(sock, msg) {
         '';
 
     const isLink = /(https?:\/\/[^\s]+)/g.test(textContent);
-
-    const isText = !!(message.conversation || message.extendedTextMessage);
-    const isImage = !!message.imageMessage;
-    const isVideo = !!message.videoMessage;
-    const isSticker = !!message.stickerMessage;
-    const isAudio = !!message.audioMessage;
-    const isDocument = !!message.documentMessage;
-
-    console.log(`[DEBUG COPIER] Content: text=${isText}, img=${isImage}, vid=${isVideo}, sticker=${isSticker}, audio=${isAudio}, doc=${isDocument}`);
+    
+    // Log tipe pesan yang masuk
+    const msgType = Object.keys(message || {})[0];
+    console.log(`[DEBUG COPIER] Tipe: ${msgType}, isText: ${isText}, isSticker: ${isSticker}, textLen: ${textContent.length}`);
 
     // Jalankan tiap tugas yang cocok
     for (const job of activeJobs) {
@@ -164,7 +160,7 @@ async function handleCopier(sock, msg) {
             console.log(`[DEBUG COPIER] Job ${job.id} skip: contains link`);
             continue;
         }
-        if (isText && !isImage && !isVideo && !isSticker && !isAudio && !isDocument && !s.allowText) {
+        if (isText && !s.allowText) {
             console.log(`[DEBUG COPIER] Job ${job.id} skip: allowText is OFF`);
             continue;
         }
@@ -180,9 +176,12 @@ async function handleCopier(sock, msg) {
             console.log(`[DEBUG COPIER] Job ${job.id} skip: allowSticker is OFF`);
             continue;
         }
-        // Audio & Document as Text/Media (Bisa diperluas settingnya nanti, sementara ikuti allowText)
-        if ((isAudio || isDocument) && !s.allowText) {
-            console.log(`[DEBUG COPIER] Job ${job.id} skip: Audio/Doc but allowText is OFF`);
+        if (isAudio && !s.allowText) { // Audio sementara ikut allowText
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: allowAudio (allowText) is OFF`);
+            continue;
+        }
+        if (isDocument && !s.allowText) { // Doc sementara ikut allowText
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: allowDocument (allowText) is OFF`);
             continue;
         }
 
@@ -199,7 +198,7 @@ async function handleCopier(sock, msg) {
                 if (s.rewriteText && finalCaption) finalCaption = await rewriteWithGemini(finalCaption);
 
                 let sendObj = null;
-                if (isText && !isImage && !isVideo && !isSticker && !isAudio && !isDocument) {
+                if (isText) {
                     sendObj = { text: finalCaption };
                 } else {
                     const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
@@ -210,9 +209,9 @@ async function handleCopier(sock, msg) {
                     } else if (isVideo) {
                         sendObj = { video: buffer, caption: finalCaption };
                     } else if (isAudio) {
-                        sendObj = { audio: buffer, mimetype: message.audioMessage.mimetype, ptt: message.audioMessage.ptt };
+                        sendObj = { audio: buffer, mimetype: message.audioMessage?.mimetype || 'audio/ogg; codecs=opus', ptt: message.audioMessage?.ptt || false };
                     } else if (isDocument) {
-                        sendObj = { document: buffer, mimetype: message.documentMessage.mimetype, fileName: message.documentMessage.fileName, caption: finalCaption };
+                        sendObj = { document: buffer, mimetype: message.documentMessage?.mimetype, fileName: message.documentMessage?.fileName, caption: finalCaption };
                     }
                 }
 
