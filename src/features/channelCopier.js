@@ -345,7 +345,7 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
         const s = job.settings;
         const info = `📊 *CONFIG COPIER: ${id}*\n` +
             `━━━━━━━━━━━━━━━━━━━━\n` +
-            `• Status: *${job.active ? 'AKTIF' : 'MATI'}*\n` +
+            `• Status: *${job.active ? '✅ AKTIF' : '❌ MATI'}*\n` +
             `• Sumber: ${job.sourceJid}\n` +
             `• Tujuan: ${job.targetJid}\n` +
             `• Creator: ${job.creator}\n\n` +
@@ -400,34 +400,50 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
     if (cmd === 'set') {
         const id = args[2]?.toUpperCase();
         const key = args[3];
-        let val = args.slice(4).join(' ');
+        const rawVal = args.slice(4).join(' ').toLowerCase().trim();
         const job = db.jobs.find(j => j.id === id && (j.creator === cleanSender || senderIsOwner));
         if (!job) return sock.sendMessage(remoteJid, { text: `❌ ID tidak valid.` }, { quoted: msg });
 
         const s = job.settings;
         let success = true;
+        const isOn = (rawVal === 'on' || rawVal === 'true' || rawVal === '1' || rawVal === 'aktif' || rawVal === 'yes');
 
         switch(key) {
-            case 'delay': s.delayMinutes = parseInt(val) || 0; break;
-            case 'rewrite': s.rewriteText = (val === 'on'); break;
-            case 'skipurl': s.skipLinks = (val === 'on'); break;
-            case 'allowText': s.allowText = (val === 'on'); break;
-            case 'allowImage': if (isVIP) s.allowImage = (val === 'on'); else success = false; break;
-            case 'allowVideo': if (isVIP) s.allowVideo = (val === 'on'); else success = false; break;
-            case 'allowSticker': s.allowSticker = (val === 'on'); break;
+            case 'delay': s.delayMinutes = parseInt(rawVal) || 0; break;
+            case 'rewrite': s.rewriteText = isOn; break;
+            case 'skipurl': s.skipLinks = isOn; break;
+            case 'allowtext': 
+            case 'allowText': s.allowText = isOn; break;
+            case 'allowimage':
+            case 'allowImage': s.allowImage = isOn; break;
+            case 'allowvideo':
+            case 'allowVideo': 
+                if (isVIP) s.allowVideo = isOn; 
+                else {
+                    return sock.sendMessage(remoteJid, { text: `❌ Kamu tidak punya akses VIP untuk mengaktifkan fitur Video.` }, { quoted: msg });
+                }
+                break;
+            case 'allowsticker':
+            case 'allowSticker': s.allowSticker = isOn; break;
             case 'sticker': 
-                const p = val.split('|');
+                const p = args.slice(4).join(' ').split('|');
                 if (p.length < 2) { success = false; break; }
                 s.stickerPack = p[0].trim(); s.stickerAuthor = p[1].trim();
                 break;
+            case 'on': 
+            case 'aktif':
+                job.active = true; break;
+            case 'off':
+            case 'mati':
+                job.active = false; break;
             default: success = false;
         }
 
         if (success) {
             saveDB();
-            await sock.sendMessage(remoteJid, { text: `✅ Berhasil update settingan *${key}* untuk tugas ${id}.` }, { quoted: msg });
+            await sock.sendMessage(remoteJid, { text: `✅ Berhasil update settingan *${key}* untuk tugas ${id}.\nKetik *.copier status ${id}* untuk melihat perubahan.` }, { quoted: msg });
         } else {
-            await sock.sendMessage(remoteJid, { text: `❌ Gagal update. Pastikan key/value benar dan kamu punya akses VIP jika ingin mengaktifkan Video.` }, { quoted: msg });
+            await sock.sendMessage(remoteJid, { text: `❌ Gagal update. Key/Value tidak dikenali.\nContoh: *.copier set ${id} allowText on*` }, { quoted: msg });
         }
         return true;
     }
