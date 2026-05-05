@@ -155,7 +155,6 @@ async function handleCopier(sock, msg) {
         const s = job.settings;
         
         // Filter Dasar
-        // Filter Dasar
         if (s.skipLinks && isLink) {
             console.log(`[DEBUG COPIER] Job ${job.id} skip: contains link`);
             continue;
@@ -238,16 +237,18 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
     const cleanSender = cfg.cleanNumber(sender);
     const prefix = cfg.getConfig().prefix || '.';
     
-    if (!textContent.startsWith(prefix + 'copier')) return false;
+    // Normalisasi command (case-insensitive)
+    const lowerText = textContent.toLowerCase().trim();
+    if (!lowerText.startsWith(prefix + 'copier')) return false;
+
+    console.log(`[DEBUG COPIER] Command detected: ${textContent}`);
 
     const args = textContent.trim().split(/\s+/);
     const cmd = args[1]?.toLowerCase();
     const isVIP = db.vips.includes(cleanSender) || senderIsOwner;
 
-    // Akses publik terbatas: Hanya Owner atau yang diizinkan owner bisa pakai fitur ini
-    // Atau bisa juga: Siapapun boleh pakai tapi hanya Teks/Stiker. 
-    // Di sini saya buat: Hanya yang di-VIP/Owner yang bisa add job.
-    if (!isVIP && !senderIsOwner && cmd !== 'status' && cmd !== 'list') {
+    // Akses publik terbatas
+    if (!isVIP && cmd !== 'status' && cmd !== 'list' && cmd !== undefined) {
         return sock.sendMessage(remoteJid, { text: `❌ Maaf, fitur Auto Copier ini terbatas. Hubungi Owner untuk mendapatkan akses.` }, { quoted: msg });
     }
 
@@ -273,6 +274,7 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
         const sub = args[2]?.toLowerCase();
         const num = cfg.cleanNumber(args[3]);
         if (!num) return sock.sendMessage(remoteJid, { text: `❌ Masukkan nomor!` }, { quoted: msg });
+        
         if (sub === 'add') {
             if (!db.vips.includes(num)) db.vips.push(num);
             saveDB();
@@ -300,12 +302,12 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
             active: true,
             settings: {
                 delayMinutes: 0,
-                rewriteText: false, // Default OFF agar tidak merusak formatting asli
-                skipLinks: false,   // Default OFF agar link tetap ikut ter-copy
-                allowText: true,    // Default ON
-                allowImage: true,   // Default ON
-                allowVideo: false,  // Video default OFF (hemat kuota)
-                allowSticker: true, // Default ON
+                rewriteText: false,
+                skipLinks: false,
+                allowText: true,
+                allowImage: true,
+                allowVideo: false,
+                allowSticker: true,
                 stickerPack: 'Copied By Robby',
                 stickerAuthor: 'Robby Bot'
             }
