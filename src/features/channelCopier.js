@@ -47,7 +47,12 @@ function loadDB() {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         if (fs.existsSync(DATABASE_PATH)) {
             const data = fs.readFileSync(DATABASE_PATH, 'utf8');
-            db = { ...db, ...JSON.parse(data) };
+            const parsed = JSON.parse(data);
+            db.jobs = parsed.jobs || [];
+            db.vips = parsed.vips || [];
+            console.log(`[DEBUG COPIER] Database loaded! Jobs: ${db.jobs.length}, VIPs: ${db.vips.length}`);
+        } else {
+            console.log(`[DEBUG COPIER] Database file not found at ${DATABASE_PATH}. Creating new one.`);
         }
     } catch (e) {
         logger.error('Gagal meload database channelCopier: ' + e.message);
@@ -88,12 +93,13 @@ async function handleCopier(sock, msg) {
     const remoteJid = msg.key.remoteJid;
     if (!remoteJid.endsWith('@newsletter')) return false;
 
-    // Cari tugas yang menggunakan newsletter ini sebagai sumber
-    const activeJobs = db.jobs.filter(j => j.active && j.sourceJid.trim().toLowerCase() === remoteJid.trim().toLowerCase());
-    
     // DEBUG LOG
     console.log(`\n[DEBUG COPIER] Mendeteksi pesan dari saluran: ${remoteJid}`);
-    console.log(`[DEBUG COPIER] Jumlah tugas aktif untuk saluran ini: ${activeJobs.length}`);
+    console.log(`[DEBUG COPIER] Daftar Sumber di DB: ${db.jobs.map(j => j.sourceJid).join(', ')}`);
+    
+    // Cari tugas yang menggunakan newsletter ini sebagai sumber
+    const activeJobs = db.jobs.filter(j => j.active && j.sourceJid.trim().toLowerCase() === remoteJid.trim().toLowerCase());
+    console.log(`[DEBUG COPIER] Jumlah tugas cocok: ${activeJobs.length}`);
 
     if (activeJobs.length === 0) return false;
 
@@ -241,11 +247,13 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
     const lowerText = textContent.toLowerCase().trim();
     if (!lowerText.startsWith(prefix + 'copier')) return false;
 
-    console.log(`[DEBUG COPIER] Command detected: ${textContent}`);
-
     const args = textContent.trim().split(/\s+/);
     const cmd = args[1]?.toLowerCase();
     const isVIP = db.vips.includes(cleanSender) || senderIsOwner;
+
+    console.log(`\n[DEBUG COPIER] Command detected!`);
+    console.log(`[DEBUG COPIER] Text: "${textContent}"`);
+    console.log(`[DEBUG COPIER] Sender: ${cleanSender}, Owner: ${senderIsOwner}, VIP: ${isVIP}`);
 
     // Akses publik terbatas
     if (!isVIP && cmd !== 'status' && cmd !== 'list' && cmd !== undefined) {

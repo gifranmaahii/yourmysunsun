@@ -943,8 +943,14 @@ async function startBot() {
                 if (groupCmdHandled) continue;
 
                 // --- FITUR MULTI-COPIER ---
+                if (textContent.toLowerCase().startsWith(PREFIX + 'copier')) {
+                    console.log(`[DEBUG] Copier command detected in index.js: "${textContent}"`);
+                }
                 const copierHandled = await channelCopier.handleCommand(sock, remoteJid, msg, textContent, senderIsOwner);
-                if (copierHandled) continue;
+                if (copierHandled) {
+                    console.log(`[DEBUG] Copier command handled: ${textContent}`);
+                    continue;
+                }
 
                 // -----------------------------------------------
                 // BANTUAN: .help atau .menu
