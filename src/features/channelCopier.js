@@ -269,7 +269,8 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
             `┣⌬ ${prefix}copier status <id> (Cek detail)\n` +
             `┣⌬ ${prefix}copier set <id> <key> <val>\n` +
             `┣⌬ ${prefix}copier on/off <id>\n` +
-            `┣⌬ ${prefix}copier delete <id>\n\n` +
+            `┣⌬ ${prefix}copier delete <id>\n` +
+            `┣⌬ ${prefix}copier deleteall (Hapus semua list)\n\n` +
             `*Keys for setting:*\n` +
             `delay (menit), rewrite (on/off), skipurl (on/off),\n` +
             `allowText, allowImage, allowVideo, allowSticker (on/off)\n\n` +
@@ -379,6 +380,20 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
         db.jobs.splice(idx, 1);
         saveDB();
         await sock.sendMessage(remoteJid, { text: `✅ Tugas ${id} berhasil dihapus.` }, { quoted: msg });
+        return true;
+    }
+
+    if (cmd === 'deleteall') {
+        const countBefore = db.jobs.length;
+        if (senderIsOwner) {
+            db.jobs = [];
+        } else {
+            db.jobs = db.jobs.filter(j => j.creator !== cleanSender);
+        }
+        const countAfter = db.jobs.length;
+        const deleted = countBefore - countAfter;
+        saveDB();
+        await sock.sendMessage(remoteJid, { text: `✅ Berhasil menghapus ${deleted} tugas copier.` }, { quoted: msg });
         return true;
     }
 
