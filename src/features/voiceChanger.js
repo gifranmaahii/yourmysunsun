@@ -17,7 +17,7 @@ async function applyVoiceFilter(audioBuffer, filterType) {
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
         const inputPath = path.join(tempDir, `vcin_${tempId}.mp3`);
-        const outputPath = path.join(tempDir, `vcout_${tempId}.opus`);
+        const outputPath = path.join(tempDir, `vcout_${tempId}.ogg`);
 
         fs.writeFileSync(inputPath, audioBuffer);
 
@@ -72,13 +72,15 @@ async function applyVoiceFilter(audioBuffer, filterType) {
         }
 
         command
+            .audioCodec('libopus')
             .outputOptions([
-                '-c:a libopus',
+                '-ac 1',
+                '-ar 48000',
                 '-b:a 128k',
-                '-vbr on',
-                '-compression_level 10'
+                '-map_metadata -1',
+                '-vn'
             ])
-            .toFormat('opus')
+            .toFormat('ogg')
             .on('end', () => {
                 try {
                     const buffer = fs.readFileSync(outputPath);

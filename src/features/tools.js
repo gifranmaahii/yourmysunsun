@@ -162,10 +162,10 @@ async function getQuote() {
  */
 async function simSimi(text) {
     try {
-        const res = await fetch(`https://api.simsimi.vn/v2/simsimi?text=${encodeURIComponent(text)}&lc=id`);
+        const res = await fetch(`https://api.siputzx.my.id/api/ai/simsimi?query=${encodeURIComponent(text)}`);
         const json = await res.json();
-        if (json.success) {
-            return json.success;
+        if (json.status && json.data) {
+            return json.data;
         }
     } catch (e) {
         logger.error('[TOOLS] SimSimi failed: ' + e.message);
@@ -178,9 +178,9 @@ async function simSimi(text) {
  */
 async function getKBBI(kata) {
     try {
-        const res = await fetch(`https://api.agatz.xyz/api/kbbi?message=${encodeURIComponent(kata)}`);
+        const res = await fetch(`https://api.siputzx.my.id/api/s/kbbi?q=${encodeURIComponent(kata)}`);
         const json = await res.json();
-        if (json.status === 200 && json.data) {
+        if (json.status && json.data) {
             return json.data;
         }
     } catch (e) {
@@ -226,9 +226,9 @@ async function translate(text, to = 'id') {
  */
 async function getWeather(kota) {
     try {
-        const res = await fetch(`https://api.agatz.xyz/api/weather?message=${encodeURIComponent(kota)}`);
+        const res = await fetch(`https://api.siputzx.my.id/api/info/cuaca?q=${encodeURIComponent(kota)}`);
         const json = await res.json();
-        if (json.status === 200 && json.data) {
+        if (json.status && json.data) {
             return json.data;
         }
     } catch (e) {
@@ -242,9 +242,17 @@ async function getWeather(kota) {
  */
 async function getZodiac(zodiak) {
     try {
-        const res = await fetch(`https://api.agatz.xyz/api/zodiac?message=${encodeURIComponent(zodiak)}`);
+        // Map common misspellings/Indonesian names
+        const map = {
+            'aries': 'aries', 'taurus': 'taurus', 'gemini': 'gemini', 'cancer': 'cancer',
+            'leo': 'leo', 'virgo': 'virgo', 'firgo': 'virgo', 'birgo': 'virgo',
+            'libra': 'libra', 'scorpio': 'scorpio', 'sagitarius': 'sagittarius', 'sagittarius': 'sagittarius',
+            'capricorn': 'capricorn', 'aquarius': 'aquarius', 'pisces': 'pisces', 'pises': 'pisces'
+        };
+        const query = map[zodiak.toLowerCase()] || zodiak;
+        const res = await fetch(`https://api.siputzx.my.id/api/primbon/zodiak?zodiak=${encodeURIComponent(query)}`);
         const json = await res.json();
-        if (json.status === 200 && json.data) {
+        if (json.status && json.data) {
             return json.data;
         }
     } catch (e) {
@@ -274,13 +282,16 @@ async function githubStalk(username) {
  */
 async function getDoa(query = '') {
     try {
-        // Jika query kosong, ambil daftar random atau semua (tergantung API)
-        const endpoint = query ? `https://api.agatz.xyz/api/doa?message=${encodeURIComponent(query)}` : `https://api.agatz.xyz/api/doa`;
+        // Menggunakan Islamic API yang lebih stabil
+        const endpoint = query 
+            ? `https://doa-doa-api-ahmadramadhan.fly.dev/api/doa/${encodeURIComponent(query)}`
+            : `https://doa-doa-api-ahmadramadhan.fly.dev/api`;
         const res = await fetch(endpoint);
         const json = await res.json();
-        if (json.status === 200 && json.data) {
-            return json.data;
-        }
+        
+        // Handle response array (list) atau single object (search)
+        if (Array.isArray(json)) return json;
+        if (json.id || json.doa) return json;
     } catch (e) {
         logger.error('[TOOLS] Doa failed: ' + e.message);
     }
@@ -346,9 +357,9 @@ async function getTTS(text, lang = 'id') {
  */
 async function searchGsm(query) {
     try {
-        const res = await fetch(`https://api.agatz.xyz/api/gsmarena?message=${encodeURIComponent(query)}`);
+        const res = await fetch(`https://api.siputzx.my.id/api/s/gsmarena?query=${encodeURIComponent(query)}`);
         const json = await res.json();
-        if (json.status === 200 && json.data) {
+        if (json.status && json.data) {
             return json.data;
         }
     } catch (e) {
@@ -362,9 +373,9 @@ async function searchGsm(query) {
  */
 async function detailGsm(url) {
     try {
-        const res = await fetch(`https://api.agatz.xyz/api/gsmarena/detail?url=${encodeURIComponent(url)}`);
+        const res = await fetch(`https://api.siputzx.my.id/api/s/gsmarena/detail?url=${encodeURIComponent(url)}`);
         const json = await res.json();
-        if (json.status === 200 && json.data) {
+        if (json.status && json.data) {
             return json.data;
         }
     } catch (e) {

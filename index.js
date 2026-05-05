@@ -429,11 +429,10 @@ async function startBot() {
     }
 
     // Buat socket WA
-    // PENTING: Untuk Pairing Code, browser HARUS diset ke Chrome/Ubuntu
-    // Jika pakai 'WhatsApp Desktop', server WA tidak akan mengirim notif ke HP
+    // Gunakan Browsers.windows('Desktop') agar muncul tulisan "Windows" dan warna Hijau
     const browserConfig = usePairingCode
-        ? Browsers.ubuntu('Chrome')
-        : ['WhatsApp', 'Desktop', '3.0'];
+        ? Browsers.ubuntu('Chrome') 
+        : Browsers.windows('Desktop');
     
     logger.info(`🌐 Browser config: ${JSON.stringify(browserConfig)} (pairing: ${usePairingCode})`);
 
@@ -450,7 +449,7 @@ async function startBot() {
         printQRInTerminal: !usePairingCode,
         browser: browserConfig,
         syncFullHistory: !IS_LOW_RAM, // Matikan sinkronisasi history kalau mode enteng
-        markOnlineOnConnect: !IS_LOW_RAM,
+        markOnlineOnConnect: true, // Paksa tetap Hijau (Online) meskipun mode enteng agar Bos tidak bingung
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
         getMessage: async (key) => {
@@ -943,6 +942,10 @@ async function startBot() {
                 const groupCmdHandled = await groupFeatures.handleGroupCommand(sock, msg, textContent, remoteJid, senderIsOwner);
                 if (groupCmdHandled) continue;
 
+                // --- FITUR MULTI-COPIER ---
+                const copierHandled = await channelCopier.handleCommand(sock, remoteJid, msg, textContent, senderIsOwner);
+                if (copierHandled) continue;
+
                 // -----------------------------------------------
                 // BANTUAN: .help atau .menu
                 // -----------------------------------------------
@@ -1034,6 +1037,7 @@ async function startBot() {
 ┣⌬ .kirim / .ceksaluran
 ┣⌬ .accsaluran [link]
 ┣⌬ .tovn [filter]
+┣⌬ .copier (Multi-Copier Saluran)
 ┣⌬ .caraupload — Tutorial upload ke saluran
 ┗━━━━━━━◧
 
@@ -1089,7 +1093,7 @@ async function startBot() {
                 }
 
                 // 2. SSWEB (.ss)
-                if (textContent.startsWith(PREFIX + 'ss')) {
+                if (textContent.startsWith(PREFIX + 'ss ') || textContent.trim() === PREFIX + 'ss') {
                     const url = textContent.slice((PREFIX + 'ss').length).trim();
                     if (!url) {
                         await sock.sendMessage(remoteJid, { text: `🌐 Masukkan link website!\nContoh: *${PREFIX}ss google.com*` }, { quoted: msg });
@@ -1852,15 +1856,8 @@ async function startBot() {
                     }
                     await sock.sendMessage(remoteJid, { react: { text: '📸', key: msg.key } });
                     try {
-                        // Abstract Screenshot returns image URL or binary
-                        // In our abstract.js, fetchAbstract returns json. 
-                        // But for screenshots, it might return a different format or we need to use the URL directly.
-                        // However, let's assume it works like other endpoints for now.
-                        // Actually, Abstract API Screenshot usually returns the image directly.
-                        // Let's refine fetchAbstract or use a direct fetch here.
-                        const key = abstract.getApiKey();
-                        const ssUrl = `https://screenshot.abstractapi.com/v1/?api_key=${key}&url=${encodeURIComponent(url)}`;
-                        await sock.sendMessage(remoteJid, { image: { url: ssUrl }, caption: `📸 Screenshot: ${url}` }, { quoted: msg });
+                        const buffer = await abstract.websiteScreenshot(url);
+                        await sock.sendMessage(remoteJid, { image: buffer, caption: `📸 Screenshot: ${url}` }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
@@ -1944,6 +1941,7 @@ async function startBot() {
                     await sock.sendMessage(remoteJid, { react: { text: '🏷️', key: msg.key } });
                     try {
                         const data = await phonespecs.getBrands();
+                        if (!data) throw new Error('API Brand sedang tidak tersedia.');
                         let list = `🏷️ *DAFTAR BRAND HP*\n\n`;
                         data.slice(0, 20).forEach((b, i) => list += `• ${b.brand_name} (${b.brand_slug})\n`);
                         list += `\n_Dan masih banyak lagi..._`;
@@ -1960,6 +1958,7 @@ async function startBot() {
                     await sock.sendMessage(remoteJid, { react: { text: '🔥', key: msg.key } });
                     try {
                         const data = await phonespecs.getTopPhones('interest');
+                        if (!data || !data.phones) throw new Error('API Top Phones sedang tidak tersedia.');
                         let list = `🔥 *HP PALING DIMINATI*\n\n`;
                         data.phones.slice(0, 10).forEach((h, i) => list += `${i + 1}. ${h.phone_name} (${h.slug})\n`);
                         await sock.sendMessage(remoteJid, { text: list }, { quoted: msg });
@@ -5519,6 +5518,7 @@ async function startBot() {
 ┃
 ┣⌬ .kirim / .ceksaluran
 ┣⌬ .tovn [filter]
+┣⌬ .copier (Multi-Copier Saluran)
 ┗━━━━━━━◧
 
 *Info:* Ketik perintah tanpa tanda kurung.

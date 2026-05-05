@@ -89,7 +89,7 @@ async function handleCopier(sock, msg) {
     if (!remoteJid.endsWith('@newsletter')) return false;
 
     // Cari tugas yang menggunakan newsletter ini sebagai sumber
-    const activeJobs = db.jobs.filter(j => j.active && j.sourceJid === remoteJid);
+    const activeJobs = db.jobs.filter(j => j.active && j.sourceJid.trim().toLowerCase() === remoteJid.trim().toLowerCase());
     
     // DEBUG LOG
     console.log(`\n[DEBUG COPIER] Mendeteksi pesan dari saluran: ${remoteJid}`);
@@ -99,35 +99,92 @@ async function handleCopier(sock, msg) {
 
     // Unwrap message
     let message = msg.message;
-    if (message?.ephemeralMessage?.message) message = message.ephemeralMessage.message;
-    if (message?.viewOnceMessage?.message) message = message.viewOnceMessage.message;
-    if (message?.viewOnceMessageV2?.message) message = message.viewOnceMessageV2.message;
-    if (message?.documentWithCaptionMessage?.message) message = message.documentWithCaptionMessage.message;
+    let unwrappedFrom = null;
+
+    if (message?.ephemeralMessage?.message) {
+        message = message.ephemeralMessage.message;
+        unwrappedFrom = 'ephemeralMessage';
+    }
+    if (message?.viewOnceMessage?.message) {
+        message = message.viewOnceMessage.message;
+        unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'viewOnceMessage';
+    }
+    if (message?.viewOnceMessageV2?.message) {
+        message = message.viewOnceMessageV2.message;
+        unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'viewOnceMessageV2';
+    }
+    if (message?.viewOnceMessageV2Extension?.message) {
+        message = message.viewOnceMessageV2Extension.message;
+        unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'viewOnceMessageV2Extension';
+    }
+    if (message?.documentWithCaptionMessage?.message) {
+        message = message.documentWithCaptionMessage.message;
+        unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'documentWithCaptionMessage';
+    }
+    if (message?.editedMessage?.message?.protocolMessage?.editedMessage) {
+        message = message.editedMessage.message.protocolMessage.editedMessage;
+        unwrappedFrom = (unwrappedFrom ? unwrappedFrom + ' → ' : '') + 'editedMessage';
+    }
     
     // Log tipe pesan yang masuk
     const msgType = Object.keys(message || {})[0];
-    console.log(`[DEBUG COPIER] Tipe pesan: ${msgType}`);
+    console.log(`[DEBUG COPIER] Tipe pesan: ${msgType}${unwrappedFrom ? ` (Unwrapped: ${unwrappedFrom})` : ''}`);
 
-    if (!message || message.protocolMessage) return false;
+    if (!message || message.protocolMessage) {
+        console.log(`[DEBUG COPIER] Pesan diabaikan (kosong atau protocolMessage)`);
+        return false;
+    }
 
-    const textContent = message.conversation || message.extendedTextMessage?.text || message.imageMessage?.caption || message.videoMessage?.caption || '';
+    const textContent = 
+        message.conversation || 
+        message.extendedTextMessage?.text || 
+        message.imageMessage?.caption || 
+        message.videoMessage?.caption || 
+        message.documentMessage?.caption || 
+        '';
+
     const isLink = /(https?:\/\/[^\s]+)/g.test(textContent);
 
     const isText = !!(message.conversation || message.extendedTextMessage);
     const isImage = !!message.imageMessage;
     const isVideo = !!message.videoMessage;
     const isSticker = !!message.stickerMessage;
+    const isAudio = !!message.audioMessage;
+    const isDocument = !!message.documentMessage;
+
+    console.log(`[DEBUG COPIER] Content: text=${isText}, img=${isImage}, vid=${isVideo}, sticker=${isSticker}, audio=${isAudio}, doc=${isDocument}`);
 
     // Jalankan tiap tugas yang cocok
     for (const job of activeJobs) {
         const s = job.settings;
         
         // Filter Dasar
-        if (s.skipLinks && isLink) continue;
-        if (isText && !isImage && !isVideo && !isSticker && !s.allowText) continue;
-        if (isImage && !s.allowImage) continue;
-        if (isVideo && !s.allowVideo) continue;
-        if (isSticker && !s.allowSticker) continue;
+        // Filter Dasar
+        if (s.skipLinks && isLink) {
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: contains link`);
+            continue;
+        }
+        if (isText && !isImage && !isVideo && !isSticker && !isAudio && !isDocument && !s.allowText) {
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: allowText is OFF`);
+            continue;
+        }
+        if (isImage && !s.allowImage) {
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: allowImage is OFF`);
+            continue;
+        }
+        if (isVideo && !s.allowVideo) {
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: allowVideo is OFF`);
+            continue;
+        }
+        if (isSticker && !s.allowSticker) {
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: allowSticker is OFF`);
+            continue;
+        }
+        // Audio & Document as Text/Media (Bisa diperluas settingnya nanti, sementara ikuti allowText)
+        if ((isAudio || isDocument) && !s.allowText) {
+            console.log(`[DEBUG COPIER] Job ${job.id} skip: Audio/Doc but allowText is OFF`);
+            continue;
+        }
 
         // Cek Limit Video (Maks 30MB)
         if (isVideo && message.videoMessage?.fileLength > 30 * 1024 * 1024) {
@@ -142,7 +199,7 @@ async function handleCopier(sock, msg) {
                 if (s.rewriteText && finalCaption) finalCaption = await rewriteWithGemini(finalCaption);
 
                 let sendObj = null;
-                if (isText && !isImage && !isVideo && !isSticker) {
+                if (isText && !isImage && !isVideo && !isSticker && !isAudio && !isDocument) {
                     sendObj = { text: finalCaption };
                 } else {
                     const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
@@ -152,6 +209,10 @@ async function handleCopier(sock, msg) {
                         sendObj = { image: buffer, caption: finalCaption };
                     } else if (isVideo) {
                         sendObj = { video: buffer, caption: finalCaption };
+                    } else if (isAudio) {
+                        sendObj = { audio: buffer, mimetype: message.audioMessage.mimetype, ptt: message.audioMessage.ptt };
+                    } else if (isDocument) {
+                        sendObj = { document: buffer, mimetype: message.documentMessage.mimetype, fileName: message.documentMessage.fileName, caption: finalCaption };
                     }
                 }
 
@@ -240,12 +301,12 @@ async function handleCommand(sock, remoteJid, msg, textContent, senderIsOwner) {
             active: true,
             settings: {
                 delayMinutes: 0,
-                rewriteText: true,
-                skipLinks: true,
-                allowText: false,
-                allowImage: false,
-                allowVideo: false,
-                allowSticker: true,
+                rewriteText: false, // Default OFF agar tidak merusak formatting asli
+                skipLinks: false,   // Default OFF agar link tetap ikut ter-copy
+                allowText: true,    // Default ON
+                allowImage: true,   // Default ON
+                allowVideo: false,  // Video default OFF (hemat kuota)
+                allowSticker: true, // Default ON
                 stickerPack: 'Copied By Robby',
                 stickerAuthor: 'Robby Bot'
             }
