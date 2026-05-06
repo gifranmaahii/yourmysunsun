@@ -223,16 +223,19 @@ async function handleCopier(sock, msg) {
                             try {
                                 audioBuffer = await convertToOggOpus(buffer);
                                 duration = await getAudioDuration(audioBuffer);
+                                if (!duration || duration < 1) duration = await getAudioDuration(buffer) || 1;
                             } catch (e) {
                                 logger.error(`[COPIER] Gagal konversi audio: ${e.message}`);
                             }
                         }
 
+                        if (!duration || duration < 1) duration = 1;
+
                         sendObj = { 
                             audio: audioBuffer, 
-                            mimetype: 'audio/ogg; codecs=opus', 
+                            mimetype: 'audio/ogg', 
                             ptt: true,
-                            seconds: duration,
+                            seconds: Math.floor(duration),
                             waveform: generateWaveform()
                         };
                     } else if (isDocument) {

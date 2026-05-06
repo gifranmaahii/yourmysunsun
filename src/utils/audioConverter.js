@@ -39,16 +39,16 @@ async function convertToOggOpus(audioBuffer) {
                 .audioCodec('libopus')
                 // ⚠️ WAJIB MONO — gunakan outputOptions agar pasti diterapkan
                 .outputOptions([
-                    '-ac 1',              // Mono (1 channel) — KRITIS!
-                    '-ar 48000',          // Sample rate 48000Hz — KRITIS!
-                    '-b:a 32k',           // Bitrate 32kbps (cukup untuk voice)
-                    '-application voip',  // Optimalkan untuk voice
-                    '-frame_duration 20', // Frame 20ms (standar Opus)
-                    '-avoid_negative_ts make_zero',
-                    '-map_metadata -1',   // Hapus metadata agar file lebih bersih
-                    '-vn',               // Double-ensure no video
+                    '-ac 1',              // Mono
+                    '-ar 16000',          // 16kHz
+                    '-b:a 16k',           // Bitrate rendah biar kompatibel
+                    '-application voip', 
+                    '-frame_duration 60', // Frame 60ms — PENTING untuk VN WA
+                    '-vbr on',
+                    '-compression_level 10',
+                    '-map_metadata -1',
                 ])
-                .on('start', (cmd) => logger.info(`🎛️  FFmpeg OGG Opus: ${cmd}`))
+                .on('start', (cmd) => logger.info(`🎛️  FFmpeg OGG Opus (Strict): ${cmd}`))
                 .on('end', () => {
                     try {
                         const outBuffer = fs.readFileSync(outputPath);
@@ -76,14 +76,6 @@ async function convertToOggOpus(audioBuffer) {
 
 /**
  * Konversi audio ke MP3 Mono 44.1kHz untuk dikirim sebagai audio document
- * (bukan PTT) ke WhatsApp Channel.
- *
- * Mengapa ini lebih aman untuk channel?
- * — Channel WhatsApp menerima MP3 sebagai audio playable (bukan download)
- * — Tidak perlu SILK/Opus yang kadang ditolak channel.
- *
- * @param {Buffer} audioBuffer - Buffer audio input
- * @returns {Promise<Buffer>} - Buffer MP3
  */
 async function convertToMp3(audioBuffer) {
     return new Promise((resolve, reject) => {
@@ -105,10 +97,10 @@ async function convertToMp3(audioBuffer) {
                 .toFormat('mp3')
                 .audioCodec('libmp3lame')
                 .outputOptions([
-                    '-ac 2',        // Stereo (lebih natural untuk musik TikTok)
-                    '-ar 44100',    // 44.1kHz (standar music)
-                    '-b:a 128k',    // 128kbps (kualitas bagus, file tidak terlalu besar)
-                    '-q:a 2',       // Quality preset VBR
+                    '-ac 2',
+                    '-ar 44100',
+                    '-b:a 128k',
+                    '-q:a 2',
                     '-map_metadata -1',
                     '-vn',
                     '-id3v2_version 3',
@@ -140,11 +132,10 @@ async function convertToMp3(audioBuffer) {
 }
 
 function generateWaveform() {
-    // Fake waveform arrays — mencegah bug "Audio Unavailable" di Baileys
-    const length = 64;
-    const wave   = new Uint8Array(length);
-    for (let i = 0; i < length; i++) {
-        wave[i] = Math.floor(Math.random() * 100);
+    // Waveform statis yang menyerupai VN aktif
+    const wave = Buffer.alloc(64);
+    for (let i = 0; i < 64; i++) {
+        wave[i] = i % 2 === 0 ? 80 : 20; // Pola naik turun yang stabil
     }
     return wave;
 }

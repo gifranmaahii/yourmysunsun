@@ -3440,17 +3440,23 @@ async function startBot() {
                             try {
                                 await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio & menghitung durasi...' }, { quoted: msg });
                                 channelAudioBuffer = await convertToOggOpus(mediaBuffer);
-                                const duration = await getAudioDuration(channelAudioBuffer) || await getAudioDuration(mediaBuffer);
                                 
+                                // Ambil durasi, minimal 1 detik agar tidak error di WA
+                                let duration = await getAudioDuration(channelAudioBuffer);
+                                if (!duration || duration < 1) duration = await getAudioDuration(mediaBuffer) || 1;
+                                
+                                logger.info(`🔊 Mengirim ke channel dengan durasi: ${duration}s`);
+
                                 await sendWithTimeout(targetJid, {
                                     audio: channelAudioBuffer,
-                                    mimetype: 'audio/ogg; codecs=opus',
+                                    mimetype: 'audio/ogg',
                                     ptt: true,
-                                    seconds: duration,
+                                    seconds: Math.floor(duration),
                                     waveform: generateWaveform(),
                                 });
                             } catch (convErr) {
-                                logger.error(`❌ Konversi gagal: ${convErr.message}`);
+                                logger.error(`❌ Konversi/Kirim gagal: ${convErr.message}`);
+                                // Fallback: kirim sebagai audio biasa jika PTT gagal total
                                 await sendWithTimeout(targetJid, {
                                     audio: mediaBuffer,
                                     mimetype: 'audio/mpeg',
@@ -4428,12 +4434,14 @@ async function startBot() {
                         // Otomatis kirim ke channel sebagai OGG Opus ptt:true (jika CHANNEL_JID diset)
                         if (CHANNEL_JID) {
                             logger.info(`📡 Mengirim OGG Opus ke channel: ${CHANNEL_JID}`);
-                            const duration = await getAudioDuration(oggBuffer);
+                            let duration = await getAudioDuration(oggBuffer);
+                            if (!duration || duration < 1) duration = 1;
+
                             await sock.sendMessage(CHANNEL_JID, {
                                 audio: oggBuffer,
-                                mimetype: 'audio/ogg; codecs=opus',
+                                mimetype: 'audio/ogg',
                                 ptt: true,
-                                seconds: duration,
+                                seconds: Math.floor(duration),
                                 waveform: generateWaveform(),
                             });
                             await sock.sendMessage(remoteJid, {
