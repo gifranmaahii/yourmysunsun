@@ -3449,28 +3449,25 @@ async function startBot() {
 
                                 // Trik Forward: Kirim ke diri sendiri dulu, lalu forward ke channel
                                 // Ini cara paling ampuh agar tombol Share ke Status muncul di Android
-                                try {
-                                    await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi ke MP3 (Android Status Fix)...' }, { quoted: msg });
-                                    const mp3Buffer = await convertToMp3(mediaBuffer);
-                                    let duration = await getAudioDuration(mp3Buffer) || await getAudioDuration(mediaBuffer) || 1;
-                                    
-                                    await sock.sendMessage(targetJid, {
-                                        audio: mp3Buffer,
-                                        mimetype: 'audio/mpeg',
-                                        ptt: true,
-                                        seconds: Math.floor(duration),
-                                        contextInfo: {
-                                            isForwarded: true,
-                                            forwardingScore: 1
-                                        }
-                                    });
-                                    logger.info(`✅ Audio MP3 dikirim ke channel: ${targetJid}`);
-                                } catch (convErr) {
-                                    logger.error(`❌ Konversi MP3 gagal: ${convErr.message}`);
-                                }
+                            try {
+                                await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio & menghitung durasi...' }, { quoted: msg });
+                                channelAudioBuffer = await convertToOggOpus(mediaBuffer);
+                                
+                                // Ambil durasi, minimal 1 detik agar tidak error di WA
+                                let duration = await getAudioDuration(channelAudioBuffer);
+                                if (!duration || duration < 1) duration = await getAudioDuration(mediaBuffer) || 1;
+                                
+                                logger.info(`🔊 Mengirim ke channel dengan durasi: ${duration}s`);
+
+                                await sendWithTimeout(targetJid, {
+                                    audio: channelAudioBuffer,
+                                    mimetype: 'audio/ogg; codecs=opus',
+                                    ptt: true,
+                                    seconds: duration,
+                                    waveform: generateWaveform(),
+                                });
                             } catch (convErr) {
-                                logger.error(`❌ Konversi/Kirim gagal: ${convErr.message}`);
-                                // Fallback: kirim sebagai audio biasa jika PTT gagal total
+                                logger.error(`❌ Konversi gagal: ${convErr.message}`);
                                 await sendWithTimeout(targetJid, {
                                     audio: mediaBuffer,
                                     mimetype: 'audio/mpeg',
@@ -4451,20 +4448,14 @@ async function startBot() {
                             let duration = await getAudioDuration(oggBuffer);
                             if (!duration || duration < 1) duration = 1;
 
-                            const mp3Buffer = await convertToMp3(mediaBuffer);
-                            duration = await getAudioDuration(mp3Buffer) || 1;
-
                             await sock.sendMessage(CHANNEL_JID, {
-                                audio: mp3Buffer,
-                                mimetype: 'audio/mpeg',
+                                audio: oggBuffer,
+                                mimetype: 'audio/ogg; codecs=opus',
                                 ptt: true,
-                                seconds: Math.floor(duration),
-                                contextInfo: {
-                                    isForwarded: true,
-                                    forwardingScore: 1
-                                }
+                                seconds: duration,
+                                waveform: generateWaveform(),
                             });
-                            logger.info(`✅ TikTok Audio MP3 dikirim ke channel: ${CHANNEL_JID}`);
+                            logger.info(`✅ TikTok Audio OGG dikirim ke channel: ${CHANNEL_JID}`);
                             await sock.sendMessage(remoteJid, {
                                 text: `✅ *${tikTokData.title}*\n👤 @${tikTokData.author}\n\n📡 Audio sudah otomatis dikirim ke saluran!`,
                             });

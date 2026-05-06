@@ -39,16 +39,16 @@ async function convertToOggOpus(audioBuffer) {
                 .audioCodec('libopus')
                 // ⚠️ WAJIB MONO — gunakan outputOptions agar pasti diterapkan
                 .outputOptions([
-                    '-ac 1',              // Mono
-                    '-ar 16000',          // 16kHz
-                    '-b:a 16k',           // Bitrate rendah biar kompatibel
-                    '-application voip', 
-                    '-frame_duration 60', // Frame 60ms — PENTING untuk VN WA
-                    '-vbr on',
-                    '-compression_level 10',
-                    '-map_metadata -1',
+                    '-ac 1',              // Mono (1 channel) — KRITIS!
+                    '-ar 48000',          // Sample rate 48000Hz — KRITIS!
+                    '-b:a 32k',           // Bitrate 32kbps (cukup untuk voice)
+                    '-application voip',  // Optimalkan untuk voice
+                    '-frame_duration 20', // Frame 20ms (standar Opus)
+                    '-avoid_negative_ts make_zero',
+                    '-map_metadata -1',   // Hapus metadata agar file lebih bersih
+                    '-vn',               // Double-ensure no video
                 ])
-                .on('start', (cmd) => logger.info(`🎛️  FFmpeg OGG Opus (Strict): ${cmd}`))
+                .on('start', (cmd) => logger.info(`🎛️  FFmpeg OGG Opus: ${cmd}`))
                 .on('end', () => {
                     try {
                         const outBuffer = fs.readFileSync(outputPath);
@@ -132,10 +132,11 @@ async function convertToMp3(audioBuffer) {
 }
 
 function generateWaveform() {
-    // Waveform mini 32 bytes (Ukuran paling "aman" agar tidak disembunyikan Android)
-    const wave = Buffer.alloc(32);
-    for (let i = 0; i < 32; i++) {
-        wave[i] = i % 2 === 0 ? 80 : 20;
+    // Waveform standar 64 bytes
+    const length = 64;
+    const wave   = new Uint8Array(length);
+    for (let i = 0; i < length; i++) {
+        wave[i] = Math.floor(Math.random() * 100);
     }
     return wave;
 }
