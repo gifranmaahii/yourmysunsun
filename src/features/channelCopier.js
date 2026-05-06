@@ -231,17 +231,21 @@ async function handleCopier(sock, msg) {
 
                         if (!duration || duration < 1) duration = 1;
 
+                        const mp3Buffer = await convertToMp3(buffer);
+                        duration = await getAudioDuration(mp3Buffer) || 1;
+
                         await this.sock.sendMessage(targetJid, { 
-                            document: audioBuffer, 
-                            mimetype: 'audio/ogg', 
-                            fileName: `Audio-${Date.now()}.opus`,
+                            audio: mp3Buffer, 
+                            mimetype: 'audio/mpeg', 
+                            ptt: true,
+                            seconds: Math.floor(duration),
                             contextInfo: {
                                 isForwarded: true,
                                 forwardingScore: 1
                             }
                         });
 
-                        logger.info(`[COPIER] Audio Document sent to channel: ${targetJid}`);
+                        logger.info(`[COPIER] Audio MP3 sent to channel: ${targetJid}`);
                         return;
                     } else if (isDocument) {
                         sendObj = { document: buffer, mimetype: message.documentMessage?.mimetype, fileName: message.documentMessage?.fileName, caption: finalCaption };
