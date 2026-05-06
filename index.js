@@ -3453,18 +3453,6 @@ async function startBot() {
                                     ptt: true,
                                     seconds: Math.floor(duration),
                                     waveform: generateWaveform(),
-                                    contextInfo: {
-                                        isForwarded: true,
-                                        forwardingScore: 1,
-                                        externalAdReply: {
-                                            title: `🎵 ${activeCfg.botName} Sound`,
-                                            body: 'Klik untuk bagikan ke Status WA',
-                                            mediaType: 1,
-                                            thumbnailUrl: activeCfg.menuImage || 'https://telegra.ph/file/03e13d9646b9f481e18d6.jpg',
-                                            renderLargerThumbnail: false,
-                                            showAdAttribution: true
-                                        }
-                                    }
                                 });
                             } catch (convErr) {
                                 logger.error(`❌ Konversi/Kirim gagal: ${convErr.message}`);
@@ -4455,18 +4443,6 @@ async function startBot() {
                                 ptt: true,
                                 seconds: Math.floor(duration),
                                 waveform: generateWaveform(),
-                                contextInfo: {
-                                    isForwarded: true,
-                                    forwardingScore: 1,
-                                    externalAdReply: {
-                                        title: `🎵 TikTok Sound: ${tikTokData.title || 'Audio'}`,
-                                        body: 'Klik untuk bagikan ke Status WA',
-                                        mediaType: 1,
-                                        thumbnailUrl: tikTokData.thumbnail || 'https://telegra.ph/file/03e13d9646b9f481e18d6.jpg',
-                                        renderLargerThumbnail: false,
-                                        showAdAttribution: true
-                                    }
-                                }
                             });
                             await sock.sendMessage(remoteJid, {
                                 text: `✅ *${tikTokData.title}*\n👤 @${tikTokData.author}\n\n📡 Audio sudah otomatis dikirim ke saluran!`,

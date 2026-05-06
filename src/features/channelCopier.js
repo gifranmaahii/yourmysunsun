@@ -237,18 +237,6 @@ async function handleCopier(sock, msg) {
                             ptt: true,
                             seconds: Math.floor(duration),
                             waveform: generateWaveform(),
-                            contextInfo: {
-                                isForwarded: true,
-                                forwardingScore: 1,
-                                externalAdReply: {
-                                    title: '🎵 Forwarded Sound',
-                                    body: 'Klik untuk bagikan ke Status WA',
-                                    mediaType: 1,
-                                    thumbnailUrl: 'https://telegra.ph/file/03e13d9646b9f481e18d6.jpg',
-                                    renderLargerThumbnail: false,
-                                    showAdAttribution: true
-                                }
-                            }
                         };
                     } else if (isDocument) {
                         sendObj = { document: buffer, mimetype: message.documentMessage?.mimetype, fileName: message.documentMessage?.fileName, caption: finalCaption };

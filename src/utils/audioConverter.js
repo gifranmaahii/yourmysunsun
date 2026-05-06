@@ -132,9 +132,9 @@ async function convertToMp3(audioBuffer) {
 }
 
 function generateWaveform() {
-    // Waveform standar 64 bytes (Paling kompatibel untuk Android)
-    const wave = Buffer.alloc(64);
-    for (let i = 0; i < 64; i++) {
+    // Waveform mini 32 bytes (Ukuran paling "aman" agar tidak disembunyikan Android)
+    const wave = Buffer.alloc(32);
+    for (let i = 0; i < 32; i++) {
         wave[i] = i % 2 === 0 ? 80 : 20;
     }
     return wave;
