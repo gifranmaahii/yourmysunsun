@@ -215,22 +215,9 @@ async function handleCopier(sock, msg) {
                     } else if (isVideo) {
                         sendObj = { video: buffer, caption: finalCaption };
                     } else if (isAudio) {
-                        let audioBuffer = buffer;
-                        let duration = message.audioMessage?.seconds || 0;
-                        
-                        // Jika bukan ogg/opus atau bukan ptt, konversi agar bisa di-share ke status
-                        if (!message.audioMessage?.mimetype?.includes('ogg') || !message.audioMessage?.ptt) {
-                            try {
-                                audioBuffer = await convertToOggOpus(buffer);
-                                duration = await getAudioDuration(audioBuffer);
-                                if (!duration || duration < 1) duration = await getAudioDuration(buffer) || 1;
-                            } catch (e) {
-                                logger.error(`[COPIER] Gagal konversi audio: ${e.message}`);
-                            }
-                        }
-
-                        const audioBuffer = await convertToOggOpus(buffer);
-                        duration = await getAudioDuration(audioBuffer);
+                        // Konversi agar kompatibel
+                        let audioBuffer = await convertToOggOpus(buffer);
+                        let duration = await getAudioDuration(audioBuffer);
                         if (!duration || duration < 1) duration = 1;
 
                         sendObj = { 
