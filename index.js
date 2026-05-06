@@ -3436,44 +3436,22 @@ async function startBot() {
 
                     try {
                         if (quotedAudio) {
-                            await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio...' }, { quoted: msg });
-                            try {
-                                await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio & menghitung durasi...' }, { quoted: msg });
-                                channelAudioBuffer = await convertToOggOpus(mediaBuffer);
-                                
-                                // Ambil durasi, minimal 1 detik agar tidak error di WA
-                                let duration = await getAudioDuration(channelAudioBuffer);
-                                if (!duration || duration < 1) duration = await getAudioDuration(mediaBuffer) || 1;
-                                
-                                logger.info(`🔊 Mengirim ke channel dengan durasi: ${duration}s`);
+                            await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio & menghitung durasi...' }, { quoted: msg });
+                            channelAudioBuffer = await convertToOggOpus(mediaBuffer);
+                            
+                            // Ambil durasi, minimal 1 detik agar tidak error di WA
+                            let duration = await getAudioDuration(channelAudioBuffer);
+                            if (!duration || duration < 1) duration = await getAudioDuration(mediaBuffer) || 1;
+                            
+                            logger.info(`🔊 Mengirim ke channel dengan durasi: ${duration}s`);
 
-                                // Trik Forward: Kirim ke diri sendiri dulu, lalu forward ke channel
-                                // Ini cara paling ampuh agar tombol Share ke Status muncul di Android
-                            try {
-                                await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio & menghitung durasi...' }, { quoted: msg });
-                                channelAudioBuffer = await convertToOggOpus(mediaBuffer);
-                                
-                                // Ambil durasi, minimal 1 detik agar tidak error di WA
-                                let duration = await getAudioDuration(channelAudioBuffer);
-                                if (!duration || duration < 1) duration = await getAudioDuration(mediaBuffer) || 1;
-                                
-                                logger.info(`🔊 Mengirim ke channel dengan durasi: ${duration}s`);
-
-                                await sendWithTimeout(targetJid, {
-                                    audio: channelAudioBuffer,
-                                    mimetype: 'audio/ogg; codecs=opus',
-                                    ptt: true,
-                                    seconds: duration,
-                                    waveform: generateWaveform(),
-                                });
-                            } catch (convErr) {
-                                logger.error(`❌ Konversi gagal: ${convErr.message}`);
-                                await sendWithTimeout(targetJid, {
-                                    audio: mediaBuffer,
-                                    mimetype: 'audio/mpeg',
-                                    ptt: false,
-                                });
-                            }
+                            await sendWithTimeout(targetJid, {
+                                audio: channelAudioBuffer,
+                                mimetype: 'audio/ogg; codecs=opus',
+                                ptt: true,
+                                seconds: duration,
+                                waveform: generateWaveform(),
+                            });
                         } else if (quotedSticker) {
                             await sendWithTimeout(targetJid, { sticker: mediaBuffer });
                         } else if (quotedVideo) {
