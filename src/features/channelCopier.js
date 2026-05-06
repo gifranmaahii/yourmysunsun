@@ -4,6 +4,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { logger, baileyLogger } = require('../utils/logger');
 const { addExif } = require('./sticker');
 const cfg = require('../utils/config');
+const { convertToOggOpus, getAudioDuration, generateWaveform } = require('../utils/audioConverter');
 
 const DATABASE_PATH = path.join(__dirname, '../../data/channelCopierDB.json');
 
@@ -214,7 +215,26 @@ async function handleCopier(sock, msg) {
                     } else if (isVideo) {
                         sendObj = { video: buffer, caption: finalCaption };
                     } else if (isAudio) {
-                        sendObj = { audio: buffer, mimetype: message.audioMessage?.mimetype || 'audio/ogg; codecs=opus', ptt: message.audioMessage?.ptt || false };
+                        let audioBuffer = buffer;
+                        let duration = message.audioMessage?.seconds || 0;
+                        
+                        // Jika bukan ogg/opus atau bukan ptt, konversi agar bisa di-share ke status
+                        if (!message.audioMessage?.mimetype?.includes('ogg') || !message.audioMessage?.ptt) {
+                            try {
+                                audioBuffer = await convertToOggOpus(buffer);
+                                duration = await getAudioDuration(audioBuffer);
+                            } catch (e) {
+                                logger.error(`[COPIER] Gagal konversi audio: ${e.message}`);
+                            }
+                        }
+
+                        sendObj = { 
+                            audio: audioBuffer, 
+                            mimetype: 'audio/ogg; codecs=opus', 
+                            ptt: true,
+                            seconds: duration,
+                            waveform: generateWaveform()
+                        };
                     } else if (isDocument) {
                         sendObj = { document: buffer, mimetype: message.documentMessage?.mimetype, fileName: message.documentMessage?.fileName, caption: finalCaption };
                     }

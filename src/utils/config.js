@@ -28,6 +28,8 @@ let _cfg = {
     admins:            [],   // array campuran: nomor HP (628xx) dan/atau @lid
     menuImage:         '',   // URL atau path gambar untuk menu
     useMenuImage:      false, // true = menu pakai gambar, false = teks saja
+    useLimit:          false, // true = aktifkan limit untuk user non-admin
+    limitCount:        30,    // jumlah limit default per hari
 };
 
 // ── Persist ke file ───────────────────────────────────────────────────────────

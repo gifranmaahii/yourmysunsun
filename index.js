@@ -31,7 +31,7 @@ const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
 const { getInstagramMedia } = require('./src/features/instagram');
 const { generateTextImage, generateBratImage } = require('./src/features/textImage');
 const { generateFakeThumbnail } = require('./src/features/fakePreview');
-const { convertToOggOpus, generateWaveform } = require('./src/utils/audioConverter');
+const { convertToOggOpus, generateWaveform, getAudioDuration } = require('./src/utils/audioConverter');
 const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
 const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter');
 const { createLottieSticker, getTemplateList } = require('./src/features/lottieSticker');
@@ -47,6 +47,7 @@ const ryzumi = require('./src/features/ryzumi');
 const channelCopier = require('./src/features/channelCopier');
 const abstract = require('./src/features/abstract');
 const phonespecs = require('./src/features/phonespecs');
+const limit = require('./src/features/limit');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const { EventEmitter } = require('events');
@@ -694,9 +695,13 @@ async function startBot() {
                 
                 console.log(`\n💬 [CHAT-IN] From: ${_sender}, isOwner: ${isOwner}, JID: ${_remoteJid}`);
                 
-                // Cek Anti-Ban (Owner & Bot sendiri selalu lolos)
-                if (!isOwner && !shouldProcess(msg, sock)) continue;
-                
+                // --- Filter dasar (anti-ban & keamanan) ---
+                // Jika bukan owner/dari bot sendiri, cek filter anti-ban (pesan lama, dsb)
+                if (!isOwner && !shouldProcess(msg, sock)) {
+                    console.log(`🚫 [FILTER] Pesan diabaikan oleh shouldProcess`);
+                    continue;
+                }
+
                 // Newsletter: cek dulu apakah channelCopier mau tangkap
                 if (isNewsletter) {
                     try {
@@ -704,12 +709,6 @@ async function startBot() {
                     } catch (e) {
                         logger.error(`[COPIER] Error: ${e.message}`);
                     }
-                    continue;
-                }
-                
-                // --- Filter dasar (anti-ban & keamanan) ---
-                if (!shouldProcess(msg, sock)) {
-                    console.log(`🚫 [FILTER] Pesan diabaikan oleh shouldProcess (fromMe: ${_fromMe})`);
                     continue;
                 }
 
@@ -930,6 +929,26 @@ async function startBot() {
                 // Cek owner/admin dengan KEDUA format: resolved JID DAN raw asli
                 const senderIsOwner = cfg.isOwner(rawSenderJid) || cfg.isOwner(originalRaw);
                 const senderIsAdmin = cfg.isAdmin(rawSenderJid) || cfg.isAdmin(originalRaw);
+
+                // --- LIMIT CHECK ---
+                const isAuthorized = senderIsOwner || senderIsAdmin;
+                const limitStatus = limit.checkLimit(rawSenderJid, isAuthorized);
+                
+                // Hanya cek limit jika pesan diawali prefix (perintah)
+                if (textContent.startsWith(PREFIX) && limitStatus.isLimit) {
+                    await sock.sendMessage(remoteJid, { 
+                        text: `⚠️ *Lɪᴍɪᴛ Tᴇʀᴄᴀᴘᴀɪ!*\n\n` +
+                              `Maaf, kamu sudah mencapai batas penggunaan bot hari ini (*${activeCfg.limitCount}* perintah).\n\n` +
+                              `💡 Limit akan direset otomatis setiap jam 00:00 WIB.\n` +
+                              `👑 Hubungi Owner untuk upgrade ke Premium.` 
+                    }, { quoted: msg });
+                    continue;
+                }
+                
+                // Tambahkan usage jika pesan diawali prefix (perintah)
+                if (textContent.startsWith(PREFIX)) {
+                    limit.addUsage(rawSenderJid, isAuthorized);
+                }
 
                 // Log identitas sender (untuk memantau @lid)
                 console.log(`🔐 Sender   : raw=${originalRaw} → resolved=${rawSenderJid}`);
@@ -2754,6 +2773,14 @@ async function startBot() {
                                 `┣⌬ ${PREFIX}copier delete <id>\n` +
                                 `┣⌬ ${PREFIX}copier vip add/del <nomor>\n` +
                                 `┗━━━━━━━◧\n\n`;
+
+                            menuText += 
+                                `┏━『 *LIMIT SISTEM* 』\n` +
+                                `┃\n` +
+                                `┣⌬ ${PREFIX}owner uselimit on/off\n` +
+                                `┣⌬ ${PREFIX}owner setlimit [angka]\n` +
+                                `┣⌬ ${PREFIX}owner resetlimit [all/nomor]\n` +
+                                `┗━━━━━━━◧\n\n`;
                         }
 
                         // Bagian 4: GRUP MODERASI (Desain Premium)
@@ -2799,6 +2826,9 @@ async function startBot() {
                         if (senderIsOwner) {
                             menuText += 
                                 `┏━『 *MAINTENANCE* 』\n` +
+                                `┃  ⌬ .owner setlimit [angka]\n` +
+                                `┃  ⌬ .owner uselimit on/off\n` +
+                                `┃  ⌬ .owner resetlimit [all/nomor]\n` +
                                 `┃  ⌬ .owner public\n` +
                                 `┃  ⌬ .owner setmenuimg\n` +
                                 `┃  ⌬ .owner usemenuimg\n` +
@@ -2817,6 +2847,7 @@ async function startBot() {
                                 `• Admins   : *${cur.admins.length} orang*\n` +
                                 `• Owners   : *${owners.substring(0, 50)}${owners.length > 50 ? '...' : ''}*\n` +
                                 `• Help Mode: *${cur.helpRestricted ? '🔒 Private' : '🌐 Public'}*\n` +
+                                `• Daily Limit: *${cur.useLimit ? `✅ On (${cur.limitCount})` : '❌ Off'}*\n` +
                                 `• Reconnect: *${reconnectAttempts}/50*`;
                         }
 
@@ -2860,7 +2891,40 @@ async function startBot() {
                         continue;
                     }
 
-                    // --- .owner addadmin ---
+                    // --- .owner uselimit ---
+                    if (ownerCmd === 'uselimit') {
+                        if (!senderIsOwner) return;
+                        const newVal = ownerVal === 'on' || ownerVal === 'true';
+                        cfg.update('useLimit', newVal);
+                        await sock.sendMessage(remoteJid, { text: `✅ Fitur limit harian: *${newVal ? 'AKTIF' : 'MATI'}*` }, { quoted: msg });
+                        continue;
+                    }
+
+                    // --- .owner setlimit ---
+                    if (ownerCmd === 'setlimit') {
+                        if (!senderIsOwner) return;
+                        const count = parseInt(ownerVal);
+                        if (isNaN(count)) {
+                            await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}owner setlimit <angka>*` }, { quoted: msg });
+                        } else {
+                            cfg.update('limitCount', count);
+                            await sock.sendMessage(remoteJid, { text: `✅ Limit harian diubah menjadi: *${count}* perintah/hari` }, { quoted: msg });
+                        }
+                        continue;
+                    }
+
+                    // --- .owner resetlimit ---
+                    if (ownerCmd === 'resetlimit') {
+                        if (!senderIsOwner) return;
+                        if (ownerVal && ownerVal !== 'all') {
+                            limit.resetLimit(ownerVal);
+                            await sock.sendMessage(remoteJid, { text: `✅ Limit untuk *${ownerVal}* telah di-reset.` }, { quoted: msg });
+                        } else {
+                            limit.resetLimit();
+                            await sock.sendMessage(remoteJid, { text: `✅ Semua limit pengguna telah di-reset.` }, { quoted: msg });
+                        }
+                        continue;
+                    }
                     if (ownerCmd === 'addadmin') {
                         if (!senderIsOwner) return;
                         const num = ownerArgs[2] || '';
@@ -3373,23 +3437,23 @@ async function startBot() {
                     try {
                         if (quotedAudio) {
                             await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio...' }, { quoted: msg });
-                            let channelAudioBuffer;
                             try {
+                                await sock.sendMessage(remoteJid, { text: '⏳ Mengkonversi audio & menghitung durasi...' }, { quoted: msg });
                                 channelAudioBuffer = await convertToOggOpus(mediaBuffer);
-                            } catch (convErr) {
-                                channelAudioBuffer = mediaBuffer;
-                            }
-                            try {
+                                const duration = await getAudioDuration(channelAudioBuffer) || await getAudioDuration(mediaBuffer);
+                                
                                 await sendWithTimeout(targetJid, {
                                     audio: channelAudioBuffer,
                                     mimetype: 'audio/ogg; codecs=opus',
                                     ptt: true,
+                                    seconds: duration,
                                     waveform: generateWaveform(),
                                 });
-                            } catch (e1) {
+                            } catch (convErr) {
+                                logger.error(`❌ Konversi gagal: ${convErr.message}`);
                                 await sendWithTimeout(targetJid, {
-                                    audio: channelAudioBuffer,
-                                    mimetype: 'audio/ogg; codecs=opus',
+                                    audio: mediaBuffer,
+                                    mimetype: 'audio/mpeg',
                                     ptt: false,
                                 });
                             }
@@ -4364,10 +4428,12 @@ async function startBot() {
                         // Otomatis kirim ke channel sebagai OGG Opus ptt:true (jika CHANNEL_JID diset)
                         if (CHANNEL_JID) {
                             logger.info(`📡 Mengirim OGG Opus ke channel: ${CHANNEL_JID}`);
+                            const duration = await getAudioDuration(oggBuffer);
                             await sock.sendMessage(CHANNEL_JID, {
                                 audio: oggBuffer,
                                 mimetype: 'audio/ogg; codecs=opus',
                                 ptt: true,
+                                seconds: duration,
                                 waveform: generateWaveform(),
                             });
                             await sock.sendMessage(remoteJid, {

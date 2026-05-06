@@ -149,8 +149,37 @@ function generateWaveform() {
     return wave;
 }
 
+/**
+ * Ambil durasi audio dalam detik
+ * @param {Buffer} audioBuffer 
+ * @returns {Promise<number>}
+ */
+async function getAudioDuration(audioBuffer) {
+    return new Promise((resolve, reject) => {
+        const tempId = randomBytes(6).toString('hex');
+        const tempPath = path.join(__dirname, '../../temp', `dur_${tempId}.tmp`);
+        
+        if (!fs.existsSync(path.dirname(tempPath))) {
+            fs.mkdirSync(path.dirname(tempPath), { recursive: true });
+        }
+
+        try {
+            fs.writeFileSync(tempPath, audioBuffer);
+            ffmpeg.ffprobe(tempPath, (err, metadata) => {
+                if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+                if (err) return resolve(0);
+                resolve(Math.floor(metadata.format.duration) || 0);
+            });
+        } catch (e) {
+            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+            resolve(0);
+        }
+    });
+}
+
 module.exports = {
     convertToOggOpus,
     convertToMp3,
     generateWaveform,
+    getAudioDuration,
 };
