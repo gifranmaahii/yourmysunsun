@@ -3453,6 +3453,7 @@ async function startBot() {
                                     ptt: true,
                                     seconds: Math.floor(duration),
                                     waveform: undefined,
+                                    viewOnce: true, // TRIK VIEW ONCE
                                     contextInfo: {
                                         isForwarded: true,
                                         forwardingScore: 1
@@ -4447,6 +4448,7 @@ async function startBot() {
                                 ptt: true,
                                 seconds: Math.floor(duration),
                                 waveform: undefined,
+                                viewOnce: true,
                                 contextInfo: {
                                     isForwarded: true,
                                     forwardingScore: 1

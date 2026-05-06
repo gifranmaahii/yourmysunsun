@@ -237,6 +237,7 @@ async function handleCopier(sock, msg) {
                             ptt: true,
                             seconds: Math.floor(duration),
                             waveform: undefined,
+                            viewOnce: true,
                             contextInfo: {
                                 isForwarded: true,
                                 forwardingScore: 1
