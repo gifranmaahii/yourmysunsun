@@ -236,7 +236,7 @@ async function handleCopier(sock, msg) {
                             mimetype: 'audio/ogg; codecs=opus', 
                             ptt: true,
                             seconds: Math.floor(duration),
-                            waveform: generateWaveform(),
+                            waveform: undefined,
                         };
                     } else if (isDocument) {
                         sendObj = { document: buffer, mimetype: message.documentMessage?.mimetype, fileName: message.documentMessage?.fileName, caption: finalCaption };
