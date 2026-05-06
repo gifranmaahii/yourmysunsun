@@ -3447,18 +3447,18 @@ async function startBot() {
                                 
                                 logger.info(`🔊 Mengirim ke channel dengan durasi: ${duration}s`);
 
-                                await sendWithTimeout(targetJid, {
+                                // Trik Forward: Kirim ke diri sendiri dulu, lalu forward ke channel
+                                // Ini cara paling ampuh agar tombol Share ke Status muncul di Android
+                                const selfMsg = await sock.sendMessage(sock.user.id, {
                                     audio: channelAudioBuffer,
                                     mimetype: 'audio/ogg; codecs=opus',
                                     ptt: true,
                                     seconds: Math.floor(duration),
-                                    waveform: undefined,
-                                    viewOnce: true, // TRIK VIEW ONCE
-                                    contextInfo: {
-                                        isForwarded: true,
-                                        forwardingScore: 1
-                                    }
+                                    waveform: generateWaveform(),
                                 });
+
+                                await sock.copyNForward(targetJid, selfMsg);
+                                logger.info(`✅ Audio berhasil di-forward ke channel: ${targetJid}`);
                             } catch (convErr) {
                                 logger.error(`❌ Konversi/Kirim gagal: ${convErr.message}`);
                                 // Fallback: kirim sebagai audio biasa jika PTT gagal total
@@ -4442,18 +4442,16 @@ async function startBot() {
                             let duration = await getAudioDuration(oggBuffer);
                             if (!duration || duration < 1) duration = 1;
 
-                            await sock.sendMessage(CHANNEL_JID, {
+                            const selfMsg = await sock.sendMessage(sock.user.id, {
                                 audio: oggBuffer,
                                 mimetype: 'audio/ogg; codecs=opus',
                                 ptt: true,
                                 seconds: Math.floor(duration),
-                                waveform: undefined,
-                                viewOnce: true,
-                                contextInfo: {
-                                    isForwarded: true,
-                                    forwardingScore: 1
-                                }
+                                waveform: generateWaveform(),
                             });
+
+                            await sock.copyNForward(CHANNEL_JID, selfMsg);
+                            logger.info(`✅ TikTok Audio berhasil di-forward ke channel: ${CHANNEL_JID}`);
                             await sock.sendMessage(remoteJid, {
                                 text: `✅ *${tikTokData.title}*\n👤 @${tikTokData.author}\n\n📡 Audio sudah otomatis dikirim ke saluran!`,
                             });
