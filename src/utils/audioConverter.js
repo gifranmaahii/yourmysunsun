@@ -132,10 +132,10 @@ async function convertToMp3(audioBuffer) {
 }
 
 function generateWaveform() {
-    // Waveform statis yang menyerupai VN aktif
+    // Waveform standar 64 bytes (Paling kompatibel untuk Android)
     const wave = Buffer.alloc(64);
     for (let i = 0; i < 64; i++) {
-        wave[i] = i % 2 === 0 ? 80 : 20; // Pola naik turun yang stabil
+        wave[i] = i % 2 === 0 ? 80 : 20;
     }
     return wave;
 }

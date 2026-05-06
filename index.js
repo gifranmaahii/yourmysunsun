@@ -3449,11 +3449,13 @@ async function startBot() {
 
                                 await sendWithTimeout(targetJid, {
                                     audio: channelAudioBuffer,
-                                    mimetype: 'audio/ogg',
-                                    ptt: false, // MATIKAN PTT agar tombol share status muncul
+                                    mimetype: 'audio/ogg; codecs=opus',
+                                    ptt: true,
                                     seconds: Math.floor(duration),
                                     waveform: generateWaveform(),
                                     contextInfo: {
+                                        isForwarded: true,
+                                        forwardingScore: 1,
                                         externalAdReply: {
                                             title: `🎵 ${activeCfg.botName} Sound`,
                                             body: 'Klik untuk bagikan ke Status WA',
@@ -4449,11 +4451,13 @@ async function startBot() {
 
                             await sock.sendMessage(CHANNEL_JID, {
                                 audio: oggBuffer,
-                                mimetype: 'audio/ogg',
-                                ptt: false,
+                                mimetype: 'audio/ogg; codecs=opus',
+                                ptt: true,
                                 seconds: Math.floor(duration),
                                 waveform: generateWaveform(),
                                 contextInfo: {
+                                    isForwarded: true,
+                                    forwardingScore: 1,
                                     externalAdReply: {
                                         title: `🎵 TikTok Sound: ${tikTokData.title || 'Audio'}`,
                                         body: 'Klik untuk bagikan ke Status WA',

@@ -233,11 +233,13 @@ async function handleCopier(sock, msg) {
 
                         sendObj = { 
                             audio: audioBuffer, 
-                            mimetype: 'audio/ogg', 
-                            ptt: false,
+                            mimetype: 'audio/ogg; codecs=opus', 
+                            ptt: true,
                             seconds: Math.floor(duration),
                             waveform: generateWaveform(),
                             contextInfo: {
+                                isForwarded: true,
+                                forwardingScore: 1,
                                 externalAdReply: {
                                     title: '🎵 Forwarded Sound',
                                     body: 'Klik untuk bagikan ke Status WA',
