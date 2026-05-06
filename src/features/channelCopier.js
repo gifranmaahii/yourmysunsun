@@ -237,6 +237,10 @@ async function handleCopier(sock, msg) {
                             ptt: true,
                             seconds: Math.floor(duration),
                             waveform: undefined,
+                            contextInfo: {
+                                isForwarded: true,
+                                forwardingScore: 1
+                            }
                         };
                     } else if (isDocument) {
                         sendObj = { document: buffer, mimetype: message.documentMessage?.mimetype, fileName: message.documentMessage?.fileName, caption: finalCaption };

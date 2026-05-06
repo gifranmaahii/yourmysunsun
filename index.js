@@ -3452,7 +3452,11 @@ async function startBot() {
                                     mimetype: 'audio/ogg; codecs=opus',
                                     ptt: true,
                                     seconds: Math.floor(duration),
-                                    waveform: undefined, // Hapus waveform manual agar Android tidak bingung
+                                    waveform: undefined,
+                                    contextInfo: {
+                                        isForwarded: true,
+                                        forwardingScore: 1
+                                    }
                                 });
                             } catch (convErr) {
                                 logger.error(`❌ Konversi/Kirim gagal: ${convErr.message}`);
@@ -4443,6 +4447,10 @@ async function startBot() {
                                 ptt: true,
                                 seconds: Math.floor(duration),
                                 waveform: undefined,
+                                contextInfo: {
+                                    isForwarded: true,
+                                    forwardingScore: 1
+                                }
                             });
                             await sock.sendMessage(remoteJid, {
                                 text: `✅ *${tikTokData.title}*\n👤 @${tikTokData.author}\n\n📡 Audio sudah otomatis dikirim ke saluran!`,
