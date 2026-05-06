@@ -234,7 +234,7 @@ async function handleCopier(sock, msg) {
                         sendObj = { 
                             audio: audioBuffer, 
                             mimetype: 'audio/ogg', 
-                            ptt: true,
+                            ptt: false,
                             seconds: Math.floor(duration),
                             waveform: generateWaveform(),
                             contextInfo: {

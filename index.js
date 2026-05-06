@@ -3450,7 +3450,7 @@ async function startBot() {
                                 await sendWithTimeout(targetJid, {
                                     audio: channelAudioBuffer,
                                     mimetype: 'audio/ogg',
-                                    ptt: true,
+                                    ptt: false, // MATIKAN PTT agar tombol share status muncul
                                     seconds: Math.floor(duration),
                                     waveform: generateWaveform(),
                                     contextInfo: {
@@ -4450,7 +4450,7 @@ async function startBot() {
                             await sock.sendMessage(CHANNEL_JID, {
                                 audio: oggBuffer,
                                 mimetype: 'audio/ogg',
-                                ptt: true,
+                                ptt: false,
                                 seconds: Math.floor(duration),
                                 waveform: generateWaveform(),
                                 contextInfo: {
