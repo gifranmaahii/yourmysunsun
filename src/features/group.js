@@ -209,7 +209,7 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         prefix + 'addlist', prefix + 'dellist', prefix + 'list',
         prefix + 'warn', prefix + 'cekwarn', prefix + 'delwarn', prefix + 'listwarn',
         prefix + 'blacklist', prefix + 'delblacklist', prefix + 'listblacklist',
-        prefix + 'addsewa', prefix + 'ceksewa', prefix + 'delsewa',
+        prefix + 'addsewa', prefix + 'ceksewa', prefix + 'delsewa', prefix + 'listsewa',
         prefix + 'antibot', prefix + 'antibot_kick', 
         prefix + 'automute', prefix + 'setmute', prefix + 'setunmute',
         prefix + 'setppgc', prefix + 'ownerdewasa'
@@ -758,7 +758,35 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             if (!isBotOwner) return true;
             delete sewaData[remoteJid];
             saveSewaData();
-            await sock.sendMessage(remoteJid, { text: `✅ Data sewa grup ini telah dihapus.` });
+            await sock.sendMessage(remoteJid, { text: `🗑️ Grup ini berhasil dihapus dari sistem sewa.` });
+        }
+        else if (command === prefix + 'listsewa') {
+            if (!isBotOwner) return true;
+            const jids = Object.keys(sewaData);
+            if (jids.length === 0) return await sock.sendMessage(remoteJid, { text: `📋 Belum ada grup yang menyewa bot.` });
+
+            let txt = `📋 *DAFTAR GRUP SEWA (${jids.length})*\n\n`;
+            const now = Date.now();
+
+            for (let i = 0; i < jids.length; i++) {
+                const jid = jids[i];
+                const data = sewaData[jid];
+                const remain = data.expire - now;
+                const dateStr = new Date(data.expire).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
+                
+                // Ambil nama grup jika ada di cache metadata
+                let groupName = "Grup Tidak Diketahui";
+                try {
+                    const metadata = await sock.groupMetadata(jid).catch(() => null);
+                    if (metadata) groupName = metadata.subject;
+                } catch (e) {}
+
+                txt += `${i + 1}. *${groupName}*\n`;
+                txt += `   ID: \`${jid}\`\n`;
+                txt += `   Exp: ${dateStr} (${remain > 0 ? formatDuration(remain) : 'EXPIRED'})\n\n`;
+            }
+
+            await sock.sendMessage(remoteJid, { text: txt });
         }
         
         // --- SET PP GC ---
