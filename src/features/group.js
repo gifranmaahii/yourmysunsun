@@ -81,6 +81,12 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
     if (fromMe) return; 
 
     const sender = msg.key.participant || msg.key.remoteJid;
+    
+    // --- CHECK SEWA / PUBLIC MODE ---
+    const globalCfg = require('../utils/config').getConfig();
+    const isPublic = globalCfg.ownerdewasa;
+    const isRented = sewaData[remoteJid] && sewaData[remoteJid].expire > Date.now();
+    if (!isPublic && !isRented) return; // Skip moderation if not public and not rented
 
     // --- CHECK BLACKLIST ---
     if (blacklistData[remoteJid] && blacklistData[remoteJid].includes(sender)) {
@@ -158,6 +164,22 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
     const prefix = require('../utils/config').getConfig().prefix || '.';
 
     const sender = msg.key.participant || msg.key.remoteJid;
+
+    // --- CHECK GLOBAL MODE (Restricted vs Public) ---
+    const globalCfg = require('../utils/config').getConfig();
+    const isPublic = globalCfg.ownerdewasa;
+    const isRented = sewaData[remoteJid] && sewaData[remoteJid].expire > Date.now();
+
+    // Jika bukan owner dan mode publik MATI, cek apakah grup sudah sewa
+    if (!isBotOwner && !isPublic && !isRented && command.startsWith(prefix)) {
+        // Daftar perintah yang tetap boleh diakses meskipun belum sewa (opsional)
+        const whiteList = [prefix + 'ceksewa', prefix + 'owner']; 
+        if (!whiteList.includes(command)) {
+            await sock.sendMessage(remoteJid, { text: `🚫 *AKSES DIBATASI*\n\nGrup ini belum terdaftar dalam sistem sewa. Silakan hubungi Owner untuk menyewa bot agar semua fitur bisa digunakan.` });
+            return true;
+        }
+    }
+
     if (afkData[sender]) {
         const data = afkData[sender];
         const duration = Date.now() - data.time;
@@ -190,7 +212,7 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         prefix + 'addsewa', prefix + 'ceksewa', prefix + 'delsewa',
         prefix + 'antibot', prefix + 'antibot_kick', 
         prefix + 'automute', prefix + 'setmute', prefix + 'setunmute',
-        prefix + 'setppgc'
+        prefix + 'setppgc', prefix + 'ownerdewasa'
     ];
 
     // --- HANDLE LIST (Custom Response) ---
@@ -757,6 +779,20 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             await sock.updateProfilePicture(remoteJid, buffer);
             await sock.sendMessage(remoteJid, { text: `✅ Foto profil grup berhasil diubah.` });
         }
+        else if (command === prefix + 'ownerdewasa') {
+            if (!isBotOwner) return true;
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                require('../utils/config').update('ownerdewasa', true);
+                await sock.sendMessage(remoteJid, { text: `✅ *Mode Publik Aktif!*\nBot sekarang bisa digunakan di semua grup.` });
+            } else if (opt === 'off') {
+                require('../utils/config').update('ownerdewasa', false);
+                await sock.sendMessage(remoteJid, { text: `❌ *Mode Publik Mati!*\nBot sekarang hanya bisa digunakan di grup yang sudah Sewa (.addsewa).` });
+            } else {
+                const current = require('../utils/config').getConfig().ownerdewasa;
+                await sock.sendMessage(remoteJid, { text: `Status Mode Publik: *${current ? 'ON (Public)' : 'OFF (Sewa Only)'}*\nGunakan: ${prefix}ownerdewasa on/off` });
+            }
+        }
     } catch (e) {
         await sock.sendMessage(remoteJid, { text: `❌ Terjadi error: ${e.message}` }, { quoted: msg });
     }
@@ -816,6 +852,13 @@ function formatDuration(ms) {
 
 async function handleGroupParticipantsUpdate(sock, { id, participants, action }) {
     const remoteJid = id;
+    
+    // --- CHECK SEWA / PUBLIC MODE ---
+    const globalCfg = require('../utils/config').getConfig();
+    const isPublic = globalCfg.ownerdewasa;
+    const isRented = sewaData[remoteJid] && sewaData[remoteJid].expire > Date.now();
+    if (!isPublic && !isRented) return; // Skip welcome/kick if not public and not rented
+
     const settings = getGroupSettings(remoteJid);
     const metadata = await sock.groupMetadata(remoteJid).catch(() => ({}));
     const groupName = metadata.subject || 'Grup';

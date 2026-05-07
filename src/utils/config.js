@@ -30,6 +30,7 @@ let _cfg = {
     useMenuImage:      false, // true = menu pakai gambar, false = teks saja
     useLimit:          false, // true = aktifkan limit untuk user non-admin
     limitCount:        30,    // jumlah limit default per hari
+    ownerdewasa:       false, // false = Restricted (Sewa only), true = Public (Semua grup)
 };
 
 // ── Persist ke file ───────────────────────────────────────────────────────────
