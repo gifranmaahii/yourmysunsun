@@ -13,6 +13,20 @@ const {
 
 const tools = require('./src/features/tools');
 const { logger, baileyLogger } = require('./src/utils/logger');
+const { exec } = require('child_process');
+
+// --- PENDENGAR PERINTAH CONSOLE (Untuk Telegram Control) ---
+process.stdin.on('data', (data) => {
+    const input = data.toString().trim();
+    if (input === 'git_pull') {
+        console.log('🔄 [REMOTE] Menjalankan Git Pull dari Telegram...');
+        exec('git pull', (err, stdout, stderr) => {
+            if (err) return console.error(`❌ Git Pull Error: ${err.message}`);
+            console.log(`✅ Git Pull Berhasil: ${stdout}`);
+            process.exit(1); // Keluar agar panel auto-restart dengan kodingan baru
+        });
+    }
+});
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
 const cfg = require('./src/utils/config');
 const { 
@@ -42,7 +56,7 @@ const games = require('./src/features/games');
 const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
-const { createLyricSticker } = require('./src/features/lyricSticker');
+const { createLyricSticker, createLyricStickerStatic, parseColor: parseLyricColor } = require('./src/features/lyricSticker');
 
 const ryzumi = require('./src/features/ryzumi');
 const channelCopier = require('./src/features/channelCopier');
@@ -3657,6 +3671,64 @@ async function startBot() {
                         await sock.sendMessage(remoteJid, {
                             text: `❌ Gagal membuat Lottie sticker: ${error.message}`,
                         }, { quoted: msg });
+                    }
+
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: STICKER LIRIK 1 FRAME — .stickerlirik2
+                // Perintah: .stickerlirik2 baris1, baris2 | warna
+                // Atau kirim foto + caption .stickerlirik2 baris1, baris2
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'stickerlirik2')) {
+                    let lyricRaw = textContent.replace(new RegExp('^\\' + PREFIX + 'stickerlirik2\\s*', 'i'), '').trim();
+
+                    if (!lyricRaw) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `🎵 *Sticker Lirik 1 Frame*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik2 baris1, baris2, baris3\`\n\n🎨 *Ganti warna background (pisah dengan |):*\n\`${PREFIX}stickerlirik2 baris1, baris2 | biru\`\n\`${PREFIX}stickerlirik2 baris1, baris2 | #3A1A2E\`\n\n🖼️ *Pakai foto sebagai background:*\nKirim foto dengan caption:\n\`${PREFIX}stickerlirik2 baris1, baris2\`\n\n🎨 *Warna:* merah, biru, hijau, kuning, hitam, putih, pink, ungu, orange, cream, abu, coklat, navy, tosca`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    // Parse warna background dari | separator
+                    let bgColor = '#FAE8CC';
+                    if (lyricRaw.includes('|')) {
+                        const parts = lyricRaw.split('|');
+                        lyricRaw = parts[0].trim();
+                        const colorStr = parts[1].trim();
+                        bgColor = parseLyricColor(colorStr) || '#FAE8CC';
+                    }
+
+                    const lines2 = lyricRaw.split(',').map(l => l.trim()).filter(l => l.length > 0);
+                    if (lines2.length === 0) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Tidak ada lirik. Gunakan koma (,) sebagai pemisah baris.' }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 800);
+                    await sock.sendMessage(remoteJid, { text: '⏳ Membuat sticker lirik...' }, { quoted: msg });
+
+                    try {
+                        // Cek apakah ada foto (sebagai background)
+                        let bgImageBuffer = null;
+                        const quotedMsg2 = message.extendedTextMessage?.contextInfo?.quotedMessage;
+                        if (message.imageMessage) {
+                            bgImageBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+                        } else if (quotedMsg2?.imageMessage) {
+                            const dlKey2 = {
+                                message: quotedMsg2,
+                                key: { remoteJid: msg.key.remoteJid, id: message.extendedTextMessage.contextInfo.stanzaId, participant: message.extendedTextMessage.contextInfo.participant }
+                            };
+                            bgImageBuffer = await downloadMediaMessage(dlKey2, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+                        }
+
+                        const stickerBuffer2 = await createLyricStickerStatic(lines2, bgColor, bgImageBuffer);
+                        await sock.sendMessage(remoteJid, { sticker: stickerBuffer2 }, { quoted: msg });
+                        logger.info(`🎵 Sticker lirik 1-frame dikirim ke ${remoteJid}`);
+                    } catch (error) {
+                        logger.error(`❌ Sticker lirik2 error: ${error.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal membuat sticker lirik: ${error.message}` }, { quoted: msg });
                     }
 
                     continue;
