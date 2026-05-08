@@ -67,7 +67,9 @@ bot.onText(/\/start/, (msg) => {
         `🔹 /startbot - Nyalakan bot\n` +
         `🔹 /stopbot - Matikan bot\n` +
         `🔹 /restartbot - Restart bot\n` +
-        `🔹 /update - Git Pull (Bot akan mati sejenak)\n` +
+        `🔹 /update - Git Pull (Tarik kodingan baru)\n` +
+        `🔹 /login - Tampilkan QR (Restart)\n` +
+        `🔹 /logout - Hapus Sesi (Logout Total)\n` +
         `🔹 /logs - Lihat log console terakhir`;
     bot.sendMessage(msg.chat.id, welcome);
 });
@@ -118,6 +120,28 @@ bot.onText(/\/update/, async (msg) => {
     } else {
         bot.sendMessage(chatId, '❌ Gagal mengirim perintah. Pastikan status bot adalah RUNNING.');
     }
+});
+
+bot.onText(/\/login/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '⏳ Me-restart bot untuk memicu QR Code baru...');
+    await sendPowerAction('restart');
+    bot.sendMessage(chatId, '✅ Bot sedang restart. Silakan pantau console panel kamu untuk scan QR Code atau pairing code.');
+});
+
+bot.onText(/\/logout/, async (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, '⚠️ Sedang menghapus sesi bot (Logout)...');
+    const status = await getServerStatus();
+    
+    if (status === 'offline') {
+        bot.sendMessage(chatId, '❌ Server Offline. Menyalakan sejenak untuk menghapus sesi...');
+        await sendPowerAction('start');
+        setTimeout(() => sendCommand('logout_bot'), 10000);
+    } else {
+        await sendCommand('logout_bot');
+    }
+    bot.sendMessage(chatId, '✅ Perintah Logout dikirim! Sesi akan dihapus dan bot akan mati.');
 });
 
 bot.onText(/\/logs/, async (msg) => {
