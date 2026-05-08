@@ -99,35 +99,25 @@ bot.onText(/\/restartbot/, async (msg) => {
 
 bot.onText(/\/update/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '⏳ Memulai proses update...\nMematikan bot agar bisa melakukan git pull.');
-
-    // 1. Kirim sinyal stop
-    await sendPowerAction('stop');
-
-    // 2. Loop cek status sampai offline
-    let isOffline = false;
-    let attempts = 0;
+    bot.sendMessage(chatId, '⏳ Mengecek status server...');
     
-    const checkInterval = setInterval(async () => {
-        attempts++;
-        const status = await getServerStatus();
-        
-        if (status === 'offline') {
-            clearInterval(checkInterval);
-            bot.sendMessage(chatId, '✅ Server sudah Offline. Menarik update dari GitHub...');
-            
-            const success = await sendCommand('git pull');
-            if (success) {
-                bot.sendMessage(chatId, '✅ Git Pull berhasil! Menyalakan bot kembali...');
-                setTimeout(() => sendPowerAction('start'), 3000);
-            } else {
-                bot.sendMessage(chatId, '❌ Gagal mengirim perintah git pull. Coba lagi secara manual di panel.');
-            }
-        } else if (attempts >= 12) { // Maksimal 1 menit (12 * 5 detik)
-            clearInterval(checkInterval);
-            bot.sendMessage(chatId, '⚠️ Proses terlalu lama. Server belum offline. Silakan coba klik /update lagi nanti.');
-        }
-    }, 5000);
+    const status = await getServerStatus();
+    
+    if (status === 'offline') {
+        bot.sendMessage(chatId, '⚠️ Server sedang Offline. Menyalakan server terlebih dahulu agar bisa update...');
+        await sendPowerAction('start');
+        bot.sendMessage(chatId, '⏳ Tunggu 15 detik sampai server benar-benar ONLINE...');
+        return;
+    }
+
+    bot.sendMessage(chatId, '🚀 Mengirim perintah Git Pull ke bot WhatsApp...');
+    const success = await sendCommand('git_pull');
+    
+    if (success) {
+        bot.sendMessage(chatId, '✅ Perintah diterima! Bot akan menarik update dan melakukan restart otomatis dalam 10-20 detik.');
+    } else {
+        bot.sendMessage(chatId, '❌ Gagal mengirim perintah. Pastikan status bot adalah RUNNING.');
+    }
 });
 
 bot.onText(/\/logs/, async (msg) => {
