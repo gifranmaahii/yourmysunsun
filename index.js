@@ -37,6 +37,14 @@ process.stdin.on('data', (data) => {
             console.log('❌ Folder sesi tidak ditemukan.');
         }
     }
+    if (input.startsWith('pair_bot ')) {
+        const num = input.replace('pair_bot ', '').trim();
+        console.log(`🔑 [REMOTE] Menyiapkan pairing code untuk: ${num}`);
+        fs.writeFileSync(path.join(__dirname, 'pairing.json'), JSON.stringify({ number: num }));
+        const sessionPath = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
+        if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+        process.exit(1);
+    }
 });
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
 const cfg = require('./src/utils/config');
@@ -535,7 +543,6 @@ async function startBot() {
                 }
             };
 
-            // Panggil 1x saja
             await requestPairing();
         }
     }
@@ -1012,87 +1019,105 @@ async function startBot() {
 
 ┏━『 *STICKER & LOTTIE* 』
 ┃
-┣⌬ ${PREFIX}sticker
-┣⌬ ${PREFIX}qc (Quotly)
-┣⌬ ${PREFIX}toimg / .tovid
-┣⌬ ${PREFIX}lottie / .ssearch
+┣⌬ ${PREFIX}sticker — Buat sticker dari foto/video
+┣⌬ ${PREFIX}qc — Quotly sticker (balon chat)
+┣⌬ ${PREFIX}toimg / ${PREFIX}tovid — Sticker → foto/video
+┣⌬ ${PREFIX}lottie / ${PREFIX}ssearch — Sticker animasi Lottie
+┣⌬ ${PREFIX}hd — Perjelas/upscale gambar
+┗━━━━━━━◧
+
+┏━『 *🎵 STICKER LIRIK* 』
+┃
+┣⌬ ${PREFIX}stickerlirik
+┃   ┗ Animasi lirik muncul bergantian + efek
+┃     hujan bergerak di tulisan
+┃   📌 Contoh:
+┃     ${PREFIX}stickerlirik aku rindu, dirimu, selalu
+┃   ⏱️ Custom durasi:
+┃     ${PREFIX}stickerlirik aku rindu, dirimu | 3
+┃     (3 = detik per baris, default 2)
+┃
+┣⌬ ${PREFIX}stickerlirik2
+┃   ┗ Semua lirik tampil BERTAHAP dalam satu
+┃     sticker, dengan efek hujan bergerak
+┃   📌 Contoh biasa:
+┃     ${PREFIX}stickerlirik2 aku rindu, dirimu, selalu
+┃   🎨 Custom background warna:
+┃     ${PREFIX}stickerlirik2 aku rindu, dirimu | navy
+┃   🖼️ Custom background foto:
+┃     Kirim foto + caption:
+┃     ${PREFIX}stickerlirik2 aku rindu, dirimu
+┃   ⏱️ Custom durasi + warna:
+┃     ${PREFIX}stickerlirik2 aku rindu | hitam | 3
+┃   🎨 Warna tersedia: merah, biru, hijau,
+┃     kuning, hitam, putih, pink, ungu,
+┃     orange, cream, abu, coklat, navy, tosca
+┃     atau gunakan kode hex: #3A1A2E
+┃
 ┗━━━━━━━◧
 
 ┏━『 *RYZUMI PREMIUM AI* 』
 ┃
-┣⌬ ${PREFIX}ai [tanya]
-┣⌬ ${PREFIX}gemini [google]
-┣⌬ ${PREFIX}flux [gambar]
-┣⌬ ${PREFIX}remini [hd]
+┣⌬ ${PREFIX}ai [tanya] — Chat AI canggih
+┣⌬ ${PREFIX}gemini [tanya] — Google Gemini AI
+┣⌬ ${PREFIX}flux [deskripsi] — Generate gambar AI
+┣⌬ ${PREFIX}remini — Perjelas foto buram
 ┗━━━━━━━◧
 
 ┏━『 *DOWNLOADER* 』
 ┃
-┣⌬ ${PREFIX}tiktok / .ttaudio
-┣⌬ ${PREFIX}ig / .instagram
-┣⌬ ${PREFIX}ytmp3 / .ytmp4
-┣⌬ ${PREFIX}play / .pinvideo
+┣⌬ ${PREFIX}tiktok / ${PREFIX}ttaudio — Download TikTok
+┣⌬ ${PREFIX}ig / ${PREFIX}instagram — Download Instagram
+┣⌬ ${PREFIX}ytmp3 / ${PREFIX}ytmp4 — Download YouTube
+┣⌬ ${PREFIX}play / ${PREFIX}pinvideo — Cari & download lagu
 ┗━━━━━━━◧
 
 ┏━『 *GRUP & ADMIN* 』
 ┃
-┣⌬ ${PREFIX}kick / .add / .warn
-┣⌬ ${PREFIX}promote / .demote
-┣⌬ ${PREFIX}setnamegc / .setopen
-┣⌬ ${PREFIX}linkgc / .revokelink
-┣⌬ ${PREFIX}antilink / .antibot
-┣⌬ ${PREFIX}welcome / .antidelete
-┣⌬ ${PREFIX}tagall / .hidetag
-┣⌬ ${PREFIX}groupinfo / .list
-┣⌬ ${PREFIX}afk / .absen
+┣⌬ ${PREFIX}kick / ${PREFIX}add / ${PREFIX}warn
+┣⌬ ${PREFIX}promote / ${PREFIX}demote
+┣⌬ ${PREFIX}setnamegc / ${PREFIX}setopen
+┣⌬ ${PREFIX}linkgc / ${PREFIX}revokelink
+┣⌬ ${PREFIX}antilink / ${PREFIX}antibot
+┣⌬ ${PREFIX}welcome / ${PREFIX}antidelete
+┣⌬ ${PREFIX}tagall / ${PREFIX}hidetag
+┣⌬ ${PREFIX}groupinfo / ${PREFIX}list
+┣⌬ ${PREFIX}afk / ${PREFIX}absen
 ┗━━━━━━━◧
 
 ┏━『 *TOOLS & SEARCH* 』
 ┃
-┣⌬ ${PREFIX}ss [url] / .sholat
-┣⌬ ${PREFIX}stalkig [user]
-┣⌬ ${PREFIX}stalktt [user]
-┣⌬ ${PREFIX}google / .pin
-┣⌬ ${PREFIX}gempa / .news
-┣⌬ ${PREFIX}jokes / .quotes
-┣⌬ ${PREFIX}shortlink [url]
-┣⌬ ${PREFIX}bot [teks]
-┣⌬ ${PREFIX}kbbi / .wiki / .tr
-┣⌬ ${PREFIX}gsm / .cuaca / .zodiak
-┣⌬ ${PREFIX}stalkgh [user]
-┣⌬ ${PREFIX}doa / .anime
-┣⌬ ${PREFIX}hilih / .tts
-┣⌬ ${PREFIX}ipstalk / .cekemail
-┣⌬ ${PREFIX}lacakno / .cekno / .kurs
-┣⌬ ${PREFIX}timezone [kota/negara]
-┣⌬ ${PREFIX}vat [no_vat]
-┣⌬ ${PREFIX}company [domain]
-┣⌬ ${PREFIX}ua [ua_string] / .abss [url]
-┣⌬ ${PREFIX}phone [query] / .latest
-┣⌬ ${PREFIX}brands / .topinterest
+┣⌬ ${PREFIX}ss [url] / ${PREFIX}sholat
+┣⌬ ${PREFIX}stalkig / ${PREFIX}stalktt / ${PREFIX}stalkgh
+┣⌬ ${PREFIX}google / ${PREFIX}pin
+┣⌬ ${PREFIX}gempa / ${PREFIX}news / ${PREFIX}cuaca
+┣⌬ ${PREFIX}jokes / ${PREFIX}quotes / ${PREFIX}doa
+┣⌬ ${PREFIX}kbbi / ${PREFIX}wiki / ${PREFIX}tr
+┣⌬ ${PREFIX}tts / ${PREFIX}shortlink
+┣⌬ ${PREFIX}lacakno / ${PREFIX}cekno / ${PREFIX}kurs
+┣⌬ ${PREFIX}timezone / ${PREFIX}phone / ${PREFIX}gsm
 ┗━━━━━━━◧
 
 ┏━『 *GAMES (2000+ Soal!)* 』
 ┃
-┣⌬ .tebakgambar / .tebaklirik
-┣⌬ .tebaktebakan / .tebakbendera
-┣⌬ .asahotak / .siapakahaku
-┣⌬ .susunkata / .tekateki
-┣⌬ .caklontong / .family100
-┣⌬ .math / .tebakangka / .tod
-┣⌬ .gamelist — Daftar lengkap
+┣⌬ ${PREFIX}tebakgambar / ${PREFIX}tebaklirik
+┣⌬ ${PREFIX}tebaktebakan / ${PREFIX}tebakbendera
+┣⌬ ${PREFIX}asahotak / ${PREFIX}siapakahaku
+┣⌬ ${PREFIX}susunkata / ${PREFIX}math / ${PREFIX}tod
+┣⌬ ${PREFIX}gamelist — Daftar lengkap game
 ┗━━━━━━━◧
 
-┏━『 *AUDIO TOOLS* 』
+┏━『 *AUDIO & SALURAN* 』
 ┃
-┣⌬ .kirim / .ceksaluran
-┣⌬ .accsaluran [link]
-┣⌬ .tovn [filter]
-┣⌬ .copier (Multi-Copier Saluran)
-┣⌬ .caraupload — Tutorial upload ke saluran
+┣⌬ ${PREFIX}kirim / ${PREFIX}ceksaluran
+┣⌬ ${PREFIX}accsaluran [link]
+┣⌬ ${PREFIX}tovn [filter] — Voice note dengan efek
+┣⌬ ${PREFIX}copier — Multi-Copier Saluran
+┣⌬ ${PREFIX}caraupload — Tutorial upload ke saluran
 ┗━━━━━━━◧
 
-*Info:* Ketik perintah tanpa tanda kurung.
+💡 *Tips:* Ketik perintah tanpa tanda kurung.
+Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
 • Owner: ${cfg.getDisplayOwner() || 'belum diatur'}`;
 
                     const { useMenuImage, menuImage } = cfg.getConfig();
