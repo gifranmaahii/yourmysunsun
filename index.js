@@ -119,7 +119,15 @@ const argv = minimist(process.argv.slice(2));
 const SESSION_NAME = argv.session || argv._[0] || 'session';
 const SESSION_PATH = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
 
-
+// Start Telegram Control ONLY for main session
+if (SESSION_NAME === 'session') {
+    try {
+        require('./telegramControl.js');
+        console.log('🤖 Telegram Remote Control Integrated & Started.');
+    } catch (e) {
+        console.error('❌ Failed to start Telegram Control:', e.message);
+    }
+}
 
 if (SESSION_NAME !== 'session' && !fs.existsSync(path.join(__dirname, 'sessions'))) {
     fs.mkdirSync(path.join(__dirname, 'sessions'));
