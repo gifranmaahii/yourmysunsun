@@ -141,6 +141,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
             authDataSent = true;
             const code = pairingMatch[1];
             newBot.pairingCode = code;
+            console.log(`PAIRING_CODE: ${code}`); // Re-log agar ditangkap Telegram Control
             
             await sock.sendMessage(remoteJid, {
                 text: `✅ *Bot Anak Berhasil Disiapkan!*\n\n` +
