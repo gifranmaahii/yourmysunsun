@@ -1066,28 +1066,19 @@ async function startBot() {
 
 ┏━『 *🎵 STICKER LIRIK* 』
 ┃
-┣⌬ ${PREFIX}stickerlirik
-┃   ┗ Animasi lirik bergantian + efek hujan
-┃   📌 ${PREFIX}stickerlirik aku rindu, dirimu
-┃   ⏱️ Durasi: | 3  → 3 detik per baris
-┃   🔤 Font: | impact  atau  | comic
-┃   👉 ${PREFIX}stickerlirik aku rindu | 3 | comic
+┣⌬ ${PREFIX}stickerlirik — Animasi lirik bergantian + efek hujan
+┣⌬ ${PREFIX}stickerlirik2 — Lirik tampil bertahap + efek hujan
 ┃
-┣⌬ ${PREFIX}stickerlirik2
-┃   ┗ Lirik tampil BERTAHAP + efek hujan
-┃   📌 ${PREFIX}stickerlirik2 aku rindu, dirimu
-┃   🎨 Warna bg: | navy  atau  | #3A1A2E
-┃   🖼️ Foto bg: Kirim foto + caption perintah
-┃   ⏱️ Durasi: | 3
-┃   🔤 Font: | impact  (boleh digabung)
-┃   👉 ${PREFIX}stickerlirik2 aku rindu | hitam | 3 | comic
+┃ Opsi (pisah pakai |):
+┃   Durasi  : | 2  (detik per baris)
+┃   Font    : | serif | impact | comic | verdana | arial
+┃   Efek    : | shadow | outline | glow
+┃   Tema    : | dark | neon | sakura | sunset | ocean | gold
+┃             | violet | forest | rose | minimal
+┃   Warna bg: | navy | hitam | #3A1A2E  (stickerlirik2)
+┃   Gradient: | navy>purple  (stickerlirik2)
 ┃
-┣⌬ 🔤 *Font:* ${LYRIC_FONT_KEYS.join(' • ')}
-┣⌬ ✨ *Efek teks:* shadow • outline • glow
-┣⌬ 🎨 *Tema:* ${LYRIC_THEME_KEYS.join(' • ')}
-┃   🌈 Gradient: \`| navy>purple\`  \`| merah>kuning\`
-┃   (Ketik perintah tanpa argumen untuk tutorial)
-┃
+┃ Ketik perintah tanpa teks untuk tutorial lengkap
 ┗━━━━━━━◧
 
 ┏━『 *RYZUMI PREMIUM AI* 』
