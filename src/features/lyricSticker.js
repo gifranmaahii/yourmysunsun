@@ -50,6 +50,23 @@ function resolveFont(key) {
 
 const FONT_FAMILY = _defFont.family; // kept for legacy fallback
 
+// ── Register emoji font (Apple Color Emoji, fallback Noto) ────────────────────
+const _emojiCandidates = [
+    path.join(__dirname, '../../assets/fonts/AppleColorEmoji.ttf'),
+    path.join(__dirname, '../../assets/fonts/NotoColorEmoji.ttf'),
+];
+let _emojiFamily = null;
+for (const ep of _emojiCandidates) {
+    try {
+        if (fs.existsSync(ep)) {
+            GlobalFonts.registerFromPath(ep, 'LF_Emoji');
+            _emojiFamily = 'LF_Emoji';
+            break;
+        }
+    } catch (_) {}
+}
+const _emojiFallback = _emojiFamily ? `"${_emojiFamily}", ` : '';
+
 const BG_COLOR   = '#FAE8CC';   // warm cream
 const TEXT_COLOR = '#5A1A2A';   // dark brownish-red
 
@@ -228,14 +245,14 @@ function fitFontSize(text, maxW, maxH, startSize = 100, minSize = 22, fontOpts =
     for (let fs = startSize; fs >= minSize; fs -= 3) {
         const tmp    = createCanvas(600, 100);
         const tmpCtx = tmp.getContext('2d');
-        tmpCtx.font  = `${weight} ${fs}px "${family}", Georgia, serif`;
+        tmpCtx.font  = `${weight} ${fs}px "${family}", ${_emojiFallback}Georgia, serif`;
         const wrapped = wordWrap(tmpCtx, text, maxW);
         const lineH   = fs * 1.28;
         if (wrapped.length * lineH <= maxH) return { fontSize: fs, wrapped };
     }
     const tmp    = createCanvas(600, 100);
     const tmpCtx = tmp.getContext('2d');
-    tmpCtx.font  = `${weight} ${minSize}px "${family}", Georgia, serif`;
+    tmpCtx.font  = `${weight} ${minSize}px "${family}", ${_emojiFallback}Georgia, serif`;
     return { fontSize: minSize, wrapped: wordWrap(tmpCtx, text, maxW) };
 }
 
@@ -251,7 +268,7 @@ function drawLyricFrame(text, animPhase = 0, fontKey = null, effect = null, bgCo
     const txtCol  = txtColOvr || TEXT_COLOR;
 
     const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 100, 22, fOpts);
-    const fontStr = `${fOpts.weight} ${fontSize}px "${fOpts.family}", Georgia, "Times New Roman", serif`;
+    const fontStr = `${fOpts.weight} ${fontSize}px "${fOpts.family}", ${_emojiFallback}Georgia, "Times New Roman", serif`;
     const lineH   = fontSize * 1.28;
     const totalH  = lines.length * lineH;
 
@@ -328,7 +345,7 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
         ctx.fillRect(0, 0, SIZE, SIZE);
     }
 
-    const fontStr = `${fWgt} ${fontSize}px "${fFam}", Georgia, "Times New Roman", serif`;
+    const fontStr = `${fWgt} ${fontSize}px "${fFam}", ${_emojiFallback}Georgia, "Times New Roman", serif`;
     ctx.font         = fontStr;
     ctx.fillStyle    = textColor;
     ctx.textAlign    = 'center';
@@ -394,7 +411,7 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
     for (; fontSize >= 18; fontSize -= 3) {
         const tmp    = createCanvas(600, 100);
         const tmpCtx = tmp.getContext('2d');
-        tmpCtx.font  = `${fOpts.weight} ${fontSize}px "${fOpts.family}", Georgia, serif`;
+        tmpCtx.font  = `${fOpts.weight} ${fontSize}px "${fOpts.family}", ${_emojiFallback}Georgia, serif`;
         allGroups = lines.map(l => wordWrap(tmpCtx, l, maxW));
         const lineH  = fontSize * 1.28;
         const gap    = lineH * 0.38;
