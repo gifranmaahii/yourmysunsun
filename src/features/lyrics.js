@@ -1,4 +1,7 @@
 const fetch = require('node-fetch');
+const { generateLyricVideo } = require('../utils/lyricVideo');
+const path = require('path');
+const fs = require('fs');
 
 /**
  * Fitur Lirik Lagu (Auto-Parsing Romaji/Kanji/Indo)
@@ -6,7 +9,8 @@ const fetch = require('node-fetch');
  */
 async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
     const command = textContent.toLowerCase().split(' ')[0];
-    const targetCmds = [prefix + 'lirik', prefix + 'lyrics'];
+    const isVideo = command.includes('vid') || command.includes('video');
+    const targetCmds = [prefix + 'lirik', prefix + 'lyrics', prefix + 'lirikvid', prefix + 'lirikvideo'];
     
     if (!targetCmds.some(cmd => command.startsWith(cmd))) return false;
 
@@ -68,7 +72,31 @@ async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
         caption += `\n\n*Request by*: ${msg.pushName || 'User'}\n*DATE*: ${dateStr}`;
 
         try { await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } }); } catch (e) {}
-        await sock.sendMessage(remoteJid, { text: caption }, { quoted: msg });
+        
+        if (isVideo) {
+            // Ambil 3-4 baris pertama saja untuk video agar tidak terlalu berat
+            const lines = lyrics.split('\n').filter(l => l.trim().length > 5).slice(0, 3);
+            const allWords = lines.join(' ').split(' ').slice(0, 10); // Maks 10 kata agar video tidak kelamaan
+            
+            const outPath = path.join(__dirname, `../../temp_lirik_${Date.now()}.mp4`);
+            await sock.sendMessage(remoteJid, { text: '⏳ Sedang merender video lirik... Mohon tunggu sebentar.' }, { quoted: msg });
+            
+            try {
+                await generateLyricVideo(allWords, outPath);
+                await sock.sendMessage(remoteJid, { 
+                    video: fs.readFileSync(outPath), 
+                    caption: `🎥 *Video Lirik Otomatis*\n🎵 *${title}*\n\n_Efek: Rain Aesthetic_`,
+                    mimetype: 'video/mp4'
+                }, { quoted: msg });
+                
+                if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+            } catch (err) {
+                console.error('Video Gen Error:', err);
+                await sock.sendMessage(remoteJid, { text: '❌ Gagal membuat video. RAM VPS mungkin tidak cukup.' }, { quoted: msg });
+            }
+        } else {
+            await sock.sendMessage(remoteJid, { text: caption }, { quoted: msg });
+        }
 
     } catch (e) {
         console.error('[LYRICS ERROR]', e);
