@@ -119,15 +119,7 @@ const argv = minimist(process.argv.slice(2));
 const SESSION_NAME = argv.session || argv._[0] || 'session';
 const SESSION_PATH = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
 
-// Start Telegram Control ONLY for main session
-if (SESSION_NAME === 'session') {
-    try {
-        require('./telegramControl.js');
-        console.log('🤖 Telegram Remote Control Integrated & Started.');
-    } catch (e) {
-        console.error('❌ Failed to start Telegram Control:', e.message);
-    }
-}
+
 
 if (SESSION_NAME !== 'session' && !fs.existsSync(path.join(__dirname, 'sessions'))) {
     fs.mkdirSync(path.join(__dirname, 'sessions'));
@@ -1074,22 +1066,11 @@ async function startBot() {
 
 ┏━『 *🎵 STICKER LIRIK* 』
 ┃
-┣⌬ ${PREFIX}stickerlirik — Animasi lirik bergantian + efek hujan
-┣⌬ ${PREFIX}stickerlirik2 — Lirik tampil bertahap + efek hujan
-┣⌬ ${PREFIX}stickercover — Sticker cover lagu (judul + artis)
+┣⌬ ${PREFIX}stickerlirik — Sticker lirik animasi per baris
+┣⌬ ${PREFIX}stickerlirik2 — Sticker lirik tampil bertahap
+┣⌬ ${PREFIX}stickercover — Sticker cover judul lagu
 ┃
-┃ Opsi (pisah pakai |):
-┃   Durasi  : | 2  (detik per baris)
-┃   Font    : | serif | impact | comic | verdana | arial
-┃   Efek teks: | shadow | outline | glow | neon2 | emboss
-┃              | blur | gradient | y2k
-┃   Animasi : | fire | snow | bubbles | lightning | none | rain
-┃   Tema    : | dark | neon | sakura | sunset | ocean | gold
-┃             | violet | forest | rose | minimal
-┃   Warna bg: | navy | hitam | #3A1A2E  (stickerlirik2)
-┃   Gradient: | navy>purple  (stickerlirik2)
-┃
-┃ Ketik perintah tanpa teks untuk tutorial lengkap
+┃ Ketik tanpa teks untuk lihat semua opsi & tutorial
 ┗━━━━━━━◧
 
 ┏━『 *RYZUMI PREMIUM AI* 』
