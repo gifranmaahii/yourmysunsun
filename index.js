@@ -23,8 +23,19 @@ process.stdin.on('data', (data) => {
         exec('git pull', (err, stdout, stderr) => {
             if (err) return console.error(`❌ Git Pull Error: ${err.message}`);
             console.log(`✅ Git Pull Berhasil: ${stdout}`);
-            process.exit(1); // Keluar agar panel auto-restart dengan kodingan baru
+            process.exit(1); 
         });
+    }
+    if (input === 'logout_bot') {
+        console.log('🗑️ [REMOTE] Menghapus sesi bot dari Telegram...');
+        const sessionPath = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
+        if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            console.log('✅ Sesi berhasil dihapus.');
+            process.exit(1);
+        } else {
+            console.log('❌ Folder sesi tidak ditemukan.');
+        }
     }
 });
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
