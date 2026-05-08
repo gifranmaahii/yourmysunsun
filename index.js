@@ -3702,13 +3702,24 @@ async function startBot() {
                         continue;
                     }
 
-                    // Parse warna background dari | separator
+                    // Parse: lyric | warna | detik
                     let bgColor = '#FAE8CC';
+                    let secPerLine2 = 2;
                     if (lyricRaw.includes('|')) {
                         const parts = lyricRaw.split('|');
                         lyricRaw = parts[0].trim();
-                        const colorStr = parts[1].trim();
-                        bgColor = parseLyricColor(colorStr) || '#FAE8CC';
+                        // parts[1] = warna atau angka, parts[2] = angka
+                        const p1 = (parts[1] || '').trim();
+                        const p2 = (parts[2] || '').trim();
+                        const c = parseLyricColor(p1);
+                        if (c) {
+                            bgColor = c;
+                            const dur2 = parseFloat(p2);
+                            if (!isNaN(dur2) && dur2 >= 1 && dur2 <= 10) secPerLine2 = dur2;
+                        } else {
+                            const dur2 = parseFloat(p1);
+                            if (!isNaN(dur2) && dur2 >= 1 && dur2 <= 10) secPerLine2 = dur2;
+                        }
                     }
 
                     const lines2 = lyricRaw.split(',').map(l => l.trim()).filter(l => l.length > 0);
@@ -3718,7 +3729,7 @@ async function startBot() {
                     }
 
                     await simulateTyping(sock, remoteJid, 800);
-                    await sock.sendMessage(remoteJid, { text: '⏳ Membuat sticker lirik...' }, { quoted: msg });
+                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${secPerLine2}s/baris)...` }, { quoted: msg });
 
                     try {
                         // Cek apakah ada foto (sebagai background)
@@ -3734,9 +3745,9 @@ async function startBot() {
                             bgImageBuffer = await downloadMediaMessage(dlKey2, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
                         }
 
-                        const stickerBuffer2 = await createLyricStickerStatic(lines2, bgColor, bgImageBuffer);
+                        const stickerBuffer2 = await createLyricStickerStatic(lines2, bgColor, bgImageBuffer, secPerLine2);
                         await sock.sendMessage(remoteJid, { sticker: stickerBuffer2 }, { quoted: msg });
-                        logger.info(`🎵 Sticker lirik 1-frame dikirim ke ${remoteJid}`);
+                        logger.info(`🎵 Sticker lirik2 dikirim ke ${remoteJid} — ${lines2.length} baris × ${secPerLine2}s`);
                     } catch (error) {
                         logger.error(`❌ Sticker lirik2 error: ${error.message}`);
                         await sock.sendMessage(remoteJid, { text: `❌ Gagal membuat sticker lirik: ${error.message}` }, { quoted: msg });
@@ -3750,16 +3761,25 @@ async function startBot() {
                 // Perintah: .stickerlirik baris1, baris2, baris3
                 // -----------------------------------------------
                 if (textContent.startsWith(PREFIX + 'stickerlirik')) {
-                    const lyricArgs = textContent.replace(new RegExp('^\\' + PREFIX + 'stickerlirik\\s*', 'i'), '').trim();
+                    let lyricRaw1 = textContent.replace(new RegExp('^\\' + PREFIX + 'stickerlirik\\s*', 'i'), '').trim();
 
-                    if (!lyricArgs) {
+                    if (!lyricRaw1) {
                         await sock.sendMessage(remoteJid, {
-                            text: `🎵 *Sticker Lirik*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik baris1, baris2, baris3\`\n\n✏️ *Contoh:*\n\`${PREFIX}stickerlirik tunggulah, aku disana, menanam celengan\`\n\n✨ Setiap baris muncul bergantian dengan jeda 2 detik!\n🎨 Style: aesthetic lyric card dengan efek rain drip`
+                            text: `🎵 *Sticker Lirik Animasi*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik baris1, baris2, baris3\`\n\n⏱️ *Atur durasi per baris (pisah dengan |):*\n\`${PREFIX}stickerlirik baris1, baris2 | 3\`  ← 3 detik per baris\n\n✏️ *Contoh:*\n\`${PREFIX}stickerlirik tunggulah, aku disana | 2\`\n\n✨ Setiap baris muncul bergantian • Efek hujan bergerak`
                         }, { quoted: msg });
                         continue;
                     }
 
-                    const lines = lyricArgs.split(',').map(l => l.trim()).filter(l => l.length > 0);
+                    // Parse durasi dari | separator
+                    let secPerLine1 = 2;
+                    if (lyricRaw1.includes('|')) {
+                        const parts = lyricRaw1.split('|');
+                        lyricRaw1 = parts[0].trim();
+                        const dur = parseFloat(parts[1]);
+                        if (!isNaN(dur) && dur >= 1 && dur <= 10) secPerLine1 = dur;
+                    }
+
+                    const lines = lyricRaw1.split(',').map(l => l.trim()).filter(l => l.length > 0);
 
                     if (lines.length === 0) {
                         await sock.sendMessage(remoteJid, { text: '❌ Tidak ada lirik ditemukan. Gunakan koma (,) sebagai pemisah baris.' }, { quoted: msg });
@@ -3767,13 +3787,13 @@ async function startBot() {
                     }
 
                     await simulateTyping(sock, remoteJid, 1000);
-                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${lines.length} baris), tunggu sebentar...` }, { quoted: msg });
+                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${lines.length} baris, ${secPerLine1}s/baris)...` }, { quoted: msg });
                     await randomDelay(400, 800);
 
                     try {
-                        const stickerBuffer = await createLyricSticker(lines);
+                        const stickerBuffer = await createLyricSticker(lines, secPerLine1);
                         await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
-                        logger.info(`🎵 Sticker lirik dikirim ke ${remoteJid} — ${lines.length} baris`);
+                        logger.info(`🎵 Sticker lirik dikirim ke ${remoteJid} — ${lines.length} baris × ${secPerLine1}s`);
                     } catch (error) {
                         logger.error(`❌ Sticker lirik error: ${error.message}`);
                         await sock.sendMessage(remoteJid, { text: `❌ Gagal membuat sticker lirik: ${error.message}` }, { quoted: msg });
