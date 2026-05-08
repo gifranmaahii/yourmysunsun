@@ -819,9 +819,9 @@ async function createStickerCover(title, artist = '', opts = {}) {
         ctx.globalAlpha  = 1;
     }
 
-    ctx.font         = `normal ${Math.max(14, titleFs * 0.22)}px Arial, sans-serif`;
+    ctx.font         = `bold ${Math.max(16, titleFs * 0.24)}px "${_emojiFamily || 'Arial'}", ${_emojiFallback}Arial, sans-serif`;
     ctx.fillStyle    = textColor;
-    ctx.globalAlpha  = 0.40;
+    ctx.globalAlpha  = 0.60;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('★  ★  ★', SIZE / 2, SIZE * 0.924);
