@@ -10,23 +10,45 @@ const { addExif } = require('./sticker');
 const { getConfig } = require('../utils/config');
 const { logger } = require('../utils/logger');
 
-// ── Register serif font (Georgia Bold utama, fallback Times New Roman) ──
-let FONT_FAMILY = 'Georgia';
-const serifCandidates = [
-    { path: 'C:\\Windows\\Fonts\\georgiab.ttf',  name: 'LyricSerif' },
-    { path: 'C:\\Windows\\Fonts\\georgia.ttf',   name: 'LyricSerif' },
-    { path: 'C:\\Windows\\Fonts\\timesbd.ttf',   name: 'LyricSerif' },
-    { path: 'C:\\Windows\\Fonts\\times.ttf',     name: 'LyricSerif' },
+// ── Multi-font registration ──────────────────────────────────────────────────
+const _FW = 'C:\\Windows\\Fonts\\';
+const FONT_DEFS = [
+    { key: 'serif',     aliases: ['georgia','classic','elegan','romantis'],   paths: ['georgiab.ttf','georgia.ttf'],    family: 'LF_Serif',    weight: 'bold'   },
+    { key: 'impact',    aliases: ['heavy','tebal','besar'],                    paths: ['impact.ttf'],                   family: 'LF_Impact',   weight: 'normal' },
+    { key: 'comic',     aliases: ['comic','fun','lucu','santai'],              paths: ['comicbd.ttf','comic.ttf'],      family: 'LF_Comic',    weight: 'bold'   },
+    { key: 'verdana',   aliases: ['clean','rapi'],                             paths: ['verdanab.ttf','verdana.ttf'],   family: 'LF_Verdana',  weight: 'bold'   },
+    { key: 'tahoma',    aliases: ['compact','tahoma'],                         paths: ['tahomabd.ttf','tahoma.ttf'],    family: 'LF_Tahoma',   weight: 'bold'   },
+    { key: 'arial',     aliases: ['sans','biasa'],                             paths: ['arialbd.ttf','arial.ttf'],      family: 'LF_Arial',    weight: 'bold'   },
+    { key: 'courier',   aliases: ['mono','typewriter','ketik','mesin'],        paths: ['courbd.ttf','cour.ttf'],        family: 'LF_Courier',  weight: 'bold'   },
+    { key: 'trebuchet', aliases: ['trebo','stylish'],                          paths: ['trebucbd.ttf','trebuc.ttf'],    family: 'LF_Trebuch',  weight: 'bold'   },
 ];
-for (const candidate of serifCandidates) {
-    try {
-        if (fs.existsSync(candidate.path)) {
-            GlobalFonts.registerFromPath(candidate.path, candidate.name);
-            FONT_FAMILY = candidate.name;
-            break;
-        }
-    } catch (_) {}
+
+const _fontMap  = {};
+const LYRIC_FONT_KEYS = [];
+let   _defFont  = { family: 'Georgia', weight: 'bold' };
+
+for (const def of FONT_DEFS) {
+    for (const p of def.paths) {
+        try {
+            if (fs.existsSync(_FW + p)) {
+                GlobalFonts.registerFromPath(_FW + p, def.family);
+                const opts = { family: def.family, weight: def.weight };
+                _fontMap[def.key] = opts;
+                for (const a of def.aliases) _fontMap[a] = opts;
+                LYRIC_FONT_KEYS.push(def.key);
+                if (def.key === 'serif') _defFont = opts;
+                break;
+            }
+        } catch (_) {}
+    }
 }
+
+function resolveFont(key) {
+    if (!key) return _defFont;
+    return _fontMap[key.toLowerCase().trim()] || _defFont;
+}
+
+const FONT_FAMILY = _defFont.family; // kept for legacy fallback
 
 const BG_COLOR   = '#FAE8CC';   // warm cream
 const TEXT_COLOR = '#5A1A2A';   // dark brownish-red
@@ -146,31 +168,33 @@ function drawAnimatedRain(ctx, drips, lineY, fontSize, textColor, animPhase) {
 }
 
 // ── Shrink-to-fit font size for one group of text ────────────────────────────
-function fitFontSize(text, maxW, maxH, startSize = 100, minSize = 22) {
+function fitFontSize(text, maxW, maxH, startSize = 100, minSize = 22, fontOpts = null) {
+    const { family, weight } = fontOpts || _defFont;
     for (let fs = startSize; fs >= minSize; fs -= 3) {
         const tmp    = createCanvas(600, 100);
         const tmpCtx = tmp.getContext('2d');
-        tmpCtx.font  = `bold ${fs}px "${FONT_FAMILY}", Georgia, serif`;
+        tmpCtx.font  = `${weight} ${fs}px "${family}", Georgia, serif`;
         const wrapped = wordWrap(tmpCtx, text, maxW);
         const lineH   = fs * 1.28;
         if (wrapped.length * lineH <= maxH) return { fontSize: fs, wrapped };
     }
     const tmp    = createCanvas(600, 100);
     const tmpCtx = tmp.getContext('2d');
-    tmpCtx.font  = `bold ${minSize}px "${FONT_FAMILY}", Georgia, serif`;
+    tmpCtx.font  = `${weight} ${minSize}px "${family}", Georgia, serif`;
     return { fontSize: minSize, wrapped: wordWrap(tmpCtx, text, maxW) };
 }
 
 // ── Draw single animated lyric frame ── 512×512 PNG buffer ───────────────────
 // animPhase: 0‥1 — position in the rain animation cycle
-function drawLyricFrame(text, animPhase = 0) {
+function drawLyricFrame(text, animPhase = 0, fontKey = null) {
     const SIZE    = 512;
     const PADDING = 36;
     const maxW    = SIZE - PADDING * 2;
     const maxH    = SIZE - 80;
+    const fOpts   = resolveFont(fontKey);
 
-    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH);
-    const fontStr = `bold ${fontSize}px "${FONT_FAMILY}", Georgia, "Times New Roman", serif`;
+    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 100, 22, fOpts);
+    const fontStr = `${fOpts.weight} ${fontSize}px "${fOpts.family}", Georgia, "Times New Roman", serif`;
     const lineH   = fontSize * 1.28;
     const totalH  = lines.length * lineH;
 
@@ -208,7 +232,8 @@ function drawLyricFrame(text, animPhase = 0) {
 // frameIdx = how many lyric groups are visible (0-based)
 // allGroups = all wrapped-line arrays for every input line
 // Layout always uses full-text height so lines don't "jump" as they appear
-function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, bgImg, animPhase = 0) {
+function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, bgImg, animPhase = 0, fontOpts = null) {
+    const { family: fFam, weight: fWgt } = fontOpts || _defFont;
     const SIZE     = 512;
     const PADDING  = 36;
     const maxW     = SIZE - PADDING * 2;
@@ -233,7 +258,7 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
         ctx.fillRect(0, 0, SIZE, SIZE);
     }
 
-    const fontStr = `bold ${fontSize}px "${FONT_FAMILY}", Georgia, "Times New Roman", serif`;
+    const fontStr = `${fWgt} ${fontSize}px "${fFam}", Georgia, "Times New Roman", serif`;
     ctx.font         = fontStr;
     ctx.fillStyle    = textColor;
     ctx.textAlign    = 'center';
@@ -265,11 +290,12 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
 }
 
 // ── Create animated WebP sticker — cumulative reveal + animated rain + custom bg ──
-async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null, secPerLine = 2) {
+async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null, secPerLine = 2, fontKey = null) {
     const PADDING  = 36;
     const maxW     = 512 - PADDING * 2;
     const maxH     = 512 - PADDING * 2 - 46;
     const framesPerGroup = Math.max(2, Math.round(FPS * secPerLine));
+    const fOpts    = resolveFont(fontKey);
 
     let bgImg = null;
     if (bgImageBuffer) bgImg = await loadImage(bgImageBuffer);
@@ -287,7 +313,7 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
     for (; fontSize >= 18; fontSize -= 3) {
         const tmp    = createCanvas(600, 100);
         const tmpCtx = tmp.getContext('2d');
-        tmpCtx.font  = `bold ${fontSize}px "${FONT_FAMILY}", Georgia, serif`;
+        tmpCtx.font  = `${fOpts.weight} ${fontSize}px "${fOpts.family}", Georgia, serif`;
         allGroups = lines.map(l => wordWrap(tmpCtx, l, maxW));
         const lineH  = fontSize * 1.28;
         const gap    = lineH * 0.38;
@@ -314,7 +340,7 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
         for (let g = 0; g < lines.length; g++) {
             for (let f = 0; f < framesPerGroup; f++) {
                 const animPhase = (globalTick / FPS) % 1;
-                const buf = drawCumulativeFrame(g, allGroups, fontSize, textColor, bgColor, bgImg, animPhase);
+                const buf = drawCumulativeFrame(g, allGroups, fontSize, textColor, bgColor, bgImg, animPhase, fOpts);
                 const fp  = path.join(tempDir, `lyric2_frame_${tempId}_${globalTick}.png`);
                 fs.writeFileSync(fp, buf);
                 framePaths.push(fp);
@@ -357,7 +383,7 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
 }
 
 // ── Create animated WebP sticker from lyric lines (sequential, one line per group) ──
-async function createLyricSticker(lines, secPerLine = 2) {
+async function createLyricSticker(lines, secPerLine = 2, fontKey = null) {
     const framesPerLine = Math.max(2, Math.round(FPS * secPerLine));
 
     const tempId  = randomBytes(6).toString('hex');
@@ -380,7 +406,7 @@ async function createLyricSticker(lines, secPerLine = 2) {
             for (let f = 0; f < framesPerLine; f++) {
                 const animPhase = (globalTick / FPS) % 1;
                 const fp  = path.join(tempDir, `lyric_frame_${tempId}_${globalTick}.png`);
-                fs.writeFileSync(fp, drawLyricFrame(lines[i], animPhase));
+                fs.writeFileSync(fp, drawLyricFrame(lines[i], animPhase, fontKey));
                 framePaths.push(fp);
                 globalTick++;
             }
@@ -420,4 +446,4 @@ async function createLyricSticker(lines, secPerLine = 2) {
     } catch (e) { cleanup(); throw e; }
 }
 
-module.exports = { createLyricSticker, createLyricStickerStatic, parseColor };
+module.exports = { createLyricSticker, createLyricStickerStatic, parseColor, LYRIC_FONT_KEYS };
