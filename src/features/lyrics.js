@@ -23,17 +23,63 @@ async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
     // React loading
     try { await sock.sendMessage(remoteJid, { react: { text: '⏳', key: msg.key } }); } catch (e) {}
 
+    let lyricData = null;
+    let source = '';
+
     try {
+        // --- API 1: KAIZEN (Terbaik untuk Anime/Kanji/Romaji) ---
         const res = await fetch(`https://kaizenapi.my.id/search/kaze?q=${encodeURIComponent(query)}`);
         const json = await res.json();
-
-        if (!json.status || !json.result) {
-            try { await sock.sendMessage(remoteJid, { react: { text: '❌', key: msg.key } }); } catch (e) {}
-            await sock.sendMessage(remoteJid, { text: '❌ Lirik tidak ditemukan.' }, { quoted: msg });
-            return true;
+        if (json.status && json.result) {
+            lyricData = json.result;
+            source = 'Kaizen';
         }
+    } catch (e) {
+        console.error('[LYRICS KAIZEN ERROR]', e.message);
+    }
 
-        const { title, lyrics } = json.result;
+    if (!lyricData) {
+        try {
+            // --- API 2: LOLHUMAN (Lebih General, Indo/Barat ok) ---
+            const apikey = process.env.LOLHUMAN_API_KEY;
+            const res = await fetch(`https://api.lolhuman.xyz/api/lirik?apikey=${apikey}&query=${encodeURIComponent(query)}`);
+            const json = await res.json();
+            if (json.status === 200 && json.result) {
+                lyricData = {
+                    title: query,
+                    lyrics: json.result
+                };
+                source = 'Lolhuman';
+            }
+        } catch (e) {
+            console.error('[LYRICS LOLHUMAN ERROR]', e.message);
+        }
+    }
+
+    if (!lyricData) {
+        try {
+            // --- API 3: SIPUTZX (Fallback Terakhir) ---
+            const res = await fetch(`https://api.siputzx.my.id/api/s/lyrics?query=${encodeURIComponent(query)}`);
+            const json = await res.json();
+            if (json.status && json.data) {
+                lyricData = {
+                    title: json.data.title || query,
+                    lyrics: json.data.lyrics
+                };
+                source = 'Siputzx';
+            }
+        } catch (e) {
+            console.error('[LYRICS SIPUTZX ERROR]', e.message);
+        }
+    }
+
+    if (!lyricData) {
+        try { await sock.sendMessage(remoteJid, { react: { text: '❌', key: msg.key } }); } catch (e) {}
+        await sock.sendMessage(remoteJid, { text: '❌ Lirik tidak ditemukan di semua server. Coba gunakan kata kunci yang lebih spesifik (Contoh: Artis + Judul).' }, { quoted: msg });
+        return true;
+    }
+
+    const { title, lyrics } = lyricData;
 
         const romaji = extractSection(lyrics, 'ROMAJI:');
         const kanji = extractSection(lyrics, 'KANJI:');
