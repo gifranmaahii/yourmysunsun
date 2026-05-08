@@ -92,10 +92,11 @@ const games = require('./src/features/games');
 const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
-const { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor: parseLyricColor, parseGradient: parseLyricGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS } = require('./src/features/lyricSticker');
+const { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor: parseLyricColor, parseGradient: parseLyricGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS, LYRIC_ANIM_KEYS } = require('./src/features/lyricSticker');
 const _lyricFontSet   = new Set(LYRIC_FONT_KEYS.concat(['georgia','classic','elegan','romantis','heavy','tebal','besar','comic','fun','lucu','santai','clean','rapi','compact','tahoma','sans','biasa','arial','mono','typewriter','ketik','mesin','courier','trebo','stylish','trebuchet','verdana','impact']));
 const _lyricThemeSet  = new Set(LYRIC_THEME_KEYS);
 const _lyricEffectSet = new Set(LYRIC_EFFECT_KEYS);
+const _lyricAnimSet   = new Set(LYRIC_ANIM_KEYS);
 
 const ryzumi = require('./src/features/ryzumi');
 const channelCopier = require('./src/features/channelCopier');
@@ -1080,8 +1081,9 @@ async function startBot() {
 ┃ Opsi (pisah pakai |):
 ┃   Durasi  : | 2  (detik per baris)
 ┃   Font    : | serif | impact | comic | verdana | arial
-┃   Efek    : | shadow | outline | glow | neon2 | emboss
-┃             | blur | gradient | y2k
+┃   Efek teks: | shadow | outline | glow | neon2 | emboss
+┃              | blur | gradient | y2k
+┃   Animasi : | fire | snow | bubbles | lightning | none | rain
 ┃   Tema    : | dark | neon | sakura | sunset | ocean | gold
 ┃             | violet | forest | rose | minimal
 ┃   Warna bg: | navy | hitam | #3A1A2E  (stickerlirik2)
@@ -3826,6 +3828,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     let fontKey2 = null;
                     let effect2 = null;
                     let themeKey2 = null;
+                    let animEffect2 = 'rain';
                     if (lyricRaw.includes('|')) {
                         const parts = lyricRaw.split('|');
                         lyricRaw = parts[0].trim();
@@ -3840,6 +3843,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                             else if (!isNaN(dur) && dur >= 1 && dur <= 10) { secPerLine2 = dur; }
                             else if (_lyricThemeSet.has(pl))              { themeKey2 = pl; }
                             else if (_lyricEffectSet.has(pl))             { effect2 = pl; }
+                            else if (_lyricAnimSet.has(pl))               { animEffect2 = pl; }
                             else if (_lyricFontSet.has(pl))               { fontKey2 = pl; }
                         }
                     }
@@ -3868,7 +3872,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                             bgImageBuffer = await downloadMediaMessage(dlKey2, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
                         }
 
-                        const stickerBuffer2 = await createLyricStickerStatic(lines2, bgColor, bgImageBuffer, secPerLine2, fontKey2, effect2, themeKey2, bgGrad2);
+                        const stickerBuffer2 = await createLyricStickerStatic(lines2, bgColor, bgImageBuffer, secPerLine2, fontKey2, effect2, themeKey2, bgGrad2, animEffect2);
                         await sock.sendMessage(remoteJid, { sticker: stickerBuffer2 }, { quoted: msg });
                         logger.info(`🎵 Sticker lirik2 dikirim ke ${remoteJid} — ${lines2.length} baris × ${secPerLine2}s font=${fontKey2 || 'default'}`);
                     } catch (error) {
@@ -3898,6 +3902,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     let fontKey1    = null;
                     let effect1     = null;
                     let themeKey1   = null;
+                    let animEffect1 = 'rain';
                     if (lyricRaw1.includes('|')) {
                         const parts = lyricRaw1.split('|');
                         lyricRaw1 = parts[0].trim();
@@ -3908,6 +3913,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                             if (!isNaN(dur) && dur >= 1 && dur <= 10) { secPerLine1 = dur; }
                             else if (_lyricThemeSet.has(pl))            { themeKey1 = pl; }
                             else if (_lyricEffectSet.has(pl))           { effect1 = pl; }
+                            else if (_lyricAnimSet.has(pl))             { animEffect1 = pl; }
                             else if (_lyricFontSet.has(pl))             { fontKey1 = pl; }
                         }
                     }
@@ -3925,7 +3931,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     await randomDelay(400, 800);
 
                     try {
-                        const stickerBuffer = await createLyricSticker(lines, secPerLine1, fontKey1, effect1, themeKey1);
+                        const stickerBuffer = await createLyricSticker(lines, secPerLine1, fontKey1, effect1, themeKey1, animEffect1);
                         await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
                         logger.info(`🎵 Sticker lirik dikirim ke ${remoteJid} — ${lines.length} baris × ${secPerLine1}s font=${fontKey1 || 'default'}`);
                     } catch (error) {

@@ -122,6 +122,7 @@ const THEMES = {
 };
 const LYRIC_THEME_KEYS  = Object.keys(THEMES);
 const LYRIC_EFFECT_KEYS = ['shadow', 'outline', 'glow', 'neon2', 'emboss', 'blur', 'gradient', 'y2k'];
+const LYRIC_ANIM_KEYS   = ['rain', 'fire', 'snow', 'bubbles', 'lightning', 'none'];
 
 // ── Word wrap helper ─────────────────────────────────────────────────────────
 function wordWrap(ctx, text, maxWidth) {
@@ -243,6 +244,101 @@ function drawY2KSparkles(ctx, cx, lineY, textW, fontSize, animPhase, textColor) 
     ctx.restore();
 }
 
+// ── Additional animation effects ───────────────────────────────────────────────
+function drawAnimatedFire(ctx, lineX, lineY, textW, fontSize, animPhase) {
+    const count = Math.max(7, Math.floor(textW / 16));
+    for (let i = 0; i < count; i++) {
+        const baseX = lineX + seededRand(i * 5779) * textW;
+        const phase  = (animPhase + seededRand(i * 3001)) % 1;
+        const height = fontSize * (0.65 + seededRand(i * 9001) * 0.9);
+        const py   = lineY + fontSize * 0.25 - phase * height;
+        const px   = baseX + Math.sin(phase * Math.PI * 3 + seededRand(i * 4001) * 6) * fontSize * 0.1;
+        const sz   = Math.max(2, (1 - phase) * fontSize * 0.16);
+        const fade = phase < 0.12 ? phase / 0.12 : phase > 0.65 ? (1 - phase) / 0.35 : 1;
+        if (fade < 0.04) continue;
+        const g = Math.floor(200 * Math.max(0, 1 - phase));
+        ctx.save();
+        ctx.globalAlpha = fade * 0.88;
+        ctx.fillStyle   = `rgb(255,${g},0)`;
+        ctx.shadowColor = 'rgba(255,140,0,0.5)';
+        ctx.shadowBlur  = sz * 2.5;
+        ctx.beginPath();
+        ctx.arc(px, py, sz, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+function drawAnimatedSnow(ctx, lineX, lineY, textW, fontSize, animPhase) {
+    const count = Math.max(6, Math.floor(textW / 22));
+    for (let i = 0; i < count; i++) {
+        const baseX = lineX + seededRand(i * 6271) * textW;
+        const phase  = (animPhase + seededRand(i * 2011)) % 1;
+        const py   = lineY - fontSize * 0.7 + phase * fontSize * 1.8;
+        const px   = baseX + Math.sin(phase * Math.PI * 2.5 + seededRand(i * 3333) * 4) * fontSize * 0.06;
+        const sz   = Math.max(2, (seededRand(i * 7777) * 0.5 + 0.5) * fontSize * 0.07);
+        const fade = phase < 0.1 ? phase * 10 : phase > 0.88 ? (1 - phase) / 0.12 : 1;
+        if (fade < 0.04) continue;
+        ctx.save();
+        ctx.globalAlpha = fade * 0.82;
+        ctx.fillStyle   = 'rgb(220,240,255)';
+        ctx.shadowColor = 'rgba(200,220,255,0.6)';
+        ctx.shadowBlur  = sz * 1.5;
+        ctx.beginPath();
+        ctx.arc(px, py, sz, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+function drawAnimatedBubbles(ctx, lineX, lineY, textW, fontSize, animPhase, textColor) {
+    const count = Math.max(4, Math.floor(textW / 28));
+    for (let i = 0; i < count; i++) {
+        const baseX = lineX + seededRand(i * 5347) * textW;
+        const phase  = (animPhase + seededRand(i * 2999)) % 1;
+        const py   = lineY + fontSize * 0.3 - phase * fontSize * 1.8;
+        const px   = baseX + Math.sin(phase * Math.PI * 4 + seededRand(i * 4111) * 5) * fontSize * 0.06;
+        const sz   = Math.max(3, (seededRand(i * 8888) * 0.4 + 0.35) * fontSize * 0.14);
+        const fade = phase < 0.08 ? phase / 0.08 : phase > 0.85 ? (1 - phase) / 0.15 : 1;
+        if (fade < 0.04) continue;
+        ctx.save();
+        ctx.globalAlpha = fade * 0.58;
+        ctx.strokeStyle = textColor;
+        ctx.lineWidth   = Math.max(1, sz * 0.18);
+        ctx.beginPath();
+        ctx.arc(px, py, sz, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = fade * 0.07;
+        ctx.fillStyle   = textColor;
+        ctx.fill();
+        ctx.restore();
+    }
+}
+function drawAnimatedLightning(ctx, lineX, lineY, textW, fontSize, animPhase) {
+    for (let j = 0; j < 3; j++) {
+        const flashPhase = (animPhase + j / 3) % 1;
+        if (flashPhase > 0.14) continue;
+        const alpha = flashPhase < 0.07 ? flashPhase / 0.07 : (0.14 - flashPhase) / 0.07;
+        if (alpha < 0.05) continue;
+        const seed = Math.floor(animPhase * 5 + 100) + j * 17;
+        const sx   = lineX + seededRand(seed * 3) * textW;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = 'rgba(255,255,180,0.95)';
+        ctx.lineWidth   = Math.max(1.5, fontSize * 0.04);
+        ctx.shadowColor = 'rgba(255,255,0,0.9)';
+        ctx.shadowBlur  = fontSize * 0.3;
+        ctx.beginPath();
+        let cx = sx, cy = lineY - fontSize * 0.6;
+        ctx.moveTo(cx, cy);
+        for (let s = 0; s < 6; s++) {
+            cx += (seededRand(seed * (s + 1) * 7) - 0.5) * fontSize * 0.35;
+            cy += fontSize * 0.18;
+            ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
 // ── Text effect renderer ─────────────────────────────────────────────────────
 function fillTextWithEffect(ctx, text, x, y, fontSize, textColor, effect, animPhase = 0) {
     ctx.save();
@@ -342,7 +438,7 @@ function fitFontSize(text, maxW, maxH, startSize = 100, minSize = 22, fontOpts =
 
 // ── Draw single animated lyric frame ── 512×512 PNG buffer ───────────────────
 // animPhase: 0‥1 — position in the rain animation cycle
-function drawLyricFrame(text, animPhase = 0, fontKey = null, effect = null, bgColOvr = null, txtColOvr = null, bgGradient = null) {
+function drawLyricFrame(text, animPhase = 0, fontKey = null, effect = null, bgColOvr = null, txtColOvr = null, bgGradient = null, animEffect = 'rain') {
     const SIZE    = 512;
     const PADDING = 36;
     const maxW    = SIZE - PADDING * 2;
@@ -379,9 +475,13 @@ function drawLyricFrame(text, animPhase = 0, fontKey = null, effect = null, bgCo
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
         fillTextWithEffect(ctx, lines[i], SIZE / 2, ly, fontSize, txtCol, effect, animPhase);
-        const mw    = Math.min(ctx.measureText(lines[i]).width, maxW);
-        const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
-        drawAnimatedRain(ctx, drips, ly, fontSize, txtCol, animPhase);
+        const mw = Math.min(ctx.measureText(lines[i]).width, maxW);
+        const lx = SIZE / 2 - mw / 2;
+        if      (!animEffect || animEffect === 'rain') { drawAnimatedRain(ctx, createDripSet(lx, mw, fontSize), ly, fontSize, txtCol, animPhase); }
+        else if (animEffect === 'fire')               { drawAnimatedFire(ctx, lx, ly, mw, fontSize, animPhase); }
+        else if (animEffect === 'snow')               { drawAnimatedSnow(ctx, lx, ly, mw, fontSize, animPhase); }
+        else if (animEffect === 'bubbles')            { drawAnimatedBubbles(ctx, lx, ly, mw, fontSize, animPhase, txtCol); }
+        else if (animEffect === 'lightning')          { drawAnimatedLightning(ctx, lx, ly, mw, fontSize, animPhase); }
         if (effect === 'y2k') drawY2KSparkles(ctx, SIZE / 2, ly, mw, fontSize, animPhase, txtCol);
     }
 
@@ -398,7 +498,7 @@ function drawLyricFrame(text, animPhase = 0, fontKey = null, effect = null, bgCo
 // frameIdx = how many lyric groups are visible (0-based)
 // allGroups = all wrapped-line arrays for every input line
 // Layout always uses full-text height so lines don't "jump" as they appear
-function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, bgImg, animPhase = 0, fontOpts = null, effect = null, bgGradient = null) {
+function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, bgImg, animPhase = 0, fontOpts = null, effect = null, bgGradient = null, animEffect = 'rain') {
     const { family: fFam, weight: fWgt } = fontOpts || _defFont;
     const SIZE     = 512;
     const PADDING  = 36;
@@ -443,9 +543,13 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
             if (g <= frameIdx) {
                 const lineText = allGroups[g][i];
                 fillTextWithEffect(ctx, lineText, SIZE / 2, curY, fontSize, textColor, effect, animPhase);
-                const mw    = Math.min(ctx.measureText(lineText).width, maxW);
-                const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
-                drawAnimatedRain(ctx, drips, curY, fontSize, textColor, animPhase);
+                const mw = Math.min(ctx.measureText(lineText).width, maxW);
+                const lx = SIZE / 2 - mw / 2;
+                if      (!animEffect || animEffect === 'rain') { drawAnimatedRain(ctx, createDripSet(lx, mw, fontSize), curY, fontSize, textColor, animPhase); }
+                else if (animEffect === 'fire')               { drawAnimatedFire(ctx, lx, curY, mw, fontSize, animPhase); }
+                else if (animEffect === 'snow')               { drawAnimatedSnow(ctx, lx, curY, mw, fontSize, animPhase); }
+                else if (animEffect === 'bubbles')            { drawAnimatedBubbles(ctx, lx, curY, mw, fontSize, animPhase, textColor); }
+                else if (animEffect === 'lightning')          { drawAnimatedLightning(ctx, lx, curY, mw, fontSize, animPhase); }
                 if (effect === 'y2k') drawY2KSparkles(ctx, SIZE / 2, curY, mw, fontSize, animPhase, textColor);
             }
             curY += lineH;
@@ -463,7 +567,7 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
 }
 
 // ── Create animated WebP sticker — cumulative reveal + animated rain + custom bg ──
-async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null, secPerLine = 2, fontKey = null, effect = null, themeKey = null, bgGradient = null) {
+async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null, secPerLine = 2, fontKey = null, effect = null, themeKey = null, bgGradient = null, animEffect = 'rain') {
     const PADDING  = 36;
     const maxW     = 512 - PADDING * 2;
     const maxH     = 512 - PADDING * 2 - 46;
@@ -524,7 +628,7 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
         for (let g = 0; g < lines.length; g++) {
             for (let f = 0; f < framesPerGroup; f++) {
                 const animPhase = (globalTick / FPS) % 1;
-                const buf = drawCumulativeFrame(g, allGroups, fontSize, textColor, bgColor, bgImg, animPhase, fOpts, effect, bgGradient);
+                const buf = drawCumulativeFrame(g, allGroups, fontSize, textColor, bgColor, bgImg, animPhase, fOpts, effect, bgGradient, animEffect);
                 const fp  = path.join(tempDir, `lyric2_frame_${tempId}_${globalTick}.png`);
                 fs.writeFileSync(fp, buf);
                 framePaths.push(fp);
@@ -567,7 +671,7 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
 }
 
 // ── Create animated WebP sticker from lyric lines (sequential, one line per group) ──
-async function createLyricSticker(lines, secPerLine = 2, fontKey = null, effect = null, themeKey = null) {
+async function createLyricSticker(lines, secPerLine = 2, fontKey = null, effect = null, themeKey = null, animEffect = 'rain') {
     const framesPerLine = Math.max(2, Math.round(FPS * secPerLine));
 
     // Resolve theme
@@ -596,7 +700,7 @@ async function createLyricSticker(lines, secPerLine = 2, fontKey = null, effect 
             for (let f = 0; f < framesPerLine; f++) {
                 const animPhase = (globalTick / FPS) % 1;
                 const fp  = path.join(tempDir, `lyric_frame_${tempId}_${globalTick}.png`);
-                fs.writeFileSync(fp, drawLyricFrame(lines[i], animPhase, fontKey, effect, bgColOvr, txtColOvr, bgGrad));
+                fs.writeFileSync(fp, drawLyricFrame(lines[i], animPhase, fontKey, effect, bgColOvr, txtColOvr, bgGrad, animEffect));
                 framePaths.push(fp);
                 globalTick++;
             }
@@ -729,4 +833,4 @@ async function createStickerCover(title, artist = '', opts = {}) {
     return addExif(webpBuf, stickerPackName, stickerPackAuthor);
 }
 
-module.exports = { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor, parseGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS };
+module.exports = { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor, parseGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS, LYRIC_ANIM_KEYS };
