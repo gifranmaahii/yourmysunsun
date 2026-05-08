@@ -15,8 +15,45 @@ async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
     if (!targetCmds.some(cmd => command.startsWith(cmd))) return false;
 
     const query = textContent.slice(command.length).trim();
-    if (!query) {
-        await sock.sendMessage(remoteJid, { text: `❌ Format salah!\nContoh: *${command} Berharap Tak Berpisah*` }, { quoted: msg });
+    const quotedMsg = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+    const quotedText = quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text;
+
+    // Jika perintah video, cek apakah ada teks manual atau reply
+    if (isVideo) {
+        let videoText = '';
+        let videoTitle = 'Custom Video';
+
+        if (quotedText) {
+            videoText = quotedText;
+        } else if (query && query.length > 30) { 
+            // Jika teks panjang, anggap sebagai teks manual untuk video
+            videoText = query;
+        }
+
+        if (videoText) {
+            try { await sock.sendMessage(remoteJid, { react: { text: '⏳', key: msg.key } }); } catch (e) {}
+            const words = videoText.split(/\s+/).slice(0, 15); // Ambil 15 kata biar pas
+            const outPath = path.join(__dirname, `../../temp_lirik_${Date.now()}.mp4`);
+            await sock.sendMessage(remoteJid, { text: '⏳ Sedang merender video lirik dari teks kamu...' }, { quoted: msg });
+            
+            try {
+                await generateLyricVideo(words, outPath);
+                await sock.sendMessage(remoteJid, { 
+                    video: fs.readFileSync(outPath), 
+                    caption: `🎥 *Video Lirik Berhasil Dibuat!*\n\n_Gaya: Rain Aesthetic_`,
+                    mimetype: 'video/mp4'
+                }, { quoted: msg });
+                if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+            } catch (err) {
+                console.error('Video Gen Error:', err);
+                await sock.sendMessage(remoteJid, { text: '❌ Gagal membuat video.' }, { quoted: msg });
+            }
+            return true;
+        }
+    }
+
+    if (!query && !quotedText) {
+        await sock.sendMessage(remoteJid, { text: `❌ Format salah!\nContoh: *${command} Berharap Tak Berpisah* atau reply teks dengan *${command}*` }, { quoted: msg });
         return true;
     }
 
@@ -120,18 +157,40 @@ async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
         try { await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } }); } catch (e) {}
         
         if (isVideo) {
-            // Ambil 3-4 baris pertama saja untuk video agar tidak terlalu berat
-            const lines = lyrics.split('\n').filter(l => l.trim().length > 5).slice(0, 3);
-            const allWords = lines.join(' ').split(' ').slice(0, 10); // Maks 10 kata agar video tidak kelamaan
+            // --- LOGIKA MENCARI BAGIAN BAGUS (CHORUS) ---
+            let selectedText = '';
+            const lowerLyrics = lyrics.toLowerCase();
+            const chorusMarkers = ['[chorus]', '(chorus)', 'reff:', 'chorus:', '[reff]', '(reff)'];
+            
+            let chorusIdx = -1;
+            for (const marker of chorusMarkers) {
+                chorusIdx = lowerLyrics.indexOf(marker);
+                if (chorusIdx !== -1) {
+                    const start = chorusIdx + marker.length;
+                    // Ambil 1 paragraf setelah marker
+                    const end = lyrics.indexOf('\n\n', start);
+                    selectedText = lyrics.slice(start, end !== -1 ? end : start + 200).trim();
+                    break;
+                }
+            }
+
+            // Jika tidak ada marker chorus, ambil tengah-tengah lagu (biasanya lebih bagus dari awal)
+            if (!selectedText) {
+                const lines = lyrics.split('\n').filter(l => l.trim().length > 5);
+                const mid = Math.floor(lines.length / 2);
+                selectedText = lines.slice(mid, mid + 3).join(' ');
+            }
+            
+            const words = selectedText.split(/\s+/).slice(0, 12); // Batasi 12 kata agar video tidak terlalu berat
             
             const outPath = path.join(__dirname, `../../temp_lirik_${Date.now()}.mp4`);
-            await sock.sendMessage(remoteJid, { text: '⏳ Sedang merender video lirik... Mohon tunggu sebentar.' }, { quoted: msg });
+            await sock.sendMessage(remoteJid, { text: `⏳ Menemukan bagian terbaik (Reff/Chorus)...\nSedang merender video...` }, { quoted: msg });
             
             try {
-                await generateLyricVideo(allWords, outPath);
+                await generateLyricVideo(words, outPath);
                 await sock.sendMessage(remoteJid, { 
                     video: fs.readFileSync(outPath), 
-                    caption: `🎥 *Video Lirik Otomatis*\n🎵 *${title}*\n\n_Efek: Rain Aesthetic_`,
+                    caption: `🎥 *Video Lirik Otomatis*\n🎵 *${title}*\n\n_Bagian: Reff / Chorus (Auto-Select)_`,
                     mimetype: 'video/mp4'
                 }, { quoted: msg });
                 
