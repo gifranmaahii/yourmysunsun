@@ -167,79 +167,59 @@ function drawLyricFrame(text) {
     return canvas.toBuffer('image/png');
 }
 
-// ── Draw ALL lyric lines in one static 512×512 frame ─────────────────────────
-async function drawLyricStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null) {
+// ── Render one cumulative frame ───────────────────────────────────────────────
+// frameIdx = how many lyric groups are visible (0-based)
+// allGroups = all wrapped-line arrays for every input line
+// Layout always uses full-text height so lines don't "jump" as they appear
+function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, bgImg) {
     const SIZE     = 512;
     const PADDING  = 36;
     const maxW     = SIZE - PADDING * 2;
-    const STAR_H   = 46;
-    const maxH     = SIZE - PADDING * 2 - STAR_H;
-    const GROUP_GAP_RATIO = 0.38; // extra gap between lyric groups as fraction of lineH
-
-    // ── Find fitting font size for ALL lines together ──
-    let fontSize = 88;
-    let groups   = [];
-    for (; fontSize >= 18; fontSize -= 3) {
-        const tmp    = createCanvas(600, 100);
-        const tmpCtx = tmp.getContext('2d');
-        tmpCtx.font  = `bold ${fontSize}px "${FONT_FAMILY}", Georgia, serif`;
-        groups = lines.map(l => wordWrap(tmpCtx, l, maxW));
-        const lineH    = fontSize * 1.28;
-        const groupGap = lineH * GROUP_GAP_RATIO;
-        const totalLines = groups.reduce((s, g) => s + g.length, 0);
-        const totalH = totalLines * lineH + (groups.length - 1) * groupGap;
-        if (totalH <= maxH) break;
-    }
-
-    const fontStr  = `bold ${fontSize}px "${FONT_FAMILY}", Georgia, "Times New Roman", serif`;
     const lineH    = fontSize * 1.28;
-    const groupGap = lineH * GROUP_GAP_RATIO;
-    const totalLines = groups.reduce((s, g) => s + g.length, 0);
-    const totalH   = totalLines * lineH + (groups.length - 1) * groupGap;
+    const groupGap = lineH * 0.38;
 
-    // ── Canvas ──
+    const totalAllLines = allGroups.reduce((s, g) => s + g.length, 0);
+    const totalAllH     = totalAllLines * lineH + (allGroups.length - 1) * groupGap;
+
     const canvas = createCanvas(SIZE, SIZE);
     const ctx    = canvas.getContext('2d');
 
-    // ── Background ──
-    let textColor = TEXT_COLOR;
-    if (bgImageBuffer) {
-        const img    = await loadImage(bgImageBuffer);
-        const scale  = Math.max(SIZE / img.width, SIZE / img.height);
-        const sw     = img.width * scale;
-        const sh     = img.height * scale;
-        ctx.drawImage(img, (SIZE - sw) / 2, (SIZE - sh) / 2, sw, sh);
+    // Background
+    if (bgImg) {
+        const scale = Math.max(SIZE / bgImg.width, SIZE / bgImg.height);
+        const sw    = bgImg.width * scale;
+        const sh    = bgImg.height * scale;
+        ctx.drawImage(bgImg, (SIZE - sw) / 2, (SIZE - sh) / 2, sw, sh);
         ctx.fillStyle = 'rgba(0,0,0,0.42)';
         ctx.fillRect(0, 0, SIZE, SIZE);
-        textColor = '#FFFFFF';
     } else {
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, SIZE, SIZE);
-        if (bgColor.toLowerCase() !== BG_COLOR.toLowerCase()) {
-            textColor = isColorDark(bgColor) ? '#FFFFFF' : '#1A1A1A';
-        }
     }
 
-    // ── Draw text groups ──
+    const fontStr = `bold ${fontSize}px "${FONT_FAMILY}", Georgia, "Times New Roman", serif`;
     ctx.font         = fontStr;
     ctx.fillStyle    = textColor;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
 
-    let curY = (SIZE - totalH) / 2 + lineH * 0.5;
+    // Position is fixed to the final full layout — text won't shift between frames
+    let curY = (SIZE - totalAllH) / 2 + lineH * 0.5;
 
-    for (let g = 0; g < groups.length; g++) {
-        for (let i = 0; i < groups[g].length; i++) {
-            const lineText = groups[g][i];
-            ctx.fillText(lineText, SIZE / 2, curY);
-            const mw = Math.min(ctx.measureText(lineText).width, maxW);
-            addRainDrips(ctx, SIZE / 2 - mw / 2, curY, mw, fontSize);
+    for (let g = 0; g < allGroups.length; g++) {
+        for (let i = 0; i < allGroups[g].length; i++) {
+            if (g <= frameIdx) {
+                const lineText = allGroups[g][i];
+                ctx.fillText(lineText, SIZE / 2, curY);
+                const mw = Math.min(ctx.measureText(lineText).width, maxW);
+                addRainDrips(ctx, SIZE / 2 - mw / 2, curY, mw, fontSize);
+            }
             curY += lineH;
         }
-        if (g < groups.length - 1) curY += groupGap;
+        if (g < allGroups.length - 1) curY += groupGap;
     }
 
-    // ── Star ──
+    // Star
     ctx.font         = `bold 20px Arial, sans-serif`;
     ctx.fillStyle    = textColor;
     ctx.textAlign    = 'center';
@@ -249,15 +229,113 @@ async function drawLyricStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null) 
     return canvas.toBuffer('image/png');
 }
 
-// ── Create static (1-frame) WebP sticker ─────────────────────────────────────
+// ── Create animated WebP sticker — cumulative reveal + custom background ──────
 async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null) {
-    const pngBuffer = await drawLyricStatic(lines, bgColor, bgImageBuffer);
-    const webpBuffer = await sharp(pngBuffer).webp({ quality: 85 }).toBuffer();
+    const SIZE     = 512;
+    const PADDING  = 36;
+    const maxW     = SIZE - PADDING * 2;
+    const STAR_H   = 46;
+    const maxH     = SIZE - PADDING * 2 - STAR_H;
+
+    // Pre-load background image once
+    let bgImg = null;
+    if (bgImageBuffer) {
+        bgImg = await loadImage(bgImageBuffer);
+    }
+
+    // Determine text color
+    let textColor = TEXT_COLOR;
+    if (bgImg) {
+        textColor = '#FFFFFF';
+    } else if (bgColor.toLowerCase() !== BG_COLOR.toLowerCase()) {
+        textColor = isColorDark(bgColor) ? '#FFFFFF' : '#1A1A1A';
+    }
+
+    // Find font size that fits ALL lines
+    let fontSize = 88;
+    let allGroups = [];
+    for (; fontSize >= 18; fontSize -= 3) {
+        const tmp    = createCanvas(600, 100);
+        const tmpCtx = tmp.getContext('2d');
+        tmpCtx.font  = `bold ${fontSize}px "${FONT_FAMILY}", Georgia, serif`;
+        allGroups = lines.map(l => wordWrap(tmpCtx, l, maxW));
+        const lineH    = fontSize * 1.28;
+        const groupGap = lineH * 0.38;
+        const totalLines = allGroups.reduce((s, g) => s + g.length, 0);
+        const totalH   = totalLines * lineH + (allGroups.length - 1) * groupGap;
+        if (totalH <= maxH) break;
+    }
+
+    const tempId  = randomBytes(6).toString('hex');
+    const tempDir = path.join(__dirname, '../../temp');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+    const framePaths = [];
+    const concatPath = path.join(tempDir, `lyric2_concat_${tempId}.txt`);
+    const outputPath = path.join(tempDir, `lyric2_out_${tempId}.webp`);
+
+    function cleanup() {
+        for (const fp of framePaths) { try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (_) {} }
+        try { if (fs.existsSync(concatPath)) fs.unlinkSync(concatPath); } catch (_) {}
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
+    }
+
     try {
-        const cfg = getConfig();
-        return await addExif(webpBuffer, cfg.stickerPackName, cfg.stickerPackAuthor);
-    } catch (_) {
-        return webpBuffer;
+        // Render one frame per lyric group (cumulative)
+        for (let i = 0; i < lines.length; i++) {
+            const fp  = path.join(tempDir, `lyric2_frame_${tempId}_${i}.png`);
+            const buf = drawCumulativeFrame(i, allGroups, fontSize, textColor, bgColor, bgImg);
+            fs.writeFileSync(fp, buf);
+            framePaths.push(fp);
+        }
+
+        // Concat list
+        const toFFPath = p => p.replace(/\\/g, '/');
+        let concatTxt = '';
+        for (const fp of framePaths) {
+            concatTxt += `file '${toFFPath(fp)}'\nduration 2\n`;
+        }
+        concatTxt += `file '${toFFPath(framePaths[framePaths.length - 1])}'\nduration 0.001\n`;
+        fs.writeFileSync(concatPath, concatTxt);
+
+        return await new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(concatPath)
+                .inputOptions(['-f concat', '-safe 0'])
+                .outputOptions([
+                    '-vcodec libwebp',
+                    '-vf', 'format=rgba',
+                    '-lossless 0',
+                    '-compression_level 6',
+                    '-q:v 80',
+                    '-loop 0',
+                    '-preset default',
+                    '-an',
+                    '-vsync 0'
+                ])
+                .toFormat('webp')
+                .on('end', async () => {
+                    try {
+                        const outBuf = fs.readFileSync(outputPath);
+                        cleanup();
+                        try {
+                            const cfg = getConfig();
+                            resolve(await addExif(outBuf, cfg.stickerPackName, cfg.stickerPackAuthor));
+                        } catch (_) { resolve(outBuf); }
+                        logger.info(`🎵 Lyric2 sticker encoded: ${lines.length} frame(s)`);
+                    } catch (e) { cleanup(); reject(e); }
+                })
+                .on('error', (err) => {
+                    logger.error(`❌ Lyric2 sticker ffmpeg error: ${err.message}`);
+                    cleanup();
+                    reject(err);
+                })
+                .save(outputPath);
+        });
+
+    } catch (e) {
+        cleanup();
+        throw e;
     }
 }
 
