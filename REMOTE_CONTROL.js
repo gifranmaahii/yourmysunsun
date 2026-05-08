@@ -10,12 +10,9 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const apiKey = process.env.PTERODACTYL_API_KEY;
 const serverId = process.env.PTERODACTYL_SERVER_ID;
 const baseUrl = process.env.PTERODACTYL_BASE_URL;
-const ownerId = process.env.TELEGRAM_OWNER_ID; // ID Telegram Owner
 
 const bot = new TelegramBot(token, { polling: true });
 let lastChatId = null;
-let logBuffer = []; // Simpan 20 log terakhir
-const MAX_LOGS = 20;
 
 console.log('🚀 Telegram Panel Control is starting...');
 
@@ -29,12 +26,6 @@ const ptero = axios.create({
     }
 });
 
-// Middleware Cek Owner
-function isOwner(msg) {
-    if (!ownerId) return true; // Jika tidak diatur, semua boleh (tidak disarankan)
-    return String(msg.from.id) === String(ownerId);
-}
-
 // ==========================================
 // WEBSOCKET LOG MONITORING (Zero Panel)
 // ==========================================
@@ -46,6 +37,7 @@ async function connectToConsole() {
         const { data } = res.data;
         
         console.log(`📡 Attempting WebSocket connection to: ${data.socket}`);
+        console.log(`🌐 Using Origin: ${baseUrl}`);
 
         ws = new WebSocket(data.socket, {
             origin: baseUrl,
@@ -64,10 +56,6 @@ async function connectToConsole() {
             if (payload.event === 'console output') {
                 const text = payload.args[0];
                 
-                // Simpan ke buffer log
-                logBuffer.push(text.replace(/\u001b\[[0-9;]*m/g, '')); // Bersihkan ANSI colors
-                if (logBuffer.length > MAX_LOGS) logBuffer.shift();
-
                 // Tangkap Pairing Code
                 if (text.includes('PAIRING_CODE:')) {
                     const code = text.split('PAIRING_CODE:')[1].trim();
@@ -80,16 +68,6 @@ async function connectToConsole() {
                 if (text.includes('CONNECTED') || text.includes('TERHUBUNG')) {
                     if (lastChatId) bot.sendMessage(lastChatId, '✅ *Bot WhatsApp Berhasil Terhubung!*', { parse_mode: 'Markdown' });
                 }
-
-                // Tangkap Error Penting
-                if (text.toLowerCase().includes('error') || text.toLowerCase().includes('crash') || text.toLowerCase().includes('failed')) {
-                    if (lastChatId) {
-                        const cleanErr = text.replace(/\u001b\[[0-9;]*m/g, '').trim();
-                        if (cleanErr.length > 5) {
-                            bot.sendMessage(lastChatId, `⚠️ *NOTIFIKASI LOG:* \n\n\`${cleanErr.slice(0, 500)}\``, { parse_mode: 'Markdown' });
-                        }
-                    }
-                }
             }
         });
 
@@ -100,11 +78,15 @@ async function connectToConsole() {
 
         ws.on('error', (err) => {
             console.error('❌ WebSocket Error:', err.message);
+            if (err.message.includes('403')) {
+                console.log('💡 Tip: WebSocket 403 might mean the API key lacks console permissions or Origin header mismatch.');
+            }
         });
 
     } catch (e) {
         const delay = e.response?.status === 429 ? 30000 : 10000;
         console.error(`❌ Failed to connect to WebSocket: ${e.message}`);
+        console.log(`📡 Retrying in ${delay/1000}s...`);
         setTimeout(connectToConsole, delay);
     }
 }
@@ -116,28 +98,21 @@ connectToConsole();
 // ==========================================
 
 bot.onText(/\/start/, (msg) => {
-    if (!isOwner(msg)) return bot.sendMessage(msg.chat.id, '❌ Anda bukan owner bot ini.');
     lastChatId = msg.chat.id;
     const welcome = `👋 Halo! Saya Bot Pengendali Panel.\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `⚙️ *SISTEM KONTROL*\n` +
+        `Gunakan perintah berikut:\n` +
         `🔹 /status - Cek status bot\n` +
         `🔹 /startbot - Nyalakan bot\n` +
         `🔹 /stopbot - Matikan bot\n` +
         `🔹 /restartbot - Restart bot\n` +
-        `🔹 /update - Git Pull (Tarik kodingan baru)\n\n` +
-        `🔑 *WA & PAIRING*\n` +
+        `🔹 /update - Git Pull (Tarik kodingan baru)\n` +
         `🔹 /pair [nomor] - Login pake Pairing Code\n` +
-        `🔹 /logout - Hapus Sesi (Logout Total)\n\n` +
-        `👥 *MANAJEMEN BOT ANAK*\n` +
         `🔹 /addbot [nomor] [nama] [hari] [owner] - Tambah Bot Anak\n` +
         `🔹 /listbots - Daftar Bot Anak\n` +
         `🔹 /delbot [nomor/nama] - Hapus Bot Anak\n` +
-        `🔹 /delbots [nomor/nama] - Hapus Bot Anak (Alias)\n\n` +
-        `📋 *MONITORING*\n` +
-        `🔹 /logs - Lihat log console terakhir\n` +
-        `━━━━━━━━━━━━━━━━━━`;
-    bot.sendMessage(msg.chat.id, welcome, { parse_mode: 'Markdown' });
+        `🔹 /logout - Hapus Sesi (Logout Total)\n` +
+        `🔹 /logs - Lihat log console terakhir`;
+    bot.sendMessage(msg.chat.id, welcome);
 });
 
 // Helper: Cek Status
@@ -172,8 +147,9 @@ async function sendCommand(command) {
     }
 }
 
+// Handlers moved below to avoid duplicates
+
 bot.onText(/\/status/, async (msg) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Menghubungi panel...');
     const status = await getServerStatus();
@@ -182,7 +158,6 @@ bot.onText(/\/status/, async (msg) => {
 });
 
 bot.onText(/\/startbot/, async (msg) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Mencoba menyalakan bot...');
     const success = await sendPowerAction('start');
@@ -190,7 +165,6 @@ bot.onText(/\/startbot/, async (msg) => {
 });
 
 bot.onText(/\/stopbot/, async (msg) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Mencoba mematikan bot...');
     const success = await sendPowerAction('stop');
@@ -198,7 +172,6 @@ bot.onText(/\/stopbot/, async (msg) => {
 });
 
 bot.onText(/\/restartbot/, async (msg) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Me-restart bot...');
     const success = await sendPowerAction('restart');
@@ -206,7 +179,6 @@ bot.onText(/\/restartbot/, async (msg) => {
 });
 
 bot.onText(/\/update/, async (msg) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(lastChatId, '⏳ Mengecek status server...');
     const status = await getServerStatus();
@@ -221,7 +193,6 @@ bot.onText(/\/update/, async (msg) => {
 });
 
 bot.onText(/\/pair (.+)/, async (msg, match) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     const number = match[1].replace(/[^0-9]/g, '');
     if (!number || number.length < 10) {
@@ -240,7 +211,6 @@ bot.onText(/\/pair (.+)/, async (msg, match) => {
 });
 
 bot.onText(/\/addbot (.+)/, async (msg, match) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     const args = match[1].split(' ');
     if (args.length < 4) {
@@ -252,22 +222,20 @@ bot.onText(/\/addbot (.+)/, async (msg, match) => {
 });
 
 bot.onText(/\/listbots/, async (msg) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(lastChatId, '⏳ Mengambil daftar bot anak dari console...');
+    // Kita minta bot utama untuk list via console (nanti lognya ditangkap WS)
     await sendCommand('list_bots');
 });
 
-bot.onText(/\/(delbot|delbots) (.+)/, async (msg, match) => {
-    if (!isOwner(msg)) return;
+bot.onText(/\/delbot (.+)/, async (msg, match) => {
     lastChatId = msg.chat.id;
-    const target = match[2];
-    bot.sendMessage(lastChatId, `⚠️ Menghapus bot *${target}* dan membersihkan sesi...`, { parse_mode: 'Markdown' });
+    const target = match[1];
+    bot.sendMessage(lastChatId, `⚠️ Menghapus bot *${target}*...`, { parse_mode: 'Markdown' });
     await sendCommand(`delete_bot ${target}`);
 });
 
 bot.onText(/\/logout/, async (msg) => {
-    if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(lastChatId, '⚠️ Sedang menghapus sesi bot (Logout)...');
     await sendCommand('logout_bot');
@@ -275,13 +243,12 @@ bot.onText(/\/logout/, async (msg) => {
 });
 
 bot.onText(/\/logs/, async (msg) => {
-    if (!isOwner(msg)) return;
-    if (logBuffer.length === 0) {
-        return bot.sendMessage(msg.chat.id, '📭 Belum ada log terbaru yang tertangkap.');
-    }
-    const logText = logBuffer.join('\n');
-    bot.sendMessage(msg.chat.id, `📋 *LAST CONSOLE LOGS:*\n\n\`\`\`\n${logText.slice(-4000)}\n\`\`\``, { parse_mode: 'Markdown' });
+    bot.sendMessage(msg.chat.id, '⏳ Mengambil log console...');
+    // Pterodactyl tidak punya endpoint direct untuk logs via API Client v1 secara mudah tanpa websocket,
+    // tapi kita bisa simulasi atau pakai cara lain. 
+    // Untuk saat ini, kita beri info status saja.
+    const status = await getServerStatus();
+    bot.sendMessage(msg.chat.id, `Saat ini server berstatus: ${status}. Silakan cek panel untuk detail log lengkap.`);
 });
 
 console.log('✅ Telegram Bot Control is ONLINE!');
-

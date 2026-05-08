@@ -42,9 +42,6 @@ process.stdin.on('data', (data) => {
         if (args.length >= 4) {
             const [phone, name, days, owner] = args;
             console.log(`🚀 [REMOTE] Menambah bot anak: ${name} (${phone}) untuk ${days} hari...`);
-            // Kita panggil addChildBot tapi dengan context sock = null atau logic minimal
-            // Karena kita di console, kita tidak punya sock aktif untuk kirim pesan balik via WA di sini dengan mudah
-            // Tapi botManager.addChildBot akan tetap jalan di PM2.
             botManager.addChildBot(currentSock, PRIMARY_OWNER, phone, name, days, owner, 'pairing', true);
         }
     }
@@ -52,8 +49,8 @@ process.stdin.on('data', (data) => {
         console.log('📋 [REMOTE] Mengambil daftar bot anak...');
         botManager.listChildBots({ sendMessage: (jid, msg) => console.log(msg.text) }, PRIMARY_OWNER);
     }
-    if (input.startsWith('delete_bot ')) {
-        const target = input.replace('delete_bot ', '').trim();
+    if (input.startsWith('delete_bot ') || input.startsWith('delete_bots ')) {
+        const target = input.replace(/delete_bots? /, '').trim();
         console.log(`🗑️ [REMOTE] Menghapus bot anak: ${target}`);
         botManager.deleteChildBot({ sendMessage: (jid, msg) => console.log(msg.text) }, PRIMARY_OWNER, target);
     }
@@ -120,6 +117,16 @@ const botManager = require('./src/features/botManager');
 const argv = minimist(process.argv.slice(2));
 const SESSION_NAME = argv.session || argv._[0] || 'session';
 const SESSION_PATH = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
+
+// Start Telegram Control ONLY for main session
+if (SESSION_NAME === 'session') {
+    try {
+        require('./telegramControl.js');
+        console.log('🤖 Telegram Remote Control Integrated & Started.');
+    } catch (e) {
+        console.error('❌ Failed to start Telegram Control:', e.message);
+    }
+}
 
 if (SESSION_NAME !== 'session' && !fs.existsSync(path.join(__dirname, 'sessions'))) {
     fs.mkdirSync(path.join(__dirname, 'sessions'));
