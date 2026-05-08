@@ -7,8 +7,8 @@ temp/
 session/
 sessions/
 data/*.json
-.env
-channelCopier.json
-debug_sticker.json
-vc_redist.x64.exe
 scratch/
+.env
+.env_telegram
+.env*
+!*.env.example

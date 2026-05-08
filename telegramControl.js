@@ -36,7 +36,9 @@ async function connectToConsole() {
         const res = await ptero.get('/websocket');
         const { data } = res.data;
         
-        ws = new WebSocket(data.socket);
+        ws = new WebSocket(data.socket, {
+            origin: baseUrl
+        });
         
         ws.on('open', () => {
             ws.send(JSON.stringify({ event: 'auth', args: [data.token] }));
@@ -63,18 +65,23 @@ async function connectToConsole() {
             }
         });
 
-        ws.on('close', () => {
-            console.log('📡 WebSocket Closed. Reconnecting...');
-            setTimeout(connectToConsole, 5000);
+        ws.on('close', (code, reason) => {
+            console.log(`📡 WebSocket Closed (Code: ${code}). Reconnecting in 15s...`);
+            setTimeout(connectToConsole, 15000);
         });
 
         ws.on('error', (err) => {
             console.error('❌ WebSocket Error:', err.message);
+            if (err.message.includes('403')) {
+                console.log('💡 Tip: WebSocket 403 might mean the API key lacks console permissions or Origin header mismatch.');
+            }
         });
 
     } catch (e) {
-        console.error('❌ Failed to connect to WebSocket:', e.message);
-        setTimeout(connectToConsole, 10000);
+        const delay = e.response?.status === 429 ? 30000 : 10000;
+        console.error(`❌ Failed to connect to WebSocket: ${e.message}`);
+        console.log(`📡 Retrying in ${delay/1000}s...`);
+        setTimeout(connectToConsole, delay);
     }
 }
 
@@ -131,24 +138,7 @@ async function sendCommand(command) {
     }
 }
 
-// ==========================================
-// COMMAND HANDLERS
-// ==========================================
-
-bot.onText(/\/start/, (msg) => {
-    lastChatId = msg.chat.id;
-    const welcome = `👋 Halo! Saya Bot Pengendali Panel.\n\n` +
-        `Gunakan perintah berikut:\n` +
-        `🔹 /status - Cek status bot\n` +
-        `🔹 /startbot - Nyalakan bot\n` +
-        `🔹 /stopbot - Matikan bot\n` +
-        `🔹 /restartbot - Restart bot\n` +
-        `🔹 /update - Git Pull (Tarik kodingan baru)\n` +
-        `🔹 /pair [nomor] - Login pake Pairing Code\n` +
-        `🔹 /logout - Hapus Sesi (Logout Total)\n` +
-        `🔹 /logs - Lihat log console terakhir`;
-    bot.sendMessage(msg.chat.id, welcome);
-});
+// Handlers moved below to avoid duplicates
 
 bot.onText(/\/status/, async (msg) => {
     lastChatId = msg.chat.id;

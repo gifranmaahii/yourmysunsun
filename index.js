@@ -428,10 +428,24 @@ async function startBot() {
     let phoneNumber = '';
 
     if (!hasSession && !state.creds.registered) {
-        if (argv.pairing || process.env.PAIRING_NUMBER) {
+        // Cek file pairing.json (dari Telegram Remote)
+        const pairingFile = path.join(__dirname, 'pairing.json');
+        if (fs.existsSync(pairingFile)) {
+            try {
+                const data = JSON.parse(fs.readFileSync(pairingFile));
+                usePairingCode = true;
+                phoneNumber = String(data.number).replace(/[^0-9]/g, '');
+                fs.unlinkSync(pairingFile); // Hapus agar tidak pairing ulang terus
+                logger.info(`🔑 Pairing mode aktif via pairing.json untuk: ${phoneNumber}`);
+            } catch (e) {
+                logger.error('❌ Gagal membaca pairing.json: ' + e.message);
+            }
+        }
+
+        if (!usePairingCode && (argv.pairing || process.env.PAIRING_NUMBER)) {
             usePairingCode = true;
             phoneNumber = String(argv.pairing || process.env.PAIRING_NUMBER).replace(/[^0-9]/g, '');
-        } else {
+        } else if (!usePairingCode) {
             const readline = require('readline').createInterface({
                 input: process.stdin,
                 output: process.stdout
@@ -529,6 +543,7 @@ async function startBot() {
                     const formattedCode = code?.match(/.{1,4}/g)?.join('-') || code;
                     console.log(`\n========================================================`);
                     console.log(` 🔑 KODE PAIRING ANDA: ${formattedCode}`);
+                    console.log(`PAIRING_CODE: ${formattedCode}`);
                     console.log(` 📞 Nomor: ${phoneNumber}`);
                     console.log(` 💡 Buka WhatsApp HP → Setelan → Perangkat Tertaut`);
                     console.log(`    → Tautkan Perangkat → Tautkan dengan nomor telepon`);
