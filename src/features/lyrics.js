@@ -61,42 +61,28 @@ async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
     let lyricData = null;
     let source = '';
 
+    // --- API 1: LOLHUMAN (Paling Akurat untuk Lagu Umum Indo/Barat) ---
     try {
-        // --- API 1: KAIZEN (Terbaik untuk Anime/Kanji/Romaji) ---
-        const res = await fetch(`https://kaizenapi.my.id/search/kaze?q=${encodeURIComponent(query)}`);
+        const apikey = process.env.LOLHUMAN_API_KEY;
+        const res = await fetch(`https://api.lolhuman.xyz/api/lirik?apikey=${apikey}&query=${encodeURIComponent(query)}`);
         const json = await res.json();
-        if (json.status && json.result) {
-            lyricData = json.result;
-            source = 'Kaizen';
+        if (json.status === 200 && json.result && json.result.length > 50) {
+            lyricData = {
+                title: query,
+                lyrics: json.result
+            };
+            source = 'Lolhuman';
         }
     } catch (e) {
-        console.error('[LYRICS KAIZEN ERROR]', e.message);
+        console.error('[LYRICS LOLHUMAN ERROR]', e.message);
     }
 
+    // --- API 2: SIPUTZX (Cadangan untuk Lagu Umum) ---
     if (!lyricData) {
         try {
-            // --- API 2: LOLHUMAN (Lebih General, Indo/Barat ok) ---
-            const apikey = process.env.LOLHUMAN_API_KEY;
-            const res = await fetch(`https://api.lolhuman.xyz/api/lirik?apikey=${apikey}&query=${encodeURIComponent(query)}`);
-            const json = await res.json();
-            if (json.status === 200 && json.result) {
-                lyricData = {
-                    title: query,
-                    lyrics: json.result
-                };
-                source = 'Lolhuman';
-            }
-        } catch (e) {
-            console.error('[LYRICS LOLHUMAN ERROR]', e.message);
-        }
-    }
-
-    if (!lyricData) {
-        try {
-            // --- API 3: SIPUTZX (Fallback Terakhir) ---
             const res = await fetch(`https://api.siputzx.my.id/api/s/lyrics?query=${encodeURIComponent(query)}`);
             const json = await res.json();
-            if (json.status && json.data) {
+            if (json.status && json.data && json.data.lyrics) {
                 lyricData = {
                     title: json.data.title || query,
                     lyrics: json.data.lyrics
@@ -108,9 +94,23 @@ async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
         }
     }
 
+    // --- API 3: KAIZEN (Cadangan terakhir, biasanya Anime/Jepang) ---
+    if (!lyricData) {
+        try {
+            const res = await fetch(`https://kaizenapi.my.id/search/kaze?q=${encodeURIComponent(query)}`);
+            const json = await res.json();
+            if (json.status && json.result) {
+                lyricData = json.result;
+                source = 'Kaizen';
+            }
+        } catch (e) {
+            console.error('[LYRICS KAIZEN ERROR]', e.message);
+        }
+    }
+
     if (!lyricData) {
         try { await sock.sendMessage(remoteJid, { react: { text: '❌', key: msg.key } }); } catch (e) {}
-        await sock.sendMessage(remoteJid, { text: '❌ Lirik tidak ditemukan di semua server. Coba gunakan kata kunci yang lebih spesifik (Contoh: Artis + Judul).' }, { quoted: msg });
+        await sock.sendMessage(remoteJid, { text: '❌ Lirik tidak ditemukan. Coba gunakan Nama Artis + Judul Lagu (Contoh: .lirikvid Tulus Hati-Hati di Jalan)' }, { quoted: msg });
         return true;
     }
 
