@@ -79,7 +79,7 @@ function wordWrap(ctx, text, maxWidth) {
 }
 
 // ── Animated rain system ──────────────────────────────────────────────────────
-const FPS = 5; // frames per second for rain animation
+const FPS = 8; // frames per second for rain animation
 
 function hexToRgb(hex) {
     const h = (hex || '#5A1A2A').replace('#', '');
