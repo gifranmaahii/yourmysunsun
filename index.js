@@ -42,7 +42,7 @@ const games = require('./src/features/games');
 const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
-const lyricsFeatures = require('./src/features/lyrics');
+
 const ryzumi = require('./src/features/ryzumi');
 const channelCopier = require('./src/features/channelCopier');
 const abstract = require('./src/features/abstract');
@@ -1090,9 +1090,6 @@ async function startBot() {
                     continue;
                 }
 
-                // --- FITUR LIRIK ---
-                const lyricsHandled = await lyricsFeatures.handleLyrics(sock, remoteJid, msg, textContent, PREFIX);
-                if (lyricsHandled) continue;
 
                 // ============================================================
                 // FITUR RYZUMI PREMIUM
