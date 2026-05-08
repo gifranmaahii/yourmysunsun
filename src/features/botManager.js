@@ -69,14 +69,14 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
 
     try {
         // Hapus secara diam-diam (abaikan error kalau tidak ada)
-        await execPromise(`pm2 delete ${botName}`, { windowsHide: true }).catch(() => {
+        await execPromise(`./node_modules/.bin/pm2 delete ${botName}`, { windowsHide: true }).catch(() => {
             return execPromise(`npx --yes pm2 delete ${botName}`, { windowsHide: true }).catch(() => {});
         });
         
         // Start PM2 dengan argumen yang benar
         let startCmd = loginMethod === 'qr'
-            ? `pm2 start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList}`
-            : `pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+            ? `./node_modules/.bin/pm2 start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList}`
+            : `./node_modules/.bin/pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
         
         if (lowRam) {
             startCmd = loginMethod === 'qr'
@@ -86,8 +86,8 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
         
         // Fallback ke npx jika pm2 tidak ada di PATH
         await execPromise(startCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true }).catch(async () => {
-            console.log("⚠️ PM2 not in PATH, trying npx...");
-            const npxCmd = startCmd.replace('pm2 ', 'npx --yes pm2 ');
+            console.log("⚠️ Local PM2 not working, trying npx...");
+            const npxCmd = startCmd.replace('./node_modules/.bin/pm2 ', 'npx --yes pm2 ');
             await execPromise(npxCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true });
         });
 
@@ -106,7 +106,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
     await new Promise(r => setTimeout(r, 2000));
 
     // Gunakan 'pm2 logs' untuk menguping output bot anak
-    const logWatcher = spawn('pm2', ['logs', botName, '--lines', '5', '--no-daemon'], {
+    const logWatcher = spawn('./node_modules/.bin/pm2', ['logs', botName, '--lines', '5', '--no-daemon'], {
         cwd: path.join(__dirname, '../../'),
         shell: true,
         windowsHide: true,
@@ -267,7 +267,7 @@ const deleteChildBot = async (sock, remoteJid, target) => {
 
     // 1. Matikan & Hapus dari PM2
     const { exec } = require('child_process');
-    exec(`npx pm2 delete ${botName}`, { windowsHide: true }, async (err) => {
+    exec(`./node_modules/.bin/pm2 delete ${botName}`, { windowsHide: true }, async (err) => {
         if (err) {
             console.error(`[BotManager] Gagal delete PM2 ${botName}:`, err.message);
         }
