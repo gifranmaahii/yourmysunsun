@@ -82,6 +82,30 @@ function isColorDark(hex) {
     return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
 }
 
+function parseGradient(str) {
+    if (!str || !str.includes('>')) return null;
+    const [a, b] = str.split('>');
+    const c1 = parseColor(a.trim());
+    const c2 = parseColor(b.trim());
+    return (c1 && c2) ? [c1, c2] : null;
+}
+
+// ── Preset themes ─────────────────────────────────────────────────────────────
+const THEMES = {
+    dark:    { bgColor: '#121212',  textColor: '#FFFFFF', bgGradient: null },
+    sakura:  { bgColor: '#FFB7C5',  textColor: '#5A1A2A', bgGradient: null },
+    neon:    { bgColor: '#0A0A0A',  textColor: '#00FF88', bgGradient: null },
+    sunset:  { bgColor: null,       textColor: '#FFFFFF', bgGradient: ['#FF6B35', '#C0392B'] },
+    ocean:   { bgColor: null,       textColor: '#FFFFFF', bgGradient: ['#1B2631', '#1A5276'] },
+    minimal: { bgColor: '#F5F5F5',  textColor: '#1A1A1A', bgGradient: null },
+    gold:    { bgColor: '#1A1100',  textColor: '#FFD700', bgGradient: null },
+    violet:  { bgColor: null,       textColor: '#FFFFFF', bgGradient: ['#4A0E8F', '#7D3C98'] },
+    forest:  { bgColor: null,       textColor: '#FFFFFF', bgGradient: ['#1E8449', '#145A32'] },
+    rose:    { bgColor: null,       textColor: '#FFFFFF', bgGradient: ['#C0392B', '#8E44AD'] },
+};
+const LYRIC_THEME_KEYS  = Object.keys(THEMES);
+const LYRIC_EFFECT_KEYS = ['shadow', 'outline', 'glow'];
+
 // ── Word wrap helper ─────────────────────────────────────────────────────────
 function wordWrap(ctx, text, maxWidth) {
     const words = text.trim().split(/\s+/);
@@ -167,6 +191,37 @@ function drawAnimatedRain(ctx, drips, lineY, fontSize, textColor, animPhase) {
     }
 }
 
+// ── Text effect renderer ─────────────────────────────────────────────────────
+function fillTextWithEffect(ctx, text, x, y, fontSize, textColor, effect) {
+    ctx.save();
+    ctx.fillStyle = textColor;
+    if (effect === 'shadow') {
+        ctx.shadowColor   = 'rgba(0,0,0,0.80)';
+        ctx.shadowBlur    = fontSize * 0.14;
+        ctx.shadowOffsetX = fontSize * 0.05;
+        ctx.shadowOffsetY = fontSize * 0.07;
+        ctx.fillText(text, x, y);
+    } else if (effect === 'outline') {
+        ctx.lineWidth   = Math.max(2, fontSize * 0.048);
+        ctx.lineJoin    = 'round';
+        ctx.strokeStyle = isColorDark(textColor) ? 'rgba(255,255,255,0.80)' : 'rgba(0,0,0,0.72)';
+        ctx.strokeText(text, x, y);
+        ctx.fillText(text, x, y);
+    } else if (effect === 'glow') {
+        ctx.shadowColor = textColor;
+        ctx.shadowBlur  = fontSize * 0.30;
+        ctx.fillText(text, x, y);
+        ctx.shadowBlur  = fontSize * 0.14;
+        ctx.fillText(text, x, y);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur  = 0;
+        ctx.fillText(text, x, y);
+    } else {
+        ctx.fillText(text, x, y);
+    }
+    ctx.restore();
+}
+
 // ── Shrink-to-fit font size for one group of text ────────────────────────────
 function fitFontSize(text, maxW, maxH, startSize = 100, minSize = 22, fontOpts = null) {
     const { family, weight } = fontOpts || _defFont;
@@ -186,12 +241,14 @@ function fitFontSize(text, maxW, maxH, startSize = 100, minSize = 22, fontOpts =
 
 // ── Draw single animated lyric frame ── 512×512 PNG buffer ───────────────────
 // animPhase: 0‥1 — position in the rain animation cycle
-function drawLyricFrame(text, animPhase = 0, fontKey = null) {
+function drawLyricFrame(text, animPhase = 0, fontKey = null, effect = null, bgColOvr = null, txtColOvr = null, bgGradient = null) {
     const SIZE    = 512;
     const PADDING = 36;
     const maxW    = SIZE - PADDING * 2;
     const maxH    = SIZE - 80;
     const fOpts   = resolveFont(fontKey);
+    const bgCol   = bgColOvr  || BG_COLOR;
+    const txtCol  = txtColOvr || TEXT_COLOR;
 
     const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 100, 22, fOpts);
     const fontStr = `${fOpts.weight} ${fontSize}px "${fOpts.family}", Georgia, "Times New Roman", serif`;
@@ -201,11 +258,18 @@ function drawLyricFrame(text, animPhase = 0, fontKey = null) {
     const canvas = createCanvas(SIZE, SIZE);
     const ctx    = canvas.getContext('2d');
 
-    ctx.fillStyle = BG_COLOR;
+    if (bgGradient && bgGradient.length === 2) {
+        const grad = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+        grad.addColorStop(0, bgGradient[0]);
+        grad.addColorStop(1, bgGradient[1]);
+        ctx.fillStyle = grad;
+    } else {
+        ctx.fillStyle = bgCol;
+    }
     ctx.fillRect(0, 0, SIZE, SIZE);
 
     ctx.font         = fontStr;
-    ctx.fillStyle    = TEXT_COLOR;
+    ctx.fillStyle    = txtCol;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
 
@@ -213,14 +277,14 @@ function drawLyricFrame(text, animPhase = 0, fontKey = null) {
 
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
-        ctx.fillText(lines[i], SIZE / 2, ly);
+        fillTextWithEffect(ctx, lines[i], SIZE / 2, ly, fontSize, txtCol, effect);
         const mw    = Math.min(ctx.measureText(lines[i]).width, maxW);
         const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
-        drawAnimatedRain(ctx, drips, ly, fontSize, TEXT_COLOR, animPhase);
+        drawAnimatedRain(ctx, drips, ly, fontSize, txtCol, animPhase);
     }
 
     ctx.font         = `bold 22px Arial, sans-serif`;
-    ctx.fillStyle    = TEXT_COLOR;
+    ctx.fillStyle    = txtCol;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('★', SIZE / 2, SIZE - 40);
@@ -232,7 +296,7 @@ function drawLyricFrame(text, animPhase = 0, fontKey = null) {
 // frameIdx = how many lyric groups are visible (0-based)
 // allGroups = all wrapped-line arrays for every input line
 // Layout always uses full-text height so lines don't "jump" as they appear
-function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, bgImg, animPhase = 0, fontOpts = null) {
+function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, bgImg, animPhase = 0, fontOpts = null, effect = null, bgGradient = null) {
     const { family: fFam, weight: fWgt } = fontOpts || _defFont;
     const SIZE     = 512;
     const PADDING  = 36;
@@ -253,6 +317,12 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
         ctx.drawImage(bgImg, (SIZE - sw) / 2, (SIZE - sh) / 2, sw, sh);
         ctx.fillStyle = 'rgba(0,0,0,0.42)';
         ctx.fillRect(0, 0, SIZE, SIZE);
+    } else if (bgGradient && bgGradient.length === 2) {
+        const grad = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+        grad.addColorStop(0, bgGradient[0]);
+        grad.addColorStop(1, bgGradient[1]);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, SIZE, SIZE);
     } else {
         ctx.fillStyle = bgColor;
         ctx.fillRect(0, 0, SIZE, SIZE);
@@ -270,7 +340,7 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
         for (let i = 0; i < allGroups[g].length; i++) {
             if (g <= frameIdx) {
                 const lineText = allGroups[g][i];
-                ctx.fillText(lineText, SIZE / 2, curY);
+                fillTextWithEffect(ctx, lineText, SIZE / 2, curY, fontSize, textColor, effect);
                 const mw    = Math.min(ctx.measureText(lineText).width, maxW);
                 const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
                 drawAnimatedRain(ctx, drips, curY, fontSize, textColor, animPhase);
@@ -290,18 +360,29 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
 }
 
 // ── Create animated WebP sticker — cumulative reveal + animated rain + custom bg ──
-async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null, secPerLine = 2, fontKey = null) {
+async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer = null, secPerLine = 2, fontKey = null, effect = null, themeKey = null, bgGradient = null) {
     const PADDING  = 36;
     const maxW     = 512 - PADDING * 2;
     const maxH     = 512 - PADDING * 2 - 46;
     const framesPerGroup = Math.max(2, Math.round(FPS * secPerLine));
     const fOpts    = resolveFont(fontKey);
 
+    // Apply theme (overrides bgColor / textColor / bgGradient)
+    const theme = themeKey ? THEMES[themeKey] : null;
+    if (theme) {
+        if (theme.bgColor)    bgColor    = theme.bgColor;
+        if (theme.bgGradient) bgGradient = theme.bgGradient;
+    }
+
     let bgImg = null;
     if (bgImageBuffer) bgImg = await loadImage(bgImageBuffer);
 
     let textColor = TEXT_COLOR;
     if (bgImg) {
+        textColor = '#FFFFFF';
+    } else if (theme?.textColor) {
+        textColor = theme.textColor;
+    } else if (bgGradient) {
         textColor = '#FFFFFF';
     } else if (bgColor.toLowerCase() !== BG_COLOR.toLowerCase()) {
         textColor = isColorDark(bgColor) ? '#FFFFFF' : '#1A1A1A';
@@ -340,7 +421,7 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
         for (let g = 0; g < lines.length; g++) {
             for (let f = 0; f < framesPerGroup; f++) {
                 const animPhase = (globalTick / FPS) % 1;
-                const buf = drawCumulativeFrame(g, allGroups, fontSize, textColor, bgColor, bgImg, animPhase, fOpts);
+                const buf = drawCumulativeFrame(g, allGroups, fontSize, textColor, bgColor, bgImg, animPhase, fOpts, effect, bgGradient);
                 const fp  = path.join(tempDir, `lyric2_frame_${tempId}_${globalTick}.png`);
                 fs.writeFileSync(fp, buf);
                 framePaths.push(fp);
@@ -383,8 +464,14 @@ async function createLyricStickerStatic(lines, bgColor = BG_COLOR, bgImageBuffer
 }
 
 // ── Create animated WebP sticker from lyric lines (sequential, one line per group) ──
-async function createLyricSticker(lines, secPerLine = 2, fontKey = null) {
+async function createLyricSticker(lines, secPerLine = 2, fontKey = null, effect = null, themeKey = null) {
     const framesPerLine = Math.max(2, Math.round(FPS * secPerLine));
+
+    // Resolve theme
+    const theme     = themeKey ? THEMES[themeKey] : null;
+    const bgColOvr  = theme ? (theme.bgColor || BG_COLOR) : null;
+    const txtColOvr = theme ? theme.textColor : null;
+    const bgGrad    = theme ? theme.bgGradient : null;
 
     const tempId  = randomBytes(6).toString('hex');
     const tempDir = path.join(__dirname, '../../temp');
@@ -406,7 +493,7 @@ async function createLyricSticker(lines, secPerLine = 2, fontKey = null) {
             for (let f = 0; f < framesPerLine; f++) {
                 const animPhase = (globalTick / FPS) % 1;
                 const fp  = path.join(tempDir, `lyric_frame_${tempId}_${globalTick}.png`);
-                fs.writeFileSync(fp, drawLyricFrame(lines[i], animPhase, fontKey));
+                fs.writeFileSync(fp, drawLyricFrame(lines[i], animPhase, fontKey, effect, bgColOvr, txtColOvr, bgGrad));
                 framePaths.push(fp);
                 globalTick++;
             }
@@ -446,4 +533,4 @@ async function createLyricSticker(lines, secPerLine = 2, fontKey = null) {
     } catch (e) { cleanup(); throw e; }
 }
 
-module.exports = { createLyricSticker, createLyricStickerStatic, parseColor, LYRIC_FONT_KEYS };
+module.exports = { createLyricSticker, createLyricStickerStatic, parseColor, parseGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS };

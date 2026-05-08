@@ -75,8 +75,10 @@ const games = require('./src/features/games');
 const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
-const { createLyricSticker, createLyricStickerStatic, parseColor: parseLyricColor, LYRIC_FONT_KEYS } = require('./src/features/lyricSticker');
-const _lyricFontSet = new Set(LYRIC_FONT_KEYS.concat(['georgia','classic','elegan','romantis','heavy','tebal','besar','comic','fun','lucu','santai','clean','rapi','compact','tahoma','sans','biasa','arial','mono','typewriter','ketik','mesin','courier','trebo','stylish','trebuchet','verdana','impact']));
+const { createLyricSticker, createLyricStickerStatic, parseColor: parseLyricColor, parseGradient: parseLyricGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS } = require('./src/features/lyricSticker');
+const _lyricFontSet   = new Set(LYRIC_FONT_KEYS.concat(['georgia','classic','elegan','romantis','heavy','tebal','besar','comic','fun','lucu','santai','clean','rapi','compact','tahoma','sans','biasa','arial','mono','typewriter','ketik','mesin','courier','trebo','stylish','trebuchet','verdana','impact']));
+const _lyricThemeSet  = new Set(LYRIC_THEME_KEYS);
+const _lyricEffectSet = new Set(LYRIC_EFFECT_KEYS);
 
 const ryzumi = require('./src/features/ryzumi');
 const channelCopier = require('./src/features/channelCopier');
@@ -1045,9 +1047,10 @@ async function startBot() {
 ┃   🔤 Font: | impact  (boleh digabung)
 ┃   👉 ${PREFIX}stickerlirik2 aku rindu | hitam | 3 | comic
 ┃
-┣⌬ 🔤 *Font tersedia:* ${LYRIC_FONT_KEYS.join(' • ')}
-┃   serif • impact • comic • verdana • arial
-┃   courier • trebuchet • tahoma
+┣⌬ 🔤 *Font:* ${LYRIC_FONT_KEYS.join(' • ')}
+┣⌬ ✨ *Efek teks:* shadow • outline • glow
+┣⌬ 🎨 *Tema:* ${LYRIC_THEME_KEYS.join(' • ')}
+┃   🌈 Gradient: \`| navy>purple\`  \`| merah>kuning\`
 ┃   (Ketik perintah tanpa argumen untuk tutorial)
 ┃
 ┗━━━━━━━◧
@@ -3718,25 +3721,33 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
 
                     if (!lyricRaw) {
                         await sock.sendMessage(remoteJid, {
-                            text: `🎵 *Sticker Lirik Kumulatif*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik2 baris1, baris2, baris3\`\n\n🎨 *Warna background:*\n\`${PREFIX}stickerlirik2 baris1, baris2 | navy\`\n\`${PREFIX}stickerlirik2 baris1, baris2 | #3A1A2E\`\n\n🖼️ *Foto sebagai background:*\nKirim foto + caption: \`${PREFIX}stickerlirik2 baris1, baris2\`\n\n⏱️ *Durasi per baris:*\n\`${PREFIX}stickerlirik2 baris1, baris2 | 3\`\n\n🔤 *Ganti font:*\n\`${PREFIX}stickerlirik2 baris1, baris2 | navy | 3 | comic\`\n\n🔤 *Font tersedia:* ${LYRIC_FONT_KEYS.join(', ')}\n*Alias:* impact/heavy, comic/fun/lucu, verdana/clean, arial/sans, courier/ketik, trebuchet/stylish\n\n🎨 *Warna:* merah, biru, hijau, kuning, hitam, putih, pink, ungu, orange, cream, abu, coklat, navy, tosca`
+                            text: `🎵 *Sticker Lirik Kumulatif*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik2 baris1, baris2\`\n\n🎨 *Warna bg:* \`| navy\`  \`| #3A1A2E\`\n🌈 *Gradient bg:* \`| navy>purple\`  \`| merah>kuning\`\n🖼️ *Foto bg:* Kirim foto + caption perintah\n⏱️ *Durasi:* \`| 3\`\n🔤 *Font:* \`| impact\`  \`| comic\`\n✨ *Efek teks:* \`| shadow\`  \`| outline\`  \`| glow\`\n🎨 *Tema:* \`| neon\`  \`| sunset\`  \`| sakura\`\n\n👉 *Contoh gabungan:*\n\`${PREFIX}stickerlirik2 aku rindu | neon | glow\`\n\`${PREFIX}stickerlirik2 aku rindu | sunset | 3 | comic | outline\`\n\n🎨 *Tema:* ${LYRIC_THEME_KEYS.join(', ')}\n🔤 *Font:* ${LYRIC_FONT_KEYS.join(', ')}\n✨ *Efek:* shadow • outline • glow`
                         }, { quoted: msg });
                         continue;
                     }
 
-                    // Parse | parts flexibly: warna, angka, atau font keyword
+                    // Parse | parts: warna/gradient, angka, tema, efek, font
                     let bgColor = '#FAE8CC';
+                    let bgGrad2 = null;
                     let secPerLine2 = 2;
                     let fontKey2 = null;
+                    let effect2 = null;
+                    let themeKey2 = null;
                     if (lyricRaw.includes('|')) {
                         const parts = lyricRaw.split('|');
                         lyricRaw = parts[0].trim();
                         for (let pi = 1; pi < parts.length; pi++) {
                             const p = parts[pi].trim();
-                            const c = parseLyricColor(p);
+                            const pl = p.toLowerCase();
                             const dur = parseFloat(p);
-                            if (c) { bgColor = c; }
+                            const grad = parseLyricGradient(p);
+                            const col  = parseLyricColor(p);
+                            if (grad)                                    { bgGrad2 = grad; }
+                            else if (col)                                { bgColor = col; }
                             else if (!isNaN(dur) && dur >= 1 && dur <= 10) { secPerLine2 = dur; }
-                            else if (_lyricFontSet.has(p.toLowerCase())) { fontKey2 = p.toLowerCase(); }
+                            else if (_lyricThemeSet.has(pl))              { themeKey2 = pl; }
+                            else if (_lyricEffectSet.has(pl))             { effect2 = pl; }
+                            else if (_lyricFontSet.has(pl))               { fontKey2 = pl; }
                         }
                     }
 
@@ -3747,7 +3758,8 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     }
 
                     await simulateTyping(sock, remoteJid, 800);
-                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${secPerLine2}s/baris${fontKey2 ? ', font: ' + fontKey2 : ''})...` }, { quoted: msg });
+                    const _info2 = [secPerLine2 + 's', fontKey2, effect2, themeKey2 || (bgGrad2 ? 'gradient' : null)].filter(Boolean).join(', ');
+                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${_info2})...` }, { quoted: msg });
 
                     try {
                         // Cek apakah ada foto (sebagai background)
@@ -3763,7 +3775,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                             bgImageBuffer = await downloadMediaMessage(dlKey2, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
                         }
 
-                        const stickerBuffer2 = await createLyricStickerStatic(lines2, bgColor, bgImageBuffer, secPerLine2, fontKey2);
+                        const stickerBuffer2 = await createLyricStickerStatic(lines2, bgColor, bgImageBuffer, secPerLine2, fontKey2, effect2, themeKey2, bgGrad2);
                         await sock.sendMessage(remoteJid, { sticker: stickerBuffer2 }, { quoted: msg });
                         logger.info(`🎵 Sticker lirik2 dikirim ke ${remoteJid} — ${lines2.length} baris × ${secPerLine2}s font=${fontKey2 || 'default'}`);
                     } catch (error) {
@@ -3783,22 +3795,27 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
 
                     if (!lyricRaw1) {
                         await sock.sendMessage(remoteJid, {
-                            text: `🎵 *Sticker Lirik Animasi*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik baris1, baris2, baris3\`\n\n⏱️ *Durasi per baris (default 2):*\n\`${PREFIX}stickerlirik baris1, baris2 | 3\`\n\n🔤 *Ganti font (pisah dengan |):*\n\`${PREFIX}stickerlirik baris1, baris2 | impact\`\n\`${PREFIX}stickerlirik baris1, baris2 | 3 | comic\`\n\n🔤 *Font tersedia:* ${LYRIC_FONT_KEYS.join(', ')}\n*Alias:* impact/heavy/tebal, comic/fun/lucu, verdana/clean, arial/sans, courier/ketik/typewriter, trebuchet/stylish`
+                            text: `🎵 *Sticker Lirik Animasi*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik baris1, baris2, baris3\`\n\n⏱️ *Durasi:* \`| 3\`\n🔤 *Font:* \`| impact\`  \`| comic\`\n✨ *Efek teks:* \`| shadow\`  \`| outline\`  \`| glow\`\n🎨 *Tema:* \`| neon\`  \`| sunset\`  \`| sakura\`\n\n👉 *Contoh gabungan:*\n\`${PREFIX}stickerlirik aku rindu, dirimu | neon | glow\`\n\`${PREFIX}stickerlirik aku rindu, dirimu | 3 | comic | shadow\`\n\n🎨 *Tema:* ${LYRIC_THEME_KEYS.join(', ')}\n🔤 *Font:* ${LYRIC_FONT_KEYS.join(', ')}\n✨ *Efek:* shadow • outline • glow`
                         }, { quoted: msg });
                         continue;
                     }
 
-                    // Parse | parts: angka=durasi, font keyword=font
+                    // Parse | parts: angka=durasi, tema, efek, font
                     let secPerLine1 = 2;
-                    let fontKey1 = null;
+                    let fontKey1    = null;
+                    let effect1     = null;
+                    let themeKey1   = null;
                     if (lyricRaw1.includes('|')) {
                         const parts = lyricRaw1.split('|');
                         lyricRaw1 = parts[0].trim();
                         for (let pi = 1; pi < parts.length; pi++) {
-                            const p = parts[pi].trim();
+                            const p  = parts[pi].trim();
+                            const pl = p.toLowerCase();
                             const dur = parseFloat(p);
                             if (!isNaN(dur) && dur >= 1 && dur <= 10) { secPerLine1 = dur; }
-                            else if (_lyricFontSet.has(p.toLowerCase())) { fontKey1 = p.toLowerCase(); }
+                            else if (_lyricThemeSet.has(pl))            { themeKey1 = pl; }
+                            else if (_lyricEffectSet.has(pl))           { effect1 = pl; }
+                            else if (_lyricFontSet.has(pl))             { fontKey1 = pl; }
                         }
                     }
 
@@ -3810,11 +3827,12 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     }
 
                     await simulateTyping(sock, remoteJid, 1000);
-                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${lines.length} baris, ${secPerLine1}s/baris${fontKey1 ? ', font: ' + fontKey1 : ''})...` }, { quoted: msg });
+                    const _info1 = [lines.length + ' baris', secPerLine1 + 's', fontKey1, effect1, themeKey1].filter(Boolean).join(', ');
+                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${_info1})...` }, { quoted: msg });
                     await randomDelay(400, 800);
 
                     try {
-                        const stickerBuffer = await createLyricSticker(lines, secPerLine1, fontKey1);
+                        const stickerBuffer = await createLyricSticker(lines, secPerLine1, fontKey1, effect1, themeKey1);
                         await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
                         logger.info(`🎵 Sticker lirik dikirim ke ${remoteJid} — ${lines.length} baris × ${secPerLine1}s font=${fontKey1 || 'default'}`);
                     } catch (error) {
