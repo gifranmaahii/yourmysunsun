@@ -2,6 +2,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const WebSocket = require('ws');
 require('dotenv').config({ path: path.join(__dirname, '.env_telegram') });
 
 // Konfigurasi
@@ -11,6 +12,7 @@ const serverId = process.env.PTERODACTYL_SERVER_ID;
 const baseUrl = process.env.PTERODACTYL_BASE_URL;
 
 const bot = new TelegramBot(token, { polling: true });
+let lastChatId = null;
 
 console.log('🚀 Telegram Panel Control is starting...');
 
@@ -22,6 +24,79 @@ const ptero = axios.create({
         'Content-Type': 'application/json',
         'Accept': 'Application/vnd.pterodactyl.v1+json',
     }
+});
+
+// ==========================================
+// WEBSOCKET LOG MONITORING (Zero Panel)
+// ==========================================
+let ws = null;
+
+async function connectToConsole() {
+    try {
+        const res = await ptero.get('/websocket');
+        const { data } = res.data;
+        
+        ws = new WebSocket(data.socket);
+        
+        ws.on('open', () => {
+            ws.send(JSON.stringify({ event: 'auth', args: [data.token] }));
+            console.log('📡 Connected to Panel Console via WebSocket');
+        });
+
+        ws.on('message', (msg) => {
+            const payload = JSON.parse(msg);
+            if (payload.event === 'console output') {
+                const text = payload.args[0];
+                
+                // Tangkap Pairing Code
+                if (text.includes('PAIRING_CODE:')) {
+                    const code = text.split('PAIRING_CODE:')[1].trim();
+                    if (lastChatId) {
+                        bot.sendMessage(lastChatId, `🔑 *KODE PAIRING ANDA:* \`${code}\`\n\n📱 Masukkan kode ini di WhatsApp HP kamu!`, { parse_mode: 'Markdown' });
+                    }
+                }
+                
+                // Tangkap Login Sukses
+                if (text.includes('CONNECTED') || text.includes('TERHUBUNG')) {
+                    if (lastChatId) bot.sendMessage(lastChatId, '✅ *Bot WhatsApp Berhasil Terhubung!*', { parse_mode: 'Markdown' });
+                }
+            }
+        });
+
+        ws.on('close', () => {
+            console.log('📡 WebSocket Closed. Reconnecting...');
+            setTimeout(connectToConsole, 5000);
+        });
+
+        ws.on('error', (err) => {
+            console.error('❌ WebSocket Error:', err.message);
+        });
+
+    } catch (e) {
+        console.error('❌ Failed to connect to WebSocket:', e.message);
+        setTimeout(connectToConsole, 10000);
+    }
+}
+
+connectToConsole();
+
+// ==========================================
+// COMMAND HANDLERS
+// ==========================================
+
+bot.onText(/\/start/, (msg) => {
+    lastChatId = msg.chat.id;
+    const welcome = `👋 Halo! Saya Bot Pengendali Panel.\n\n` +
+        `Gunakan perintah berikut:\n` +
+        `🔹 /status - Cek status bot\n` +
+        `🔹 /startbot - Nyalakan bot\n` +
+        `🔹 /stopbot - Matikan bot\n` +
+        `🔹 /restartbot - Restart bot\n` +
+        `🔹 /update - Git Pull (Tarik kodingan baru)\n` +
+        `🔹 /pair [nomor] - Login pake Pairing Code\n` +
+        `🔹 /logout - Hapus Sesi (Logout Total)\n` +
+        `🔹 /logs - Lihat log console terakhir`;
+    bot.sendMessage(msg.chat.id, welcome);
 });
 
 // Helper: Cek Status
@@ -61,6 +136,7 @@ async function sendCommand(command) {
 // ==========================================
 
 bot.onText(/\/start/, (msg) => {
+    lastChatId = msg.chat.id;
     const welcome = `👋 Halo! Saya Bot Pengendali Panel.\n\n` +
         `Gunakan perintah berikut:\n` +
         `🔹 /status - Cek status bot\n` +
@@ -68,13 +144,14 @@ bot.onText(/\/start/, (msg) => {
         `🔹 /stopbot - Matikan bot\n` +
         `🔹 /restartbot - Restart bot\n` +
         `🔹 /update - Git Pull (Tarik kodingan baru)\n` +
-        `🔹 /login - Tampilkan QR (Restart)\n` +
+        `🔹 /pair [nomor] - Login pake Pairing Code\n` +
         `🔹 /logout - Hapus Sesi (Logout Total)\n` +
         `🔹 /logs - Lihat log console terakhir`;
     bot.sendMessage(msg.chat.id, welcome);
 });
 
 bot.onText(/\/status/, async (msg) => {
+    lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Menghubungi panel...');
     const status = await getServerStatus();
     const emoji = status === 'running' ? '🟢' : status === 'offline' ? '🔴' : '🟡';
@@ -82,66 +159,63 @@ bot.onText(/\/status/, async (msg) => {
 });
 
 bot.onText(/\/startbot/, async (msg) => {
+    lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Mencoba menyalakan bot...');
     const success = await sendPowerAction('start');
     bot.sendMessage(msg.chat.id, success ? '✅ Bot sedang proses booting...' : '❌ Gagal menyalakan bot.');
 });
 
 bot.onText(/\/stopbot/, async (msg) => {
+    lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Mencoba mematikan bot...');
     const success = await sendPowerAction('stop');
     bot.sendMessage(msg.chat.id, success ? '🔴 Bot telah dimatikan.' : '❌ Gagal mematikan bot.');
 });
 
 bot.onText(/\/restartbot/, async (msg) => {
+    lastChatId = msg.chat.id;
     bot.sendMessage(msg.chat.id, '⏳ Me-restart bot...');
     const success = await sendPowerAction('restart');
     bot.sendMessage(msg.chat.id, success ? '🔄 Bot sedang proses restart...' : '❌ Gagal me-restart.');
 });
 
 bot.onText(/\/update/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '⏳ Mengecek status server...');
-    
+    lastChatId = msg.chat.id;
+    bot.sendMessage(lastChatId, '⏳ Mengecek status server...');
     const status = await getServerStatus();
-    
     if (status === 'offline') {
-        bot.sendMessage(chatId, '⚠️ Server sedang Offline. Menyalakan server terlebih dahulu agar bisa update...');
+        bot.sendMessage(lastChatId, '⚠️ Server sedang Offline. Menyalakan server terlebih dahulu agar bisa update...');
         await sendPowerAction('start');
-        bot.sendMessage(chatId, '⏳ Tunggu 15 detik sampai server benar-benar ONLINE...');
-        return;
-    }
-
-    bot.sendMessage(chatId, '🚀 Mengirim perintah Git Pull ke bot WhatsApp...');
-    const success = await sendCommand('git_pull');
-    
-    if (success) {
-        bot.sendMessage(chatId, '✅ Perintah diterima! Bot akan menarik update dan melakukan restart otomatis dalam 10-20 detik.');
+        setTimeout(() => sendCommand('git_pull'), 15000);
     } else {
-        bot.sendMessage(chatId, '❌ Gagal mengirim perintah. Pastikan status bot adalah RUNNING.');
+        bot.sendMessage(lastChatId, '🚀 Mengirim perintah Git Pull ke bot WhatsApp...');
+        await sendCommand('git_pull');
     }
 });
 
-bot.onText(/\/login/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '⏳ Me-restart bot untuk memicu QR Code baru...');
-    await sendPowerAction('restart');
-    bot.sendMessage(chatId, '✅ Bot sedang restart. Silakan pantau console panel kamu untuk scan QR Code atau pairing code.');
+bot.onText(/\/pair (.+)/, async (msg, match) => {
+    lastChatId = msg.chat.id;
+    const number = match[1].replace(/[^0-9]/g, '');
+    if (!number || number.length < 10) {
+        return bot.sendMessage(lastChatId, '❌ Nomor tidak valid! Gunakan format: /pair 628xxx');
+    }
+
+    bot.sendMessage(lastChatId, `⏳ Menyiapkan Pairing Code untuk nomor: *${number}*...\nBot akan restart sejenak.`, { parse_mode: 'Markdown' });
+    const status = await getServerStatus();
+    if (status === 'offline') {
+        bot.sendMessage(lastChatId, '⚠️ Server sedang Offline. Menyalakan server...');
+        await sendPowerAction('start');
+        setTimeout(() => sendCommand(`pair_bot ${number}`), 15000);
+    } else {
+        await sendCommand(`pair_bot ${number}`);
+    }
 });
 
 bot.onText(/\/logout/, async (msg) => {
-    const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '⚠️ Sedang menghapus sesi bot (Logout)...');
-    const status = await getServerStatus();
-    
-    if (status === 'offline') {
-        bot.sendMessage(chatId, '❌ Server Offline. Menyalakan sejenak untuk menghapus sesi...');
-        await sendPowerAction('start');
-        setTimeout(() => sendCommand('logout_bot'), 10000);
-    } else {
-        await sendCommand('logout_bot');
-    }
-    bot.sendMessage(chatId, '✅ Perintah Logout dikirim! Sesi akan dihapus dan bot akan mati.');
+    lastChatId = msg.chat.id;
+    bot.sendMessage(lastChatId, '⚠️ Sedang menghapus sesi bot (Logout)...');
+    await sendCommand('logout_bot');
+    bot.sendMessage(lastChatId, '✅ Perintah Logout dikirim! Sesi akan dihapus dan bot akan mati.');
 });
 
 bot.onText(/\/logs/, async (msg) => {

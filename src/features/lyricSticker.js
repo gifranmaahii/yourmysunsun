@@ -107,42 +107,121 @@ function createDripSet(lineX, lineWidth, fontSize) {
     return drips;
 }
 
-// Draw drips at a given global animation phase (0‥1 cycles per second)
-function drawAnimatedRain(ctx, drips, lineY, fontSize, textColor, globalPhase) {
+// Realistic 4-stage tear-drop rain animation
+// Stage 1 (0.00–0.10): blob forms at letter edge
+// Stage 2 (0.10–0.24): blob elongates, neck appears
+// Stage 3 (0.24–0.82): tear detaches and falls with gravity, streak behind
+// Stage 4 (0.82–1.00): tiny splash ripple + fade
+function drawAnimatedRain(ctx, drips, lineY, fontSize, textColor, animPhase) {
     const [r, g, b] = hexToRgb(textColor);
+    const attachY   = lineY + fontSize * 0.09;
+
     for (const drip of drips) {
-        const phase = (globalPhase * drip.speed + drip.phaseOffset) % 1;
-        const startY = lineY + fontSize * 0.04;
-        const len    = drip.maxLen * Math.min(phase * 2.8, 1);
+        const phase = (animPhase * drip.speed + drip.phaseOffset) % 1;
+        const hx    = drip.x; // base X
 
-        // opacity: fade-in 0–0.18, hold 0.18–0.72, fade-out 0.72–1.0
-        let alpha;
-        if      (phase < 0.18) alpha = (phase / 0.18) * 0.65;
-        else if (phase < 0.72) alpha = 0.65;
-        else                    alpha = ((1 - phase) / 0.28) * 0.65;
+        if (phase < 0.10) {
+            // ── Blob forming ──
+            const t     = phase / 0.10;
+            const blobR = fontSize * 0.052 * t;
+            const alpha = 0.72 * t;
+            if (blobR < 0.3) continue;
+            ctx.save();
+            ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(hx, attachY, blobR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
 
-        if (alpha < 0.03 || len < 1) continue;
+        } else if (phase < 0.24) {
+            // ── Elongation: neck + growing head ──
+            const t       = (phase - 0.10) / 0.14;
+            const neckH   = fontSize * 0.15 * t;
+            const headR   = fontSize * 0.055 + t * fontSize * 0.018;
+            const headY   = attachY + neckH;
+            ctx.save();
+            // Neck gradient
+            const grad = ctx.createLinearGradient(hx, attachY, hx, headY);
+            grad.addColorStop(0, `rgba(${r},${g},${b},0.38)`);
+            grad.addColorStop(1, `rgba(${r},${g},${b},0.70)`);
+            ctx.strokeStyle = grad;
+            ctx.lineWidth   = Math.max(0.8, headR * 0.55);
+            ctx.lineCap     = 'round';
+            ctx.beginPath();
+            ctx.moveTo(hx, attachY);
+            ctx.lineTo(hx, headY);
+            ctx.stroke();
+            // Round head
+            ctx.fillStyle = `rgba(${r},${g},${b},0.72)`;
+            ctx.beginPath();
+            ctx.arc(hx, headY + headR * 0.6, headR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
 
-        const grad = ctx.createLinearGradient(drip.x, startY, drip.x, startY + len);
-        grad.addColorStop(0,    `rgba(${r},${g},${b},${alpha.toFixed(3)})`);
-        grad.addColorStop(0.55, `rgba(${r},${g},${b},${(alpha*0.38).toFixed(3)})`);
-        grad.addColorStop(1,    `rgba(${r},${g},${b},0)`);
+        } else if (phase < 0.82) {
+            // ── Falling tear ──
+            const t        = (phase - 0.24) / 0.58;
+            const gravT    = t * t;                           // gravity easing
+            const smoothT  = t * t * (3 - 2 * t);            // smooth-step
+            const fallDist = drip.maxLen * gravT;
+            const drift    = drip.wobble * smoothT * 0.45;   // sideways drift
+            const headX    = hx + drift;
+            const headY    = attachY + fallDist;
+            const headR    = Math.max(1.2, fontSize * 0.055 * (1 - t * 0.35));
 
-        ctx.save();
-        ctx.strokeStyle = grad;
-        ctx.lineWidth   = drip.width;
-        ctx.lineCap     = 'round';
-        ctx.beginPath();
-        ctx.moveTo(drip.x, startY);
-        ctx.quadraticCurveTo(
-            drip.x + drip.wobble * phase,
-            startY + len * 0.52,
-            drip.x + drip.wobble * phase * 0.55,
-            startY + len
-        );
-        ctx.stroke();
-        ctx.restore();
+            // Streak: arc length grows then collapses
+            const streakLen = drip.maxLen * 0.32 * Math.sin(t * Math.PI);
+            const streakTopY = Math.max(attachY, headY - streakLen);
+
+            let alpha = 0.70;
+            if (phase > 0.68) alpha = 0.70 * ((0.82 - phase) / 0.14);
+            if (alpha < 0.03 || fallDist < 1) continue;
+
+            ctx.save();
+            // Streak gradient
+            if (streakLen > 1.5) {
+                const gStr = ctx.createLinearGradient(headX, streakTopY, headX, headY);
+                gStr.addColorStop(0, `rgba(${r},${g},${b},0)`);
+                gStr.addColorStop(1, `rgba(${r},${g},${b},${(alpha * 0.52).toFixed(3)})`);
+                ctx.strokeStyle = gStr;
+                ctx.lineWidth   = Math.max(0.5, headR * 0.65);
+                ctx.lineCap     = 'round';
+                ctx.beginPath();
+                ctx.moveTo(headX, streakTopY);
+                ctx.lineTo(headX, headY - headR * 0.9);
+                ctx.stroke();
+            }
+            // Tear-drop head
+            ctx.fillStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+            ctx.beginPath();
+            ctx.arc(headX, headY, headR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+        } else {
+            // ── Splash ripple ──
+            const t = (phase - 0.82) / 0.18;
+            if (t > 0.55) continue;
+            const splashR = drip.maxLen * 0.10 * t;
+            const splashY = attachY + drip.maxLen;
+            const alpha   = (0.55 - t) * 0.5;
+            ctx.save();
+            ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+            ctx.lineWidth   = 0.7;
+            ctx.beginPath();
+            ctx.arc(drip.x, splashY, Math.max(0.5, splashR), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
     }
+}
+
+// Subtle text wobble — oscillates like a surface hit by raindrops
+function getWobble(lineIdx, animPhase) {
+    return {
+        dx: Math.sin(animPhase * Math.PI * 5.2 + lineIdx * 2.5) * 1.3,
+        dy: Math.cos(animPhase * Math.PI * 3.7 + lineIdx * 1.9) * 0.55,
+    };
 }
 
 // ── Shrink-to-fit font size for one group of text ────────────────────────────
@@ -188,11 +267,12 @@ function drawLyricFrame(text, animPhase = 0) {
     const startY = (SIZE - totalH) / 2 + lineH * 0.5 - 10;
 
     for (let i = 0; i < lines.length; i++) {
-        const ly = startY + i * lineH;
-        ctx.fillText(lines[i], SIZE / 2, ly);
+        const ly             = startY + i * lineH;
+        const { dx, dy }     = getWobble(i, animPhase);
+        ctx.fillText(lines[i], SIZE / 2 + dx, ly + dy);
         const mw    = Math.min(ctx.measureText(lines[i]).width, maxW);
-        const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
-        drawAnimatedRain(ctx, drips, ly, fontSize, TEXT_COLOR, animPhase);
+        const drips = createDripSet(SIZE / 2 - mw / 2 + dx, mw, fontSize);
+        drawAnimatedRain(ctx, drips, ly + dy, fontSize, TEXT_COLOR, animPhase);
     }
 
     ctx.font         = `bold 22px Arial, sans-serif`;
@@ -241,16 +321,19 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
 
     let curY = (SIZE - totalAllH) / 2 + lineH * 0.5;
 
+    let lineCounter = 0;
     for (let g = 0; g < allGroups.length; g++) {
         for (let i = 0; i < allGroups[g].length; i++) {
             if (g <= frameIdx) {
-                const lineText = allGroups[g][i];
-                ctx.fillText(lineText, SIZE / 2, curY);
+                const lineText       = allGroups[g][i];
+                const { dx, dy }     = getWobble(lineCounter, animPhase);
+                ctx.fillText(lineText, SIZE / 2 + dx, curY + dy);
                 const mw    = Math.min(ctx.measureText(lineText).width, maxW);
-                const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
-                drawAnimatedRain(ctx, drips, curY, fontSize, textColor, animPhase);
+                const drips = createDripSet(SIZE / 2 - mw / 2 + dx, mw, fontSize);
+                drawAnimatedRain(ctx, drips, curY + dy, fontSize, textColor, animPhase);
             }
             curY += lineH;
+            lineCounter++;
         }
         if (g < allGroups.length - 1) curY += groupGap;
     }
