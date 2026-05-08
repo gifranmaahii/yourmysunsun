@@ -42,6 +42,7 @@ const games = require('./src/features/games');
 const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
+const { createLyricSticker } = require('./src/features/lyricSticker');
 
 const ryzumi = require('./src/features/ryzumi');
 const channelCopier = require('./src/features/channelCopier');
@@ -3656,6 +3657,43 @@ async function startBot() {
                         await sock.sendMessage(remoteJid, {
                             text: `❌ Gagal membuat Lottie sticker: ${error.message}`,
                         }, { quoted: msg });
+                    }
+
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: STICKER LIRIK ANIMASI
+                // Perintah: .stickerlirik baris1, baris2, baris3
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'stickerlirik')) {
+                    const lyricArgs = textContent.replace(new RegExp('^\\' + PREFIX + 'stickerlirik\\s*', 'i'), '').trim();
+
+                    if (!lyricArgs) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `🎵 *Sticker Lirik*\n\n📌 *Cara pakai:*\n\`${PREFIX}stickerlirik baris1, baris2, baris3\`\n\n✏️ *Contoh:*\n\`${PREFIX}stickerlirik tunggulah, aku disana, menanam celengan\`\n\n✨ Setiap baris muncul bergantian dengan jeda 2 detik!\n🎨 Style: aesthetic lyric card dengan efek rain drip`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    const lines = lyricArgs.split(',').map(l => l.trim()).filter(l => l.length > 0);
+
+                    if (lines.length === 0) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Tidak ada lirik ditemukan. Gunakan koma (,) sebagai pemisah baris.' }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1000);
+                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker lirik (${lines.length} baris), tunggu sebentar...` }, { quoted: msg });
+                    await randomDelay(400, 800);
+
+                    try {
+                        const stickerBuffer = await createLyricSticker(lines);
+                        await sock.sendMessage(remoteJid, { sticker: stickerBuffer }, { quoted: msg });
+                        logger.info(`🎵 Sticker lirik dikirim ke ${remoteJid} — ${lines.length} baris`);
+                    } catch (error) {
+                        logger.error(`❌ Sticker lirik error: ${error.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal membuat sticker lirik: ${error.message}` }, { quoted: msg });
                     }
 
                     continue;
