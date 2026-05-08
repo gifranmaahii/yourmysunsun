@@ -121,7 +121,7 @@ const THEMES = {
     rose:    { bgColor: null,       textColor: '#FFFFFF', bgGradient: ['#C0392B', '#8E44AD'] },
 };
 const LYRIC_THEME_KEYS  = Object.keys(THEMES);
-const LYRIC_EFFECT_KEYS = ['shadow', 'outline', 'glow'];
+const LYRIC_EFFECT_KEYS = ['shadow', 'outline', 'glow', 'neon2', 'emboss', 'blur', 'gradient', 'y2k'];
 
 // ── Word wrap helper ─────────────────────────────────────────────────────────
 function wordWrap(ctx, text, maxWidth) {
@@ -208,8 +208,43 @@ function drawAnimatedRain(ctx, drips, lineY, fontSize, textColor, animPhase) {
     }
 }
 
+// ── Color & sparkle helpers ──────────────────────────────────────────────
+function lightenHex(hex, amt) {
+    if (!hex || hex.length !== 7) return '#FFFFFF';
+    const r = Math.min(255, parseInt(hex.slice(1,3), 16) + amt);
+    const g = Math.min(255, parseInt(hex.slice(3,5), 16) + amt);
+    const b = Math.min(255, parseInt(hex.slice(5,7), 16) + amt);
+    return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+function seededRand(seed) {
+    const x = Math.sin(seed * 9301 + 49297) * 233280;
+    return x - Math.floor(x);
+}
+function drawY2KSparkles(ctx, cx, lineY, textW, fontSize, animPhase, textColor) {
+    const chars  = ['✶','✧','✶','★','✧','✶','✶','✧','✶','✧'];
+    const count  = 10;
+    const spread = textW * 0.55 + fontSize * 1.8;
+    const sz     = Math.max(8, fontSize * 0.26);
+    ctx.save();
+    ctx.font         = `bold ${sz}px "${_emojiFamily || 'Arial'}", Arial, sans-serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = textColor;
+    for (let i = 0; i < count; i++) {
+        const px    = cx + (seededRand(i * 7 + 1) - 0.5) * spread;
+        const py    = lineY + (seededRand(i * 13 + 3) - 0.5) * fontSize * 1.3;
+        const phase = (animPhase + i / count) % 1;
+        const alpha = Math.pow(Math.abs(Math.sin(phase * Math.PI)), 0.6);
+        if (alpha < 0.08) continue;
+        ctx.globalAlpha = alpha;
+        ctx.fillText(chars[i % chars.length], px, py);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+}
+
 // ── Text effect renderer ─────────────────────────────────────────────────────
-function fillTextWithEffect(ctx, text, x, y, fontSize, textColor, effect) {
+function fillTextWithEffect(ctx, text, x, y, fontSize, textColor, effect, animPhase = 0) {
     ctx.save();
     ctx.fillStyle = textColor;
     if (effect === 'shadow') {
@@ -233,6 +268,55 @@ function fillTextWithEffect(ctx, text, x, y, fontSize, textColor, effect) {
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur  = 0;
         ctx.fillText(text, x, y);
+    } else if (effect === 'neon2') {
+        const aura = isColorDark(textColor) ? 'rgba(255,0,255,0.55)' : 'rgba(0,220,255,0.55)';
+        ctx.shadowColor = aura;
+        ctx.shadowBlur  = fontSize * 0.55;
+        ctx.fillText(text, x, y);
+        ctx.shadowColor = textColor;
+        ctx.shadowBlur  = fontSize * 0.22;
+        ctx.fillText(text, x, y);
+        ctx.shadowBlur  = fontSize * 0.10;
+        ctx.fillText(text, x, y);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur  = 0;
+        ctx.fillText(text, x, y);
+    } else if (effect === 'emboss') {
+        const off = Math.max(1, fontSize * 0.04);
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        ctx.fillText(text, x - off, y - off);
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillText(text, x + off, y + off);
+        ctx.fillStyle = textColor;
+        ctx.fillText(text, x, y);
+    } else if (effect === 'blur') {
+        try {
+            ctx.filter = `blur(${Math.max(2, fontSize * 0.035)}px)`;
+            ctx.fillText(text, x, y);
+            ctx.filter = 'none';
+        } catch (_) { ctx.fillText(text, x, y); }
+    } else if (effect === 'gradient') {
+        const light = lightenHex(textColor, 90);
+        const grad  = ctx.createLinearGradient(x - fontSize * 3, y - fontSize * 0.5, x + fontSize * 3, y + fontSize * 0.5);
+        grad.addColorStop(0,   light);
+        grad.addColorStop(0.5, textColor);
+        grad.addColorStop(1,   light);
+        ctx.fillStyle = grad;
+        ctx.fillText(text, x, y);
+    } else if (effect === 'y2k') {
+        const shimmer = lightenHex(textColor, 100);
+        const grad    = ctx.createLinearGradient(x, y - fontSize * 0.5, x, y + fontSize * 0.5);
+        grad.addColorStop(0,   shimmer);
+        grad.addColorStop(0.3, textColor);
+        grad.addColorStop(0.5, shimmer);
+        grad.addColorStop(0.7, textColor);
+        grad.addColorStop(1,   shimmer);
+        ctx.fillStyle   = grad;
+        ctx.shadowColor = shimmer;
+        ctx.shadowBlur  = fontSize * 0.15;
+        ctx.fillText(text, x, y);
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur  = 0;
     } else {
         ctx.fillText(text, x, y);
     }
@@ -294,10 +378,11 @@ function drawLyricFrame(text, animPhase = 0, fontKey = null, effect = null, bgCo
 
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
-        fillTextWithEffect(ctx, lines[i], SIZE / 2, ly, fontSize, txtCol, effect);
+        fillTextWithEffect(ctx, lines[i], SIZE / 2, ly, fontSize, txtCol, effect, animPhase);
         const mw    = Math.min(ctx.measureText(lines[i]).width, maxW);
         const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
         drawAnimatedRain(ctx, drips, ly, fontSize, txtCol, animPhase);
+        if (effect === 'y2k') drawY2KSparkles(ctx, SIZE / 2, ly, mw, fontSize, animPhase, txtCol);
     }
 
     ctx.font         = `bold 22px Arial, sans-serif`;
@@ -357,10 +442,11 @@ function drawCumulativeFrame(frameIdx, allGroups, fontSize, textColor, bgColor, 
         for (let i = 0; i < allGroups[g].length; i++) {
             if (g <= frameIdx) {
                 const lineText = allGroups[g][i];
-                fillTextWithEffect(ctx, lineText, SIZE / 2, curY, fontSize, textColor, effect);
+                fillTextWithEffect(ctx, lineText, SIZE / 2, curY, fontSize, textColor, effect, animPhase);
                 const mw    = Math.min(ctx.measureText(lineText).width, maxW);
                 const drips = createDripSet(SIZE / 2 - mw / 2, mw, fontSize);
                 drawAnimatedRain(ctx, drips, curY, fontSize, textColor, animPhase);
+                if (effect === 'y2k') drawY2KSparkles(ctx, SIZE / 2, curY, mw, fontSize, animPhase, textColor);
             }
             curY += lineH;
         }
@@ -550,4 +636,97 @@ async function createLyricSticker(lines, secPerLine = 2, fontKey = null, effect 
     } catch (e) { cleanup(); throw e; }
 }
 
-module.exports = { createLyricSticker, createLyricStickerStatic, parseColor, parseGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS };
+// ── Create cover sticker (static, typography) ──────────────────────────────
+async function createStickerCover(title, artist = '', opts = {}) {
+    const { fontKey = null, effect = null, themeKey = null, bgColor: bgColorIn = BG_COLOR, bgGradient: bgGradientIn = null } = opts;
+    const SIZE    = 512;
+    const PADDING = 36;
+    const fOpts   = resolveFont(fontKey);
+
+    const theme = themeKey ? THEMES[themeKey] : null;
+    let bgColor    = theme?.bgColor    || bgColorIn;
+    let bgGradient = theme?.bgGradient || bgGradientIn;
+    let textColor  = TEXT_COLOR;
+    if      (theme?.textColor)                                           textColor = theme.textColor;
+    else if (bgGradient)                                                 textColor = '#FFFFFF';
+    else if (bgColor.toLowerCase() !== BG_COLOR.toLowerCase())
+        textColor = isColorDark(bgColor) ? '#FFFFFF' : '#1A1A1A';
+
+    const canvas = createCanvas(SIZE, SIZE);
+    const ctx    = canvas.getContext('2d');
+
+    if (bgGradient && bgGradient.length === 2) {
+        const grad = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+        grad.addColorStop(0, bgGradient[0]);
+        grad.addColorStop(1, bgGradient[1]);
+        ctx.fillStyle = grad;
+    } else {
+        ctx.fillStyle = bgColor;
+    }
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    const maxTitleW = SIZE - PADDING * 2;
+    const maxTitleH = SIZE * 0.56;
+    const { fontSize: titleFs, wrapped: titleLines } = fitFontSize(title || '?', maxTitleW, maxTitleH, 100, 26, fOpts);
+    const titleFontStr = `${fOpts.weight} ${titleFs}px "${fOpts.family}", ${_emojiFallback}Georgia, serif`;
+    const titleLineH   = titleFs * 1.28;
+    const titleTotalH  = titleLines.length * titleLineH;
+    const artistFs     = Math.max(18, Math.min(34, Math.floor(titleFs * 0.40)));
+
+    const decoFs = Math.max(20, titleFs * 0.32);
+    ctx.font         = `bold ${decoFs}px "${_emojiFamily || 'Arial'}", Arial, sans-serif`;
+    ctx.fillStyle    = textColor;
+    ctx.globalAlpha  = 0.45;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♪', SIZE / 2, 46);
+    ctx.globalAlpha  = 1;
+
+    const titleAreaTop = 82;
+    const titleAreaBot = SIZE * 0.70;
+    const titleStartY  = titleAreaTop + (titleAreaBot - titleAreaTop - titleTotalH) / 2 + titleLineH * 0.5;
+
+    ctx.font         = titleFontStr;
+    ctx.fillStyle    = textColor;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < titleLines.length; i++) {
+        fillTextWithEffect(ctx, titleLines[i], SIZE / 2, titleStartY + i * titleLineH, titleFs, textColor, effect, 0);
+    }
+
+    const sepY = SIZE * 0.755;
+    ctx.save();
+    ctx.strokeStyle = textColor;
+    ctx.globalAlpha = 0.40;
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(PADDING * 2.2, sepY);
+    ctx.lineTo(SIZE - PADDING * 2.2, sepY);
+    ctx.stroke();
+    ctx.restore();
+
+    if (artist) {
+        ctx.font         = `normal ${artistFs}px "${fOpts.family}", ${_emojiFallback}Georgia, serif`;
+        ctx.fillStyle    = textColor;
+        ctx.globalAlpha  = 0.88;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(artist, SIZE / 2, SIZE * 0.835);
+        ctx.globalAlpha  = 1;
+    }
+
+    ctx.font         = `normal ${Math.max(14, titleFs * 0.22)}px Arial, sans-serif`;
+    ctx.fillStyle    = textColor;
+    ctx.globalAlpha  = 0.40;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('★  ★  ★', SIZE / 2, SIZE * 0.924);
+    ctx.globalAlpha  = 1;
+
+    const pngBuf  = canvas.toBuffer('image/png');
+    const webpBuf = await sharp(pngBuf).webp({ quality: 90 }).toBuffer();
+    const { stickerPackName, stickerPackAuthor } = getConfig();
+    return addExif(webpBuf, stickerPackName, stickerPackAuthor);
+}
+
+module.exports = { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor, parseGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS };

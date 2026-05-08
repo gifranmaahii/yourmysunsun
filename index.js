@@ -92,7 +92,7 @@ const games = require('./src/features/games');
 const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
-const { createLyricSticker, createLyricStickerStatic, parseColor: parseLyricColor, parseGradient: parseLyricGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS } = require('./src/features/lyricSticker');
+const { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor: parseLyricColor, parseGradient: parseLyricGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS } = require('./src/features/lyricSticker');
 const _lyricFontSet   = new Set(LYRIC_FONT_KEYS.concat(['georgia','classic','elegan','romantis','heavy','tebal','besar','comic','fun','lucu','santai','clean','rapi','compact','tahoma','sans','biasa','arial','mono','typewriter','ketik','mesin','courier','trebo','stylish','trebuchet','verdana','impact']));
 const _lyricThemeSet  = new Set(LYRIC_THEME_KEYS);
 const _lyricEffectSet = new Set(LYRIC_EFFECT_KEYS);
@@ -1075,11 +1075,13 @@ async function startBot() {
 ┃
 ┣⌬ ${PREFIX}stickerlirik — Animasi lirik bergantian + efek hujan
 ┣⌬ ${PREFIX}stickerlirik2 — Lirik tampil bertahap + efek hujan
+┣⌬ ${PREFIX}stickercover — Sticker cover lagu (judul + artis)
 ┃
 ┃ Opsi (pisah pakai |):
 ┃   Durasi  : | 2  (detik per baris)
 ┃   Font    : | serif | impact | comic | verdana | arial
-┃   Efek    : | shadow | outline | glow
+┃   Efek    : | shadow | outline | glow | neon2 | emboss
+┃             | blur | gradient | y2k
 ┃   Tema    : | dark | neon | sakura | sunset | ocean | gold
 ┃             | violet | forest | rose | minimal
 ┃   Warna bg: | navy | hitam | #3A1A2E  (stickerlirik2)
@@ -3739,6 +3741,64 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                         await sock.sendMessage(remoteJid, {
                             text: `❌ Gagal membuat Lottie sticker: ${error.message}`,
                         }, { quoted: msg });
+                    }
+
+                    continue;
+                }
+
+                // -----------------------------------------------
+                // FITUR: STICKER COVER — .stickercover
+                // Perintah: .stickercover Judul | Artis | opsi
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'stickercover')) {
+                    let coverRaw = textContent.replace(new RegExp('^\\' + PREFIX + 'stickercover\\s*', 'i'), '').trim();
+
+                    if (!coverRaw) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `🎵 *Sticker Cover Lagu*\n\n📌 *Cara:*\n\`${PREFIX}stickercover Judul Lagu | Nama Artis\`\n\n⚙️ *Opsi* (setelah | kedua dst):*\n🔤 *Font*   : \`| serif\` \`| impact\` \`| comic\` dll\n✨ *Efek*   : \`| shadow\` \`| glow\` \`| outline\`\n            \`| neon2\` \`| emboss\` \`| blur\`\n            \`| gradient\` \`| y2k\`\n🎨 *Tema*   : \`| neon\` \`| sunset\` \`| ocean\` dll\n🌈 *Gradient*: \`| navy>purple\`\n🎨 *Warna*  : \`| hitam\` \`| navy\` \`| #3A1A2E\`\n\n👉 *Contoh:*\n\`${PREFIX}stickercover Shape of You | Ed Sheeran | ocean | glow\`\n\`${PREFIX}stickercover Aku Milikmu | Dewa 19 | dark | y2k\`\n\`${PREFIX}stickercover Judul Lagu | | sunset | emboss\`\n\n🎨 *Tema:* ${LYRIC_THEME_KEYS.join(', ')}`
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    const coverParts  = coverRaw.split('|');
+                    const coverTitle  = coverParts[0].trim();
+                    const coverArtist = coverParts.length > 1 ? coverParts[1].trim() : '';
+
+                    if (!coverTitle) {
+                        await sock.sendMessage(remoteJid, { text: '❌ Judul lagu tidak boleh kosong.' }, { quoted: msg });
+                        continue;
+                    }
+
+                    let coverFontKey  = null;
+                    let coverEffect   = null;
+                    let coverThemeKey = null;
+                    let coverBgColor  = '#FAE8CC';
+                    let coverBgGrad   = null;
+                    for (let pi = 2; pi < coverParts.length; pi++) {
+                        const p  = coverParts[pi].trim();
+                        const pl = p.toLowerCase();
+                        const grad = parseLyricGradient(p);
+                        const col  = parseLyricColor(p);
+                        if (grad)                            { coverBgGrad   = grad; }
+                        else if (col)                        { coverBgColor  = col; }
+                        else if (_lyricThemeSet.has(pl))     { coverThemeKey = pl; }
+                        else if (_lyricEffectSet.has(pl))    { coverEffect   = pl; }
+                        else if (_lyricFontSet.has(pl))      { coverFontKey  = pl; }
+                    }
+
+                    await simulateTyping(sock, remoteJid, 600);
+                    await sock.sendMessage(remoteJid, { text: `⏳ Membuat sticker cover...` }, { quoted: msg });
+
+                    try {
+                        const coverBuf = await createStickerCover(coverTitle, coverArtist, {
+                            fontKey: coverFontKey, effect: coverEffect,
+                            themeKey: coverThemeKey, bgColor: coverBgColor, bgGradient: coverBgGrad
+                        });
+                        await sock.sendMessage(remoteJid, { sticker: coverBuf }, { quoted: msg });
+                        logger.info(`🎵 Sticker cover dikirim ke ${remoteJid} — "${coverTitle}"`);
+                    } catch (error) {
+                        logger.error(`❌ Sticker cover error: ${error.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${error.message}` }, { quoted: msg });
                     }
 
                     continue;
