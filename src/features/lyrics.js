@@ -22,36 +22,44 @@ async function handleLyrics(sock, remoteJid, msg, textContent, prefix) {
     // Jika perintah video atau stiker, cek apakah ada teks manual atau reply
     if (isVideo || isSticker) {
         let videoText = '';
-        let videoTitle = isSticker ? 'Custom Sticker' : 'Custom Video';
+        let manualWords = null;
 
+        // 1. Cek dari Reply
         if (quotedText) {
             videoText = quotedText;
-        } else if (query && query.length > 20) { 
+            manualWords = videoText.split(/\s+/).slice(0, 15);
+        } 
+        // 2. Cek dari Koma (Permintaan Khusus User: .liriksticker kata1, kata2, kata3)
+        else if (query && query.includes(',')) {
+            manualWords = query.split(',').map(s => s.trim()).filter(s => s.length > 0);
+        }
+        // 3. Cek Teks Panjang
+        else if (query && query.length > 20) {
             videoText = query;
+            manualWords = videoText.split(/\s+/).slice(0, 15);
         }
 
-        if (videoText) {
+        if (manualWords && manualWords.length > 0) {
             try { await sock.sendMessage(remoteJid, { react: { text: '⏳', key: msg.key } }); } catch (e) {}
-            const words = videoText.split(/\s+/).slice(0, 15); 
             const ext = isSticker ? 'webp' : 'mp4';
             const outPath = path.join(__dirname, `../../temp_lirik_${Date.now()}.${ext}`);
-            await sock.sendMessage(remoteJid, { text: `⏳ Sedang merender ${isSticker ? 'stiker' : 'video'} lirik...` }, { quoted: msg });
+            await sock.sendMessage(remoteJid, { text: `⏳ Sedang merender ${isSticker ? 'stiker' : 'video'} lirik manual kamu...` }, { quoted: msg });
             
             try {
-                await generateLyricVideo(words, outPath, isSticker);
-                const sendObj = isSticker ? { sticker: fs.readFileSync(outPath) } : { video: fs.readFileSync(outPath), caption: `🎥 *Video Lirik Berhasil Dibuat!*`, mimetype: 'video/mp4' };
+                await generateLyricVideo(manualWords, outPath, isSticker);
+                const sendObj = isSticker ? { sticker: fs.readFileSync(outPath) } : { video: fs.readFileSync(outPath), caption: `🎥 *Video Lirik Manual Berhasil!*`, mimetype: 'video/mp4' };
                 await sock.sendMessage(remoteJid, sendObj, { quoted: msg });
                 if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
             } catch (err) {
                 console.error('Render Error:', err);
-                await sock.sendMessage(remoteJid, { text: '❌ Gagal merender.' }, { quoted: msg });
+                await sock.sendMessage(remoteJid, { text: '❌ Gagal merender. Pastikan VPS tidak penuh.' }, { quoted: msg });
             }
             return true;
         }
     }
 
     if (!query && !quotedText) {
-        await sock.sendMessage(remoteJid, { text: `❌ Format salah!\nContoh: *${command} Berharap Tak Berpisah* atau reply teks dengan *${command}*` }, { quoted: msg });
+        await sock.sendMessage(remoteJid, { text: `❌ Format salah!\nContoh: *${command} kata1, kata2, kata3* atau reply teks.` }, { quoted: msg });
         return true;
     }
 
