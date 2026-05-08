@@ -37,6 +37,26 @@ process.stdin.on('data', (data) => {
             console.log('❌ Folder sesi tidak ditemukan.');
         }
     }
+    if (input.startsWith('add_bot ')) {
+        const args = input.replace('add_bot ', '').split(' ');
+        if (args.length >= 4) {
+            const [phone, name, days, owner] = args;
+            console.log(`🚀 [REMOTE] Menambah bot anak: ${name} (${phone}) untuk ${days} hari...`);
+            // Kita panggil addChildBot tapi dengan context sock = null atau logic minimal
+            // Karena kita di console, kita tidak punya sock aktif untuk kirim pesan balik via WA di sini dengan mudah
+            // Tapi botManager.addChildBot akan tetap jalan di PM2.
+            botManager.addChildBot(currentSock, PRIMARY_OWNER, phone, name, days, owner, 'pairing', true);
+        }
+    }
+    if (input === 'list_bots') {
+        console.log('📋 [REMOTE] Mengambil daftar bot anak...');
+        botManager.listChildBots({ sendMessage: (jid, msg) => console.log(msg.text) }, PRIMARY_OWNER);
+    }
+    if (input.startsWith('delete_bot ')) {
+        const target = input.replace('delete_bot ', '').trim();
+        console.log(`🗑️ [REMOTE] Menghapus bot anak: ${target}`);
+        botManager.deleteChildBot({ sendMessage: (jid, msg) => console.log(msg.text) }, PRIMARY_OWNER, target);
+    }
     if (input.startsWith('pair_bot ')) {
         const num = input.replace('pair_bot ', '').trim();
         console.log(`🔑 [REMOTE] Menyiapkan pairing code untuk: ${num}`);

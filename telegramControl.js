@@ -36,13 +36,19 @@ async function connectToConsole() {
         const res = await ptero.get('/websocket');
         const { data } = res.data;
         
+        console.log(`📡 Attempting WebSocket connection to: ${data.socket}`);
+        console.log(`🌐 Using Origin: ${baseUrl}`);
+
         ws = new WebSocket(data.socket, {
-            origin: baseUrl
+            origin: baseUrl,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
         });
         
         ws.on('open', () => {
             ws.send(JSON.stringify({ event: 'auth', args: [data.token] }));
-            console.log('📡 Connected to Panel Console via WebSocket');
+            console.log('✅ Connected to Panel Console via WebSocket');
         });
 
         ws.on('message', (msg) => {
@@ -101,6 +107,9 @@ bot.onText(/\/start/, (msg) => {
         `🔹 /restartbot - Restart bot\n` +
         `🔹 /update - Git Pull (Tarik kodingan baru)\n` +
         `🔹 /pair [nomor] - Login pake Pairing Code\n` +
+        `🔹 /addbot [nomor] [nama] [hari] [owner] - Tambah Bot Anak\n` +
+        `🔹 /listbots - Daftar Bot Anak\n` +
+        `🔹 /delbot [nomor/nama] - Hapus Bot Anak\n` +
         `🔹 /logout - Hapus Sesi (Logout Total)\n` +
         `🔹 /logs - Lihat log console terakhir`;
     bot.sendMessage(msg.chat.id, welcome);
@@ -199,6 +208,31 @@ bot.onText(/\/pair (.+)/, async (msg, match) => {
     } else {
         await sendCommand(`pair_bot ${number}`);
     }
+});
+
+bot.onText(/\/addbot (.+)/, async (msg, match) => {
+    lastChatId = msg.chat.id;
+    const args = match[1].split(' ');
+    if (args.length < 4) {
+        return bot.sendMessage(lastChatId, '❌ Format salah! Gunakan: /addbot [nomor] [nama] [hari] [owner]\nContoh: /addbot 628123 Robby 30 628999');
+    }
+    const [phone, name, days, owner] = args;
+    bot.sendMessage(lastChatId, `⏳ Menambahkan bot *${name}* (${phone}) ke sistem...`, { parse_mode: 'Markdown' });
+    await sendCommand(`add_bot ${phone} ${name} ${days} ${owner}`);
+});
+
+bot.onText(/\/listbots/, async (msg) => {
+    lastChatId = msg.chat.id;
+    bot.sendMessage(lastChatId, '⏳ Mengambil daftar bot anak dari console...');
+    // Kita minta bot utama untuk list via console (nanti lognya ditangkap WS)
+    await sendCommand('list_bots');
+});
+
+bot.onText(/\/delbot (.+)/, async (msg, match) => {
+    lastChatId = msg.chat.id;
+    const target = match[1];
+    bot.sendMessage(lastChatId, `⚠️ Menghapus bot *${target}*...`, { parse_mode: 'Markdown' });
+    await sendCommand(`delete_bot ${target}`);
 });
 
 bot.onText(/\/logout/, async (msg) => {
