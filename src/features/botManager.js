@@ -67,33 +67,39 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
     const util = require('util');
     const execPromise = util.promisify(exec);
 
+    const pm2Path = '/home/container/node_modules/.bin/pm2';
+    console.log(`[BotManager] Mencoba menjalankan PM2 di: ${pm2Path}`);
+
     try {
         // Hapus secara diam-diam (abaikan error kalau tidak ada)
-        await execPromise(`./node_modules/.bin/pm2 delete ${botName}`, { windowsHide: true }).catch(() => {
+        await execPromise(`${pm2Path} delete ${botName}`, { windowsHide: true }).catch(() => {
             return execPromise(`npx --yes pm2 delete ${botName}`, { windowsHide: true }).catch(() => {});
         });
         
+        console.log(`[BotManager] Memulai bot anak: ${botName} (${phone})`);
+        
         // Start PM2 dengan argumen yang benar
         let startCmd = loginMethod === 'qr'
-            ? `./node_modules/.bin/pm2 start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList}`
-            : `./node_modules/.bin/pm2 start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
+            ? `${pm2Path} start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList}`
+            : `${pm2Path} start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
         
         if (lowRam) {
             startCmd = loginMethod === 'qr'
-                ? `pm2 start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --low-ram`
-                : `pm2 start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList} --low-ram`;
+                ? `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --low-ram`
+                : `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList} --low-ram`;
         }
         
-        // Fallback ke npx jika pm2 tidak ada di PATH
-        await execPromise(startCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true }).catch(async () => {
-            console.log("⚠️ Local PM2 not working, trying npx...");
-            const npxCmd = startCmd.replace('./node_modules/.bin/pm2 ', 'npx --yes pm2 ');
+        // Fallback ke npx jika pm2 tidak ada
+        await execPromise(startCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true }).catch(async (e) => {
+            console.log(`⚠️ Local PM2 failed: ${e.message}, trying npx...`);
+            const npxCmd = startCmd.includes(pm2Path) ? startCmd.replace(pm2Path, 'npx --yes pm2') : `npx --yes pm2 start index.js ...`;
             await execPromise(npxCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true });
         });
 
-        console.log(`🚀 [BotManager] Bot anak ${phone} berhasil didaftarkan (LowRAM: ${lowRam})`);
+        console.log(`🚀 [BotManager] Bot anak ${phone} berhasil didaftarkan.`);
     } catch (err) {
         console.error(`[BotManager] Gagal mendaftarkan ${botName}:`, err.message);
+        bot.sendMessage(chatId, `❌ Gagal menjalankan sistem: ${err.message}`);
     }
 
     await sock.sendMessage(remoteJid, { 
@@ -106,7 +112,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
     await new Promise(r => setTimeout(r, 2000));
 
     // Gunakan 'pm2 logs' untuk menguping output bot anak
-    const logWatcher = spawn('./node_modules/.bin/pm2', ['logs', botName, '--lines', '5', '--no-daemon'], {
+    const logWatcher = spawn('/home/container/node_modules/.bin/pm2', ['logs', botName, '--lines', '5', '--no-daemon'], {
         cwd: path.join(__dirname, '../../'),
         shell: true,
         windowsHide: true,
@@ -114,7 +120,8 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
     });
 
     // Fallback npx if pm2 logs fails
-    logWatcher.on('error', () => {
+    logWatcher.on('error', (e) => {
+        console.log(`[BotManager] PM2 Logs failed: ${e.message}, trying npx logs...`);
         const fallbackLog = spawn('npx', ['--yes', 'pm2', 'logs', botName, '--lines', '5', '--no-daemon'], {
             cwd: path.join(__dirname, '../../'),
             shell: true,
