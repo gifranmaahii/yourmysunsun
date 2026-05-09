@@ -40,7 +40,8 @@ process.stdin.on('data', (data) => {
     if (input.startsWith('add_bot ')) {
         const args = input.replace('add_bot ', '').split(' ');
         if (args.length >= 4) {
-            const [phone, name, days, owner] = args;
+            const [phone, nameRaw, days, owner] = args;
+            const name = nameRaw.replace(/_/g, ' ');
             console.log(`🚀 [REMOTE] Menambah bot anak: ${name} (${phone}) untuk ${days} hari...`);
             botManager.addChildBot(currentSock, PRIMARY_OWNER, phone, name, days, owner, 'pairing', true);
         }

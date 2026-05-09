@@ -212,12 +212,21 @@ bot.onText(/\/pair (.+)/, async (msg, match) => {
 
 bot.onText(/\/addbot (.+)/, async (msg, match) => {
     lastChatId = msg.chat.id;
-    const args = match[1].split(' ');
+    
+    const args = match[1].trim().split(/\s+/);
     if (args.length < 4) {
-        return bot.sendMessage(lastChatId, '❌ Format salah! Gunakan: /addbot [nomor] [nama] [hari] [owner]\nContoh: /addbot 628123 Robby 30 628999');
+        return bot.sendMessage(lastChatId, '❌ Format salah! Gunakan: /addbot [nomor] [nama] [hari] [owner]\nContoh: /addbot 628123 Robby Bot 30 628999');
     }
-    const [phone, name, days, owner] = args;
-    bot.sendMessage(lastChatId, `⏳ Menambahkan bot *${name}* (${phone}) ke sistem...`, { parse_mode: 'Markdown' });
+    
+    let phone = args[0].replace(/[^0-9]/g, '');
+    let owner = args[args.length - 1].replace(/[^0-9]/g, '');
+    let days = args[args.length - 2].replace(/[^0-9]/g, '');
+    let name = args.slice(1, args.length - 2).join('_');
+    
+    if (phone.startsWith('0')) phone = '62' + phone.slice(1);
+    if (owner.startsWith('0')) owner = '62' + owner.slice(1);
+
+    bot.sendMessage(lastChatId, `⏳ Menambahkan bot *${name.replace(/_/g, ' ')}* (${phone}) ke sistem...`, { parse_mode: 'Markdown' });
     await sendCommand(`add_bot ${phone} ${name} ${days} ${owner}`);
 });
 
