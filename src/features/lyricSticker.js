@@ -1114,22 +1114,10 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     tc.fillStyle = `rgb(${fl},${fl},${fl})`;
     tc.fillRect(0, 0, SIZE, SIZE);
 
-    // Rain frames asli dari video — hapus bg gelap, sisakan tetesan saja
+    // Load rain frames (lazy)
     const rainFrames = await getRainFrames();
-    if (rainFrames.length > 0) {
-        const rf = rainFrames[frameIdx % rainFrames.length];
 
-        // Overlay tetesan (sudah pre-processed, bg transparan) di atas BG hitam
-        tc.save();
-        tc.globalCompositeOperation = 'source-over';
-        tc.globalAlpha = 0.70;
-        tc.drawImage(rf, 0, 0, SIZE, SIZE);
-        tc.restore();
-    } else {
-        drawGreenscreenRain(tc, SIZE, frameIdx, animPhase);
-    }
-
-    // Teks
+    // Teks dulu
     const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
     tc.font         = fontStr;
     tc.textAlign    = 'left';
@@ -1153,13 +1141,16 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     }
     tc.restore();
 
-    // Tetesan air dari bawah tiap baris teks
-    for (let i = 0; i < lines.length; i++) {
-        const ly = startY + i * lineH;
-        const lx = PAD;
-        tc.font  = fontStr;
-        const mw = Math.min(tc.measureText(lines[i]).width, maxW);
-        drawTextRaindrops(tc, lx, ly, mw, fontSize, animPhase, frameIdx, i);
+    // Rain di atas teks — overlay SETELAH teks digambar
+    if (rainFrames.length > 0) {
+        const rf = rainFrames[frameIdx % rainFrames.length];
+        tc.save();
+        tc.globalCompositeOperation = 'source-over';
+        tc.globalAlpha = 0.65;
+        tc.drawImage(rf, 0, 0, SIZE, SIZE);
+        tc.restore();
+    } else {
+        drawGreenscreenRain(tc, SIZE, frameIdx, animPhase);
     }
 
     // ── Apply bulge warp (cembung ke depan) ke canvas final ──────────────────
