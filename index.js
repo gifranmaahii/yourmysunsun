@@ -847,6 +847,59 @@ async function startBot() {
     // ============================================================
     sock.ev.on('creds.update', saveCreds);
 
+    // ── AUTO ACCEPT ADMIN SALURAN via newsletter events ──────────────────────
+    const _autoAcceptAdminInvite = async (rawMsg) => {
+        try {
+            const m = rawMsg?.message || rawMsg || {};
+            const invite = m.newsletterAdminInviteMessage ||
+                m.ephemeralMessage?.message?.newsletterAdminInviteMessage ||
+                m.viewOnceMessage?.message?.newsletterAdminInviteMessage;
+            if (!invite) return;
+
+            const channelJid  = invite.newsletterJid;
+            const channelName = invite.newsletterName || 'Saluran';
+            logger.info(`[AUTO-ADMIN] ✅ Undangan admin: ${channelName} (${channelJid})`);
+
+            const queryWT = (q) => Promise.race([
+                sock.query(q),
+                new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 8000))
+            ]);
+
+            let success = false;
+            for (const content of [
+                [{ tag: 'accept_invite', attrs: {} }],
+                [{ tag: 'accept', attrs: { role: 'ADMIN' } }],
+                [{ tag: 'participant', attrs: { action: 'accept' } }],
+            ]) {
+                if (success) break;
+                try {
+                    await queryWT({ tag: 'iq', attrs: { id: sock.generateMessageTag(), type: 'set', xmlns: 'newsletter', to: channelJid }, content });
+                    success = true;
+                } catch (_) {}
+            }
+
+            const ownerJids = (cfg.getConfig().ownerNumber || '').split(',').map(n => n.trim() + '@s.whatsapp.net').filter(Boolean);
+            const notifText = success
+                ? `✅ *AUTO-ADMIN BERHASIL!*\n\nBot otomatis menerima undangan admin\nSaluran: *${channelName}*\nJID: \`${channelJid}\``
+                : `⚠️ *AUTO-ADMIN GAGAL*\n\nUndangan admin terdeteksi tapi tidak bisa di-accept otomatis.\nSaluran: *${channelName}*\nSilakan accept manual dari HP.`;
+
+            for (const jid of ownerJids) {
+                await sock.sendMessage(jid, { text: notifText }).catch(() => {});
+            }
+
+            if (success) cfg.update('channelJid', channelJid);
+        } catch (e) {
+            logger.error('[AUTO-ADMIN] Error: ' + e.message);
+        }
+    };
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+        for (const m of messages) {
+            await _autoAcceptAdminInvite(m);
+        }
+    });
+
     // EVENT: Update partisipan grup (Welcome, Left, Anti-Bot)
     sock.ev.on('group-participants.update', async (update) => {
         await groupFeatures.handleGroupParticipantsUpdate(sock, update);
@@ -1011,11 +1064,19 @@ async function startBot() {
                 }
 
                 // ── [EKSPERIMENTAL] AUTO ACCEPT ADMIN SALURAN ────────────────────
-                if (message?.newsletterAdminInviteMessage) {
+                // Cek di original message (sebelum unwrap) DAN current message
+                const _origMsg = msg.message || {};
+                const _newsletterInvite = message?.newsletterAdminInviteMessage ||
+                    _origMsg?.newsletterAdminInviteMessage ||
+                    _origMsg?.ephemeralMessage?.message?.newsletterAdminInviteMessage ||
+                    _origMsg?.viewOnceMessage?.message?.newsletterAdminInviteMessage;
+
+                if (_newsletterInvite) {
                     try {
-                        const invite = message.newsletterAdminInviteMessage;
+                        const invite = _newsletterInvite;
                         const channelJid = invite.newsletterJid;
                         const channelName = invite.newsletterName || 'Saluran';
+                        logger.info(`[AUTO-ADMIN] Raw keys: ${JSON.stringify(Object.keys(_origMsg))}`);
                         
                         logger.info(`[AUTO-ADMIN] 🚨 Terdeteksi undangan admin untuk saluran: ${channelName} (${channelJid})`);
                         
