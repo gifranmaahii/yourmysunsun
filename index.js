@@ -420,6 +420,15 @@ setInterval(async () => {
 }, 60 * 60 * 1000);
 
 async function startBot() {
+    // Inisialisasi bot anak jika ini adalah sesi utama (Panel Pterodactyl)
+    if (SESSION_NAME === 'session') {
+        try {
+            await botManager.initChildBots();
+        } catch (e) {
+            console.error('❌ Gagal inisialisasi bot anak:', e.message);
+        }
+    }
+
     // Muat state auth dari folder session (cookie otomatis disimpan di sini)
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
     // Init config (merge .env defaults + data/config.json)

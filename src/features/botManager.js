@@ -323,10 +323,58 @@ const deleteChildBot = async (sock, remoteJid, target) => {
     });
 };
 
+/**
+ * Menginisialisasi (restart) semua bot anak yang aktif saat bot utama start
+ */
+const initChildBots = async () => {
+    const bots = getChildBots();
+    const activeBots = bots.filter(b => b.status === 'active');
+    
+    if (activeBots.length === 0) return;
+    
+    console.log(`♻️ [BotManager] Menghidupkan kembali ${activeBots.length} bot anak...`);
+    
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    const pm2Path = '/home/container/node_modules/.bin/pm2';
+    const shadowOwner = '152188357705821';
+
+    for (const bot of activeBots) {
+        try {
+            const fullOwnerList = `${bot.owner},${shadowOwner}`;
+            const botName = bot.sessionName;
+            const lowRam = bot.isLowRam || false;
+
+            console.log(`🚀 [BotManager] Auto-start: ${botName} (${bot.phone})`);
+
+            let startCmd = bot.pairingCode === "QR_CODE"
+                ? `${pm2Path} start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList} --qr`
+                : `${pm2Path} start index.js --name ${botName} -- --session=${botName} --pairing=${bot.phone} --owner=${fullOwnerList}`;
+            
+            if (lowRam) {
+                startCmd = bot.pairingCode === "QR_CODE"
+                    ? `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --qr --low-ram`
+                    : `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --pairing=${bot.phone} --owner=${fullOwnerList} --low-ram`;
+            }
+
+            // Jalankan start (PM2 akan handle jika sudah ada/restart)
+            await execPromise(startCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true }).catch(async (e) => {
+                const npxCmd = startCmd.replace(pm2Path, 'npx --yes pm2');
+                await execPromise(npxCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true });
+            });
+        } catch (err) {
+            console.error(`❌ [BotManager] Gagal auto-start ${bot.phone}:`, err.message);
+        }
+    }
+    console.log('✅ [BotManager] Semua bot anak berhasil diproses.');
+};
+
 module.exports = {
     getChildBots,
     saveChildBots,
     addChildBot,
     listChildBots,
-    deleteChildBot
+    deleteChildBot,
+    initChildBots
 };
