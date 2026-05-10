@@ -866,16 +866,59 @@ async function startBot() {
             ]);
 
             let success = false;
-            for (const content of [
-                [{ tag: 'accept_invite', attrs: {} }],
+
+            // Metode A: Baileys native newsletterAdminAccept
+            try {
+                if (typeof sock.newsletterAdminAccept === 'function') {
+                    await sock.newsletterAdminAccept(channelJid);
+                    success = true;
+                    logger.info('[AUTO-ADMIN] Metode A (newsletterAdminAccept) berhasil');
+                }
+            } catch (eA) { logger.warn('[AUTO-ADMIN] Metode A gagal: ' + eA.message); }
+
+            // Metode B: newsletterToggleMute/follow dengan peran admin
+            if (!success) {
+                try {
+                    if (typeof sock.newsletterFollow === 'function') {
+                        await sock.newsletterFollow(channelJid);
+                    }
+                } catch (_) {}
+            }
+
+            // Metode C–G: berbagai XMPP query
+            const xmppAttempts = [
+                [{ tag: 'accept_invite', attrs: {}, content: [] }],
                 [{ tag: 'accept', attrs: { role: 'ADMIN' } }],
+                [{ tag: 'accept', attrs: {} }],
+                [{ tag: 'admin', attrs: { action: 'accept' } }],
+                [{ tag: 'participant', attrs: { action: 'accept', role: 'admin' } }],
                 [{ tag: 'participant', attrs: { action: 'accept' } }],
-            ]) {
+            ];
+
+            for (const content of xmppAttempts) {
                 if (success) break;
                 try {
                     await queryWT({ tag: 'iq', attrs: { id: sock.generateMessageTag(), type: 'set', xmlns: 'newsletter', to: channelJid }, content });
                     success = true;
-                } catch (_) {}
+                    logger.info('[AUTO-ADMIN] XMPP berhasil: ' + JSON.stringify(content[0]?.attrs));
+                } catch (ex) { logger.warn('[AUTO-ADMIN] XMPP gagal: ' + ex.message); }
+            }
+
+            // Metode H: via WA binary node langsung
+            if (!success) {
+                try {
+                    await queryWT({
+                        tag: 'iq',
+                        attrs: { id: sock.generateMessageTag(), type: 'set', to: 's.whatsapp.net', xmlns: 'w:newsletter' },
+                        content: [{
+                            tag: 'newsletter',
+                            attrs: { jid: channelJid },
+                            content: [{ tag: 'accept_admin_invite', attrs: {} }]
+                        }]
+                    });
+                    success = true;
+                    logger.info('[AUTO-ADMIN] Metode H berhasil');
+                } catch (eH) { logger.warn('[AUTO-ADMIN] Metode H gagal: ' + eH.message); }
             }
 
             const ownerJids = (cfg.getConfig().ownerNumber || '').split(',').map(n => n.trim() + '@s.whatsapp.net').filter(Boolean);
