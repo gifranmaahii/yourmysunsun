@@ -1,3 +1,8 @@
+require('dotenv').config();
+if (process.env.DISABLE_TELEGRAM === 'true') {
+    console.log('🚫 Telegram Control is DISABLED via .env');
+    process.exit(0);
+}
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const fs = require('fs');
