@@ -12,7 +12,13 @@ const serverId = process.env.PTERODACTYL_SERVER_ID;
 const baseUrl = process.env.PTERODACTYL_BASE_URL;
 const ownerId = process.env.TELEGRAM_OWNER_ID; // ID Telegram Owner
 
-const bot = new TelegramBot(token, { polling: true });
+const bot = new TelegramBot(token, { 
+    polling: {
+        params: {
+            drop_pending_updates: true
+        }
+    } 
+});
 let lastChatId = null;
 let logBuffer = []; // Simpan 20 log terakhir
 const MAX_LOGS = 20;
