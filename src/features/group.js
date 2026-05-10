@@ -86,15 +86,21 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
     const globalCfg = require('../utils/config').getConfig();
     const isPublic = globalCfg.ownerdewasa;
     const isRented = sewaData[remoteJid] && sewaData[remoteJid].expire > Date.now();
-    if (!isPublic && !isRented) return; // Skip moderation if not public and not rented
+    const isActiveGroup = isPublic || isRented;
+
+    const settings = groupSettings[remoteJid] || {};
+
+    // Fitur moderasi yang SELALU aktif (tidak butuh sewa/public)
+    const hasAnyProtection = settings.antilink || settings.antilinkgc || settings.antilinkch || 
+                             settings.antibadword || settings.antidelete || settings.antiviewonce ||
+                             settings.antibot || settings.welcome || settings.left;
+    if (!isActiveGroup && !hasAnyProtection) return;
 
     // --- CHECK BLACKLIST ---
-    if (blacklistData[remoteJid] && blacklistData[remoteJid].includes(sender)) {
+    if (isActiveGroup && blacklistData[remoteJid] && blacklistData[remoteJid].includes(sender)) {
         await sock.groupParticipantsUpdate(remoteJid, [sender], 'remove');
         return;
     }
-
-    const settings = groupSettings[remoteJid] || {};
     
     // 1. Deteksi Link (Semua HTTP/HTTPS)
     const hasAllLink = textContent.match(/https?:\/\/[^\s]+/gi);
@@ -124,8 +130,10 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
         contextInfo.newsletterParentKey ||
         (contextInfo.externalAdReply?.containsAutoReply === false && contextInfo.externalAdReply?.renderLargerThumbnail)
     );
-    if (settings.antilinkch && contextInfo.isForwarded) {
-        console.log(`[ANTICH] forwardScore=${contextInfo.forwardingScore} newsletterInfo=${!!contextInfo.forwardedNewsletterMessageInfo} newsletterKey=${!!contextInfo.newsletterParentKey} detected=${isForwardedChannel}`);
+    if (settings.antilinkch) {
+        const msgKeys = Object.keys(msg.message || {});
+        const ctxKeys = Object.keys(contextInfo);
+        console.log(`[ANTICH DEBUG] msgKeys=${JSON.stringify(msgKeys)} isForwarded=${contextInfo.isForwarded} score=${contextInfo.forwardingScore} newsletterInfo=${!!contextInfo.forwardedNewsletterMessageInfo} newsletterKey=${!!contextInfo.newsletterParentKey} detected=${isForwardedChannel} ctxKeys=${JSON.stringify(ctxKeys)}`);
     }
 
     let isAdmin = false;
