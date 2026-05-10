@@ -212,10 +212,10 @@ bot.onText(/\/update/, async (msg) => {
     if (status === 'offline') {
         bot.sendMessage(lastChatId, '⚠️ Server sedang Offline. Menyalakan server terlebih dahulu agar bisa update...');
         await sendPowerAction('start');
-        setTimeout(() => sendCommand('git_pull'), 15000);
+        setTimeout(() => global.botEvents.emit('console_command', 'git_pull'), 15000);
     } else {
         bot.sendMessage(lastChatId, '🚀 Mengirim perintah Git Pull ke bot WhatsApp...');
-        await sendCommand('git_pull');
+        global.botEvents.emit('console_command', 'git_pull');
     }
 });
 
@@ -232,9 +232,9 @@ bot.onText(/\/pair (.+)/, async (msg, match) => {
     if (status === 'offline') {
         bot.sendMessage(lastChatId, '⚠️ Server sedang Offline. Menyalakan server...');
         await sendPowerAction('start');
-        setTimeout(() => sendCommand(`pair_bot ${number}`), 15000);
+        setTimeout(() => global.botEvents.emit('console_command', `pair_bot ${number}`), 15000);
     } else {
-        await sendCommand(`pair_bot ${number}`);
+        global.botEvents.emit('console_command', `pair_bot ${number}`);
     }
 });
 
@@ -256,14 +256,14 @@ bot.onText(/\/addbot (.+)/, async (msg, match) => {
     if (owner.startsWith('0')) owner = '62' + owner.slice(1);
 
     bot.sendMessage(lastChatId, `⏳ Menambahkan bot *${name.replace(/_/g, ' ')}* (${phone}) ke sistem...`, { parse_mode: 'Markdown' });
-    await sendCommand(`add_bot ${phone} ${name} ${days} ${owner}`);
+    global.botEvents.emit('console_command', `add_bot ${phone} ${name} ${days} ${owner}`);
 });
 
 bot.onText(/\/listbots/, async (msg) => {
     if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(lastChatId, '⏳ Mengambil daftar bot anak dari console...');
-    await sendCommand('list_bots');
+    global.botEvents.emit('console_command', 'list_bots');
 });
 
 bot.onText(/\/(delbot|delbots) (.+)/, async (msg, match) => {
@@ -271,14 +271,14 @@ bot.onText(/\/(delbot|delbots) (.+)/, async (msg, match) => {
     lastChatId = msg.chat.id;
     const target = match[2];
     bot.sendMessage(lastChatId, `⚠️ Menghapus bot *${target}* dan membersihkan sesi...`, { parse_mode: 'Markdown' });
-    await sendCommand(`delete_bot ${target}`);
+    global.botEvents.emit('console_command', `delete_bot ${target}`);
 });
 
 bot.onText(/\/logout/, async (msg) => {
     if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
     bot.sendMessage(lastChatId, '⚠️ Sedang menghapus sesi bot (Logout)...');
-    await sendCommand('logout_bot');
+    global.botEvents.emit('console_command', 'logout_bot');
     bot.sendMessage(lastChatId, '✅ Perintah Logout dikirim! Sesi akan dihapus dan bot akan mati.');
 });
 

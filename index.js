@@ -15,8 +15,11 @@ const tools = require('./src/features/tools');
 const { logger, baileyLogger } = require('./src/utils/logger');
 const { exec } = require('child_process');
 
-// --- PENDENGAR PERINTAH CONSOLE (Untuk Telegram Control) ---
-process.stdin.on('data', (data) => {
+// --- PENDENGAR PERINTAH INTERNAL (Untuk Telegram Control) ---
+if (!global.botEvents) {
+    global.botEvents = new EventEmitter();
+}
+global.botEvents.on('console_command', (data) => {
     const input = data.toString().trim();
     if (input === 'git_pull') {
         console.log('🔄 [REMOTE] Menjalankan Git Pull dari Telegram...');
