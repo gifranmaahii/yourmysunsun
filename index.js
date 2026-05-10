@@ -101,7 +101,7 @@ const { getTikTokAudio, getTikTokVideo } = require('./src/features/tiktok');
 const { getInstagramMedia } = require('./src/features/instagram');
 const { generateTextImage, generateBratImage } = require('./src/features/textImage');
 const { generateFakeThumbnail } = require('./src/features/fakePreview');
-const { convertToOggOpus, generateWaveform, getAudioDuration } = require('./src/utils/audioConverter');
+const { convertToOggOpus, convertToMp3, generateWaveform, getAudioDuration } = require('./src/utils/audioConverter');
 const { stickerToImage, stickerToVideo } = require('./src/features/extractor');
 const { lottieToImage, lottieToVideo } = require('./src/features/lottieConverter');
 const { createLottieSticker, getTemplateList } = require('./src/features/lottieSticker');
@@ -4359,6 +4359,44 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                         }
                         continue;
                     }
+
+                    // --- Extract Audio via caption (.tomp3 / .toaudio) ---
+                    if (message.videoMessage && (caption.startsWith(PREFIX + 'tomp3') || caption.startsWith(PREFIX + 'toaudio') || caption.startsWith(PREFIX + 'tovn'))) {
+                        await simulateTyping(sock, remoteJid, 1000);
+                        await sock.sendMessage(remoteJid, { text: '⏳ Sedang mengekstrak audio dari video...' }, { quoted: msg });
+
+                        try {
+                            const videoBuf = await downloadMediaMessage(msg, 'buffer', {}, { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage });
+                            if (!videoBuf) throw new Error('Gagal download video');
+
+                            if (caption.startsWith(PREFIX + 'tomp3')) {
+                                const mp3Buf = await convertToMp3(videoBuf);
+                                await sock.sendMessage(remoteJid, {
+                                    document: mp3Buf,
+                                    mimetype: 'audio/mpeg',
+                                    fileName: `audio_${Date.now()}.mp3`,
+                                    caption: '✅ Berhasil ekstrak ke MP3'
+                                }, { quoted: msg });
+                            } else {
+                                const oggBuf = await convertToOggOpus(videoBuf);
+                                let duration = await getAudioDuration(oggBuf);
+                                if (!duration || duration < 1) duration = 1;
+                                
+                                await sock.sendMessage(remoteJid, {
+                                    audio: oggBuf,
+                                    mimetype: 'audio/ogg; codecs=opus',
+                                    ptt: true,
+                                    seconds: duration,
+                                    waveform: generateWaveform()
+                                }, { quoted: msg });
+                            }
+                            logger.info(`🎵 Audio diekstrak dari video (caption) dikirim ke ${remoteJid}`);
+                        } catch (err) {
+                            logger.error(`❌ extract audio caption error: ${err.message}`);
+                            await sock.sendMessage(remoteJid, { text: `❌ Gagal ekstrak audio: ${err.message}` }, { quoted: msg });
+                        }
+                        continue;
+                    }
                 }
 
                 // -----------------------------------------------
@@ -5737,6 +5775,83 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     }
                     continue;
                 }
+
+                // -----------------------------------------------
+                // FITUR: CONVERT VIDEO KE AUDIO
+                // Perintah: .tomp3 atau .toaudio (reply video)
+                // -----------------------------------------------
+                if (textContent === PREFIX + 'tomp3' || textContent === PREFIX + 'toaudio' || textContent === PREFIX + 'tovn') {
+                    const contextInfo = message.extendedTextMessage?.contextInfo;
+                    const qMsg = contextInfo?.quotedMessage;
+                    
+                    // Unwrap video message (handling different wrappers)
+                    const unwrapVideo = (q) => {
+                        if (!q) return null;
+                        return q.videoMessage ||
+                            q.viewOnceMessage?.message?.videoMessage ||
+                            q.viewOnceMessageV2?.message?.videoMessage ||
+                            q.ephemeralMessage?.message?.videoMessage ||
+                            null;
+                    };
+
+                    const quotedVideo = unwrapVideo(qMsg);
+
+                    if (!quotedVideo) {
+                        await sock.sendMessage(remoteJid, {
+                            text: `❌ *Reply* video yang ingin diekstrak audionya, lalu ketik *${PREFIX}tomp3* atau *${PREFIX}toaudio*`,
+                        }, { quoted: msg });
+                        continue;
+                    }
+
+                    await simulateTyping(sock, remoteJid, 1000);
+                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang mengekstrak audio dari video...' }, { quoted: msg });
+
+                    const quotedMsgObj = {
+                        key: {
+                            remoteJid: remoteJid,
+                            id: contextInfo.stanzaId,
+                            fromMe: contextInfo.participant === sock.user?.id,
+                            participant: contextInfo.participant,
+                        },
+                        message: qMsg,
+                    };
+
+                    try {
+                        const videoBuf = await downloadMediaMessage(
+                            quotedMsgObj, 'buffer', {},
+                            { logger: baileyLogger, reuploadRequest: sock.updateMediaMessage }
+                        );
+
+                        if (!videoBuf) throw new Error('Gagal download video');
+
+                        if (textContent === PREFIX + 'tomp3') {
+                            const mp3Buf = await convertToMp3(videoBuf);
+                            await sock.sendMessage(remoteJid, {
+                                document: mp3Buf,
+                                mimetype: 'audio/mpeg',
+                                fileName: `audio_${Date.now()}.mp3`,
+                                caption: '✅ Berhasil ekstrak ke MP3'
+                            }, { quoted: msg });
+                        } else {
+                            const oggBuf = await convertToOggOpus(videoBuf);
+                            let duration = await getAudioDuration(oggBuf);
+                            if (!duration || duration < 1) duration = 1;
+                            
+                            await sock.sendMessage(remoteJid, {
+                                audio: oggBuf,
+                                mimetype: 'audio/ogg; codecs=opus',
+                                ptt: true,
+                                seconds: duration,
+                                waveform: generateWaveform()
+                            }, { quoted: msg });
+                        }
+                        logger.info(`🎵 Audio diekstrak dari video (reply) dikirim ke ${remoteJid}`);
+                    } catch (err) {
+                        logger.error(`❌ extract audio error: ${err.message}`);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal ekstrak audio: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
                 // -----------------------------------------------
                 // FITUR: GAME TEBAK-TEBAKAN (FALLBACK — handled above)
                 // -----------------------------------------------
@@ -5884,6 +5999,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
 ┃
 ┣⌬ .kirim / .ceksaluran
 ┣⌬ .tovn [filter]
+┣⌬ .tomp3 / .toaudio
 ┣⌬ .copier (Multi-Copier Saluran)
 ┗━━━━━━━◧
 
