@@ -852,33 +852,30 @@ async function createStickerCover(title, artist = '', opts = {}) {
 //   • Camera    : Shake per-frame (random translate + slight rotate)
 //   • Particles : Raindrop sparkles on text (green-screen style, bright drops)
 // ─────────────────────────────────────────────────────────────────────────────
-function drawRaindropSparkles(ctx, lineX, lineY, textW, fontSize, animPhase) {
-    const count  = Math.max(8, Math.floor(textW / 18));
+function drawBgRainSplash(ctx, SIZE, frameIdx, animPhase) {
+    // Titik-titik splash hujan menyebar di seluruh background
+    const count = 55;
     for (let i = 0; i < count; i++) {
-        const baseX  = lineX + seededRand(i * 3131) * textW;
-        const phase  = (animPhase * 1.4 + seededRand(i * 1777)) % 1;
-        const py     = lineY - fontSize * 0.9 + phase * fontSize * 2.2;
-        const px     = baseX + Math.sin(phase * Math.PI * 3 + seededRand(i * 2311) * 5) * fontSize * 0.04;
-        const len    = Math.max(4, seededRand(i * 5113) * fontSize * 0.22);
-        const fade   = phase < 0.1 ? phase * 10 : phase > 0.85 ? (1 - phase) / 0.15 : 1;
-        if (fade < 0.05) continue;
+        const phase = (animPhase * 1.6 + seededRand(i * 1777 + frameIdx * 3)) % 1;
+        const px    = seededRand(i * 3131) * SIZE;
+        const py    = seededRand(i * 2711) * SIZE * 0.9 + SIZE * (phase * 0.12);
+        const r     = Math.max(0.5, seededRand(i * 5113) * 2.2);
+        const fade  = phase < 0.1 ? phase * 10 : phase > 0.8 ? (1 - phase) / 0.2 : 1;
+        if (fade < 0.04) continue;
         ctx.save();
-        ctx.globalAlpha = fade * 0.85;
-        const grad = ctx.createLinearGradient(px, py, px, py + len);
-        grad.addColorStop(0, 'rgba(255,255,255,0.0)');
-        grad.addColorStop(0.3, 'rgba(200,230,255,0.9)');
-        grad.addColorStop(1, 'rgba(255,255,255,0.95)');
-        ctx.strokeStyle = grad;
-        ctx.lineWidth   = Math.max(0.8, seededRand(i * 7777) * 1.8);
+        ctx.globalAlpha = fade * (0.25 + seededRand(i * 7777) * 0.35);
+        ctx.fillStyle   = '#ffffff';
         ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.lineTo(px + (seededRand(i * 9001) - 0.5) * 2, py + len);
-        ctx.stroke();
-        // drop at bottom
-        ctx.fillStyle = 'rgba(200,230,255,0.7)';
-        ctx.beginPath();
-        ctx.arc(px, py + len, Math.max(1, seededRand(i * 4321) * 2.2), 0, Math.PI * 2);
+        ctx.arc(px, py, r, 0, Math.PI * 2);
         ctx.fill();
+        // splash ring sesekali
+        if (seededRand(i * 411 + frameIdx) > 0.72) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+            ctx.lineWidth   = 0.5;
+            ctx.beginPath();
+            ctx.arc(px, py, r * 2.5, 0, Math.PI * 2);
+            ctx.stroke();
+        }
         ctx.restore();
     }
 }
@@ -939,97 +936,86 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
 
 function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     const SIZE    = 512;
-    const PADDING = 32;
-    const maxW    = SIZE - PADDING * 2;
-    const maxH    = SIZE - 60;
+    const PAD     = 28;
+    const maxW    = SIZE - PAD * 2;
+    const maxH    = SIZE - 40;
     const fOpts   = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
-    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 110, 28, fOpts);
-    const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, "LF_Impact", Arial Black, sans-serif`;
-    const lineH   = fontSize * 1.22;
-    const totalH  = lines.length * lineH;
+    // Font sebesar mungkin — seperti referensi teks hampir penuh layar
+    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 130, 32, fOpts);
+    const lineH  = fontSize * 1.18;
+    const totalH = lines.length * lineH;
 
-    // Camera shake — kuat seperti rekaman VHS/nightclub
-    const shakeAmt = 5;
-    const shakeX = (seededRand(frameIdx * 13 + 1) - 0.5) * shakeAmt * 2;
-    const shakeY = (seededRand(frameIdx * 17 + 3) - 0.5) * shakeAmt;
-    const shakeR = (seededRand(frameIdx * 7  + 5) - 0.5) * 0.018;
+    // Camera shake ringan — natural, bukan berputar
+    const shakeX = (seededRand(frameIdx * 13 + 1) - 0.5) * 4;
+    const shakeY = (seededRand(frameIdx * 17 + 3) - 0.5) * 3;
 
     const canvas = createCanvas(SIZE, SIZE);
     const ctx    = canvas.getContext('2d');
 
-    // BG — hitam dengan sedikit variasi gelap per frame (flicker)
-    const flicker = 8 + Math.floor(seededRand(frameIdx * 31) * 12);
-    ctx.fillStyle = `rgb(${flicker},${flicker},${flicker})`;
+    // BG hitam dengan flicker brightness tipis
+    const fl = 6 + Math.floor(seededRand(frameIdx * 31) * 10);
+    ctx.fillStyle = `rgb(${fl},${fl},${fl})`;
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // Apply camera shake
-    ctx.save();
-    ctx.translate(SIZE / 2 + shakeX, SIZE / 2 + shakeY);
-    ctx.rotate(shakeR);
-    ctx.translate(-SIZE / 2, -SIZE / 2);
+    // Rain splash dots di background — menyebar di seluruh frame
+    drawBgRainSplash(ctx, SIZE, frameIdx, animPhase);
 
+    // Camera shake — translate saja, NO rotate, NO fisheye
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
     ctx.font         = fontStr;
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'middle';
 
-    // Posisi teks kiri bawah (seperti referensi)
-    const startY = SIZE / 2 - totalH / 2 + lineH * 0.5;
+    // Teks mulai dari kiri atas, agak ke bawah tengah
+    const startY = (SIZE - totalH) / 2 + lineH * 0.5;
 
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
-        const lx = PADDING;
+        const lx = PAD;
 
-        // Shadow kasar untuk kesan grunge
-        ctx.save();
-        ctx.fillStyle   = 'rgba(0,0,0,0.85)';
-        ctx.shadowColor = 'transparent';
-        ctx.fillText(lines[i], lx + 3, ly + 3);
-        ctx.restore();
+        // Shadow hitam kasar (offset)
+        ctx.fillStyle = 'rgba(0,0,0,0.9)';
+        ctx.fillText(lines[i], lx + 4, ly + 4);
 
-        // Teks putih utama — tebal dan bersih
-        ctx.save();
-        ctx.fillStyle   = '#FFFFFF';
-        ctx.shadowColor = 'rgba(255,255,255,0.15)';
-        ctx.shadowBlur  = fontSize * 0.06;
+        // Teks putih utama
+        ctx.fillStyle = '#FFFFFF';
         ctx.fillText(lines[i], lx, ly);
-        ctx.restore();
 
-        // Efek abrasi/distressed — coret-coret tipis di atas teks
+        // Distressed scratches di dalam area teks
         const mw = Math.min(ctx.measureText(lines[i]).width, maxW);
-        const scratchCount = Math.floor(3 + seededRand(i * 99 + frameIdx) * 4);
-        for (let s = 0; s < scratchCount; s++) {
-            const sx = lx + seededRand(s * 313 + i * 77) * mw;
-            const sy = ly - fontSize * 0.45 + seededRand(s * 717 + i * 13) * fontSize * 0.9;
-            const sw = seededRand(s * 191 + frameIdx) * fontSize * 0.7;
-            const alpha = 0.12 + seededRand(s * 523) * 0.18;
+        for (let s = 0; s < 5; s++) {
+            const sx    = lx + seededRand(s * 313 + i * 77 + frameIdx * 3) * mw;
+            const sy    = ly - fontSize * 0.4 + seededRand(s * 717 + i * 13) * fontSize * 0.8;
+            const sw    = seededRand(s * 191 + frameIdx) * fontSize * 0.9;
+            const alpha = 0.08 + seededRand(s * 523 + frameIdx) * 0.15;
             ctx.save();
             ctx.globalAlpha = alpha;
-            ctx.strokeStyle = seededRand(s * 211) > 0.5 ? '#ffffff' : '#000000';
-            ctx.lineWidth   = Math.max(0.5, seededRand(s * 811) * 1.5);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth   = Math.max(0.5, seededRand(s * 811) * 2);
             ctx.beginPath();
             ctx.moveTo(sx, sy);
-            ctx.lineTo(sx + sw, sy + (seededRand(s * 419) - 0.5) * 4);
+            ctx.lineTo(sx + sw, sy + (seededRand(s * 419) - 0.5) * 3);
             ctx.stroke();
             ctx.restore();
         }
-
-        // Raindrop sparkles — tetap ada tapi lebih subtle/putih
-        drawRaindropSparkles(ctx, lx, ly, mw, fontSize, animPhase);
     }
 
-    ctx.restore(); // end camera shake
+    ctx.restore(); // end shake
 
-    // Vignette kuat di pinggir — khas video lama
-    const vig = ctx.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.28, SIZE/2, SIZE/2, SIZE*0.78);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(0.6, 'rgba(0,0,0,0.2)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.88)');
+    // Vignette kuat — pojok gelap seperti referensi
+    const vig = ctx.createRadialGradient(SIZE*0.5, SIZE*0.5, SIZE*0.2, SIZE*0.5, SIZE*0.5, SIZE*0.82);
+    vig.addColorStop(0,   'rgba(0,0,0,0)');
+    vig.addColorStop(0.5, 'rgba(0,0,0,0.15)');
+    vig.addColorStop(1,   'rgba(0,0,0,0.92)');
     ctx.fillStyle = vig;
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // Film grain noise (bergerak tiap frame)
-    drawGrainNoise(ctx, SIZE, frameIdx, 0.14);
+    // Film grain noise
+    drawGrainNoise(ctx, SIZE, frameIdx, 0.20);
 
     return canvas.toBuffer('image/png');
 }
@@ -1056,15 +1042,10 @@ async function createLyricSticker3(lines, secPerLine = 2) {
         for (let i = 0; i < lines.length; i++) {
             for (let f = 0; f < framesPerLine; f++) {
                 const animPhase = (globalTick / FPS3) % 1;
-                // Draw frame, then apply fisheye warp
-                const rawBuf  = drawLyricFrame3(lines[i], animPhase, globalTick);
-                const rawCanvas = createCanvas(512, 512);
-                const rctx      = rawCanvas.getContext('2d');
-                const img       = await loadImage(rawBuf);
-                rctx.drawImage(img, 0, 0);
-                const warpedCanvas = applyFisheyeToCanvas(rawCanvas);
+                // Draw frame langsung — no fisheye
+                const rawBuf = drawLyricFrame3(lines[i], animPhase, globalTick);
                 const fp = path.join(tempDir, `lyric3_frame_${tempId}_${globalTick}.png`);
-                fs.writeFileSync(fp, warpedCanvas.toBuffer('image/png'));
+                fs.writeFileSync(fp, rawBuf);
                 framePaths.push(fp);
                 globalTick++;
             }
