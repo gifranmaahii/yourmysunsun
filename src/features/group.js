@@ -95,16 +95,31 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
     }
 
     const settings = groupSettings[remoteJid] || {};
-    const isLink = textContent.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/i) || textContent.match(/wa\.me\//i);
+    
+    // Deteksi Link yang lebih luas (HTTP, HTTPS, atau WA Link)
+    const isLink = textContent.match(/https?:\/\/[^\s]+/gi) || 
+                   textContent.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/i) || 
+                   textContent.match(/wa\.me\//i);
 
     let isAdmin = false;
+    let botIsAdmin = false;
     try {
         const metadata = await sock.groupMetadata(remoteJid);
         const clean = require('../utils/config').cleanNumber;
         const cleanSender = clean(sender);
+        
+        // Cek Admin Pengirim
         const p = metadata.participants.find(x => clean(x.id) === cleanSender);
         isAdmin = p ? (p.admin === 'admin' || p.admin === 'superadmin') : false;
+
+        // Cek Admin Bot
+        const myJid = clean(sock.user.id);
+        const botP = metadata.participants.find(x => clean(x.id) === myJid);
+        botIsAdmin = botP ? (botP.admin === 'admin' || botP.admin === 'superadmin') : false;
     } catch (e) { }
+
+    // Jika pengirim adalah Admin/Owner, abaikan (jangan hapus)
+    if (isAdmin) return;
 
     if (!isAdmin) {
         let isViolating = false;
@@ -126,7 +141,16 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
         }
 
         if (isViolating) {
-            await sock.sendMessage(remoteJid, { delete: msg.key }).catch(() => { });
+            // Beri peringatan jika bot bukan admin (tidak bisa hapus)
+            if (!botIsAdmin) {
+                console.log(`⚠️ [Antilink] Bot terdeteksi bukan admin di ${remoteJid}, gagal menghapus pesan.`);
+                return;
+            }
+
+            await sock.sendMessage(remoteJid, { delete: msg.key }).catch((err) => { 
+                console.error('❌ [Antilink] Gagal menghapus pesan:', err.message);
+            });
+            
             if (shouldKick) {
                 await sock.groupParticipantsUpdate(remoteJid, [sender], "remove").catch(() => { });
             }
