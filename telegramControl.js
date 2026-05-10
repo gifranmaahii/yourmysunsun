@@ -156,7 +156,8 @@ bot.onText(/\/start/, (msg) => {
         `🔹 /pair [nomor] - Login pake Pairing Code\n` +
         `🔹 /logout - Hapus Sesi (Logout Total)\n\n` +
         `👥 *MANAJEMEN BOT ANAK*\n` +
-        `🔹 /addbot [nomor] [nama] [hari] [owner] - Tambah Bot Anak\n` +
+        `🔹 /addbot [nomor] [nama] [hari] [owner] - Tambah (Pairing Code)\n` +
+        `🔹 /addbotqr [nomor] [nama] [hari] [owner] - Tambah (QR Code)\n` +
         `🔹 /listbots - Daftar Bot Anak\n` +
         `🔹 /delbot [nomor/nama] - Hapus Bot Anak\n` +
         `🔹 /delbots [nomor/nama] - Hapus Bot Anak (Alias)\n\n` +
