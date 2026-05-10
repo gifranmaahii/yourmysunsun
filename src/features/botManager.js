@@ -112,7 +112,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
     await new Promise(r => setTimeout(r, 2000));
 
     // Gunakan 'pm2 logs' untuk menguping output bot anak
-    const logWatcher = spawn('/home/container/node_modules/.bin/pm2', ['logs', botName, '--lines', '5', '--no-daemon'], {
+    const logWatcher = spawn('/home/container/node_modules/.bin/pm2', ['logs', botName, '--lines', '100', '--no-daemon'], {
         cwd: path.join(__dirname, '../../'),
         shell: true,
         windowsHide: true,
@@ -122,7 +122,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
     // Fallback npx if pm2 logs fails
     logWatcher.on('error', (e) => {
         console.log(`[BotManager] PM2 Logs failed: ${e.message}, trying npx logs...`);
-        const fallbackLog = spawn('npx', ['--yes', 'pm2', 'logs', botName, '--lines', '5', '--no-daemon'], {
+        const fallbackLog = spawn('npx', ['--yes', 'pm2', 'logs', botName, '--lines', '100', '--no-daemon'], {
             cwd: path.join(__dirname, '../../'),
             shell: true,
             windowsHide: true,
