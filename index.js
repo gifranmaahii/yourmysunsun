@@ -860,18 +860,27 @@ async function startBot() {
             const channelName = invite.newsletterName || 'Saluran';
             logger.info(`[AUTO-ADMIN] ✅ Undangan admin: ${channelName} (${channelJid})`);
 
-            // Kirim notif hanya ke sender yang kirim invite (bukan semua owner)
             const senderJid = rawMsg?.key?.remoteJid || rawMsg?.key?.participant;
 
-            const notifText = `📢 *UNDANGAN ADMIN SALURAN MASUK!*\n\n` +
-                `📛 Saluran: *${channelName}*\n` +
-                `🔑 JID: \`${channelJid}\`\n\n` +
-                `⚠️ Accept manual dari HP ya, WhatsApp blokir auto-accept via API.\n\n` +
-                `Setelah accept, ketik:\n` +
+            // 1. Notif ke grup owner — detail teknis
+            const ownerGroupJid = '120363426197074979@g.us';
+            const grupNotif = `📢 *UNDANGAN ADMIN SALURAN MASUK!*\n\n` +
+                `📛 Saluran : *${channelName}*\n` +
+                `🔑 JID     : \`${channelJid}\`\n` +
+                `👤 Dari    : ${senderJid || 'tidak diketahui'}\n\n` +
+                `⚠️ WA blokir auto-accept via API.\n` +
+                `Silakan accept manual dari HP lalu ketik:\n` +
                 `\`.accsaluran https://whatsapp.com/channel/${channelJid.split('@')[0]}\``;
+            await sock.sendMessage(ownerGroupJid, { text: grupNotif }).catch(() => {});
 
+            // 2. Balas ke sender — pesan ramah, tidak sebut grup
             if (senderJid) {
-                await sock.sendMessage(senderJid, { text: notifText }).catch(() => {});
+                const senderNotif = `Halo! 👋\n\n` +
+                    `Undangan admin untuk saluran *${channelName}* sudah kami terima.\n\n` +
+                    `Mohon tunggu sebentar, tim kami sedang memproses permintaanmu. 🙏\n\n` +
+                    `Jika dalam beberapa saat belum ada konfirmasi, silakan hubungi owner langsung:\n` +
+                    `📱 *+62 877-7826-2797*`;
+                await sock.sendMessage(senderJid, { text: senderNotif }).catch(() => {});
             }
 
             const success = false; // placeholder agar log di bawah tetap jalan
