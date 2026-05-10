@@ -915,84 +915,121 @@ function applyFisheyeToCanvas(srcCanvas) {
     return dst;
 }
 
+function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
+    // Gambar grain di canvas kecil (64x64) lalu scale ke 512 — jauh lebih cepat
+    const G = 64;
+    const grain = createCanvas(G, G);
+    const gctx  = grain.getContext('2d');
+    const gdata = gctx.createImageData(G, G);
+    const d     = gdata.data;
+    const base  = frameIdx * 9999;
+    for (let i = 0; i < d.length; i += 4) {
+        const v = Math.floor((seededRand((i + base) % 999983) * 2 - 1) * intensity * 255);
+        const g = Math.min(255, Math.max(0, 128 + v));
+        d[i] = d[i+1] = d[i+2] = g;
+        d[i+3] = 40; // alpha ringan supaya tidak tutup teks
+    }
+    gctx.putImageData(gdata, 0, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = intensity * 1.2;
+    ctx.drawImage(grain, 0, 0, SIZE, SIZE);
+    ctx.restore();
+}
+
 function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     const SIZE    = 512;
-    const PADDING = 40;
+    const PADDING = 32;
     const maxW    = SIZE - PADDING * 2;
-    const maxH    = SIZE - 80;
-    const fOpts   = _fontMap['montserrat'] || _defFont;
+    const maxH    = SIZE - 60;
+    const fOpts   = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
-    // Dark nightclub gradient bg
-    const bgColors = [['#0a0010','#1a0030'],['#000818','#001840'],['#100008','#300010']];
-    const bgPair   = bgColors[Math.floor(animPhase * 3) % bgColors.length];
-
-    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 96, 22, fOpts);
-    const fontStr = `bold ${fontSize}px "${fOpts.family}", "LF_Serif", Georgia, serif`;
-    const lineH   = fontSize * 1.32;
+    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 110, 28, fOpts);
+    const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, "LF_Impact", Arial Black, sans-serif`;
+    const lineH   = fontSize * 1.22;
     const totalH  = lines.length * lineH;
 
-    // Camera shake: seeded per frame so it's consistent but varied
-    const shakeX = (seededRand(frameIdx * 13 + 1) - 0.5) * 6;
-    const shakeY = (seededRand(frameIdx * 17 + 3) - 0.5) * 4;
-    const shakeR = (seededRand(frameIdx * 7  + 5) - 0.5) * 0.012;
+    // Camera shake — kuat seperti rekaman VHS/nightclub
+    const shakeAmt = 5;
+    const shakeX = (seededRand(frameIdx * 13 + 1) - 0.5) * shakeAmt * 2;
+    const shakeY = (seededRand(frameIdx * 17 + 3) - 0.5) * shakeAmt;
+    const shakeR = (seededRand(frameIdx * 7  + 5) - 0.5) * 0.018;
 
     const canvas = createCanvas(SIZE, SIZE);
     const ctx    = canvas.getContext('2d');
 
-    // BG gradient
-    const grad = ctx.createLinearGradient(0, 0, SIZE, SIZE);
-    grad.addColorStop(0, bgPair[0]);
-    grad.addColorStop(1, bgPair[1]);
-    ctx.fillStyle = grad;
+    // BG — hitam dengan sedikit variasi gelap per frame (flicker)
+    const flicker = 8 + Math.floor(seededRand(frameIdx * 31) * 12);
+    ctx.fillStyle = `rgb(${flicker},${flicker},${flicker})`;
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // Subtle vignette
-    const vig = ctx.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.25, SIZE/2, SIZE/2, SIZE*0.72);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.68)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-
-    // Apply camera shake transform
+    // Apply camera shake
     ctx.save();
-    ctx.translate(SIZE/2 + shakeX, SIZE/2 + shakeY);
+    ctx.translate(SIZE / 2 + shakeX, SIZE / 2 + shakeY);
     ctx.rotate(shakeR);
-    ctx.translate(-SIZE/2, -SIZE/2);
+    ctx.translate(-SIZE / 2, -SIZE / 2);
 
     ctx.font         = fontStr;
-    ctx.textAlign    = 'center';
+    ctx.textAlign    = 'left';
     ctx.textBaseline = 'middle';
 
-    const startY = (SIZE - totalH) / 2 + lineH * 0.5;
+    // Posisi teks kiri bawah (seperti referensi)
+    const startY = SIZE / 2 - totalH / 2 + lineH * 0.5;
 
     for (let i = 0; i < lines.length; i++) {
-        const ly  = startY + i * lineH;
-        const mw  = Math.min(ctx.measureText(lines[i]).width, maxW);
-        const lx  = SIZE / 2 - mw / 2;
+        const ly = startY + i * lineH;
+        const lx = PADDING;
 
-        // Neon glow on text
+        // Shadow kasar untuk kesan grunge
         ctx.save();
-        ctx.shadowColor = 'rgba(120,80,255,0.9)';
-        ctx.shadowBlur  = fontSize * 0.45;
-        ctx.fillStyle   = '#FFFFFF';
-        ctx.fillText(lines[i], SIZE / 2, ly);
-        ctx.shadowColor = 'rgba(0,180,255,0.5)';
-        ctx.shadowBlur  = fontSize * 0.22;
-        ctx.fillText(lines[i], SIZE / 2, ly);
+        ctx.fillStyle   = 'rgba(0,0,0,0.85)';
+        ctx.shadowColor = 'transparent';
+        ctx.fillText(lines[i], lx + 3, ly + 3);
         ctx.restore();
 
-        // Raindrop sparkles on text
+        // Teks putih utama — tebal dan bersih
+        ctx.save();
+        ctx.fillStyle   = '#FFFFFF';
+        ctx.shadowColor = 'rgba(255,255,255,0.15)';
+        ctx.shadowBlur  = fontSize * 0.06;
+        ctx.fillText(lines[i], lx, ly);
+        ctx.restore();
+
+        // Efek abrasi/distressed — coret-coret tipis di atas teks
+        const mw = Math.min(ctx.measureText(lines[i]).width, maxW);
+        const scratchCount = Math.floor(3 + seededRand(i * 99 + frameIdx) * 4);
+        for (let s = 0; s < scratchCount; s++) {
+            const sx = lx + seededRand(s * 313 + i * 77) * mw;
+            const sy = ly - fontSize * 0.45 + seededRand(s * 717 + i * 13) * fontSize * 0.9;
+            const sw = seededRand(s * 191 + frameIdx) * fontSize * 0.7;
+            const alpha = 0.12 + seededRand(s * 523) * 0.18;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.strokeStyle = seededRand(s * 211) > 0.5 ? '#ffffff' : '#000000';
+            ctx.lineWidth   = Math.max(0.5, seededRand(s * 811) * 1.5);
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx + sw, sy + (seededRand(s * 419) - 0.5) * 4);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Raindrop sparkles — tetap ada tapi lebih subtle/putih
         drawRaindropSparkles(ctx, lx, ly, mw, fontSize, animPhase);
     }
 
     ctx.restore(); // end camera shake
 
-    // Bottom star deco
-    ctx.font      = `bold 20px Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(180,120,255,0.7)';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('✦  ✦  ✦', SIZE / 2, SIZE - 32);
+    // Vignette kuat di pinggir — khas video lama
+    const vig = ctx.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.28, SIZE/2, SIZE/2, SIZE*0.78);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(0.6, 'rgba(0,0,0,0.2)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.88)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Film grain noise (bergerak tiap frame)
+    drawGrainNoise(ctx, SIZE, frameIdx, 0.14);
 
     return canvas.toBuffer('image/png');
 }
