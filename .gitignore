@@ -8,4 +8,7 @@ session/
 sessions/
 data/*.json
 scratch/
+.env
+.env_telegram
 !*.env.example
+!*.env_telegram.example

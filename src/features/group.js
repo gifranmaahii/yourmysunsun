@@ -288,8 +288,9 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         }
     } catch (e) { }
 
+    const readOnlyCommands = [prefix + 'settings', prefix + 'ceksetting'];
     const isAuthorized = isBotOwner || isAdmin;
-    if (!isAuthorized) {
+    if (!isAuthorized && !readOnlyCommands.includes(command)) {
         await sock.sendMessage(remoteJid, { text: `❌ Perintah ini hanya untuk Admin Grup.` }, { quoted: msg });
         return true;
     }
