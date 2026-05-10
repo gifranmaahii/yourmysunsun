@@ -146,24 +146,52 @@ let isRestarting = false; // Flag untuk mencegah multiple restart
 global.botEvents.on('console_command', (data) => {
     const input = data.toString().trim();
     if (input === 'git_pull') {
-        console.log('🔄 [REMOTE] Menjalankan Update dari GitHub (wget)...');
-        const updateScript = [
-            'wget -q -O /tmp/update.zip https://github.com/gifranmaahii/yourmysunsun/archive/refs/heads/master.zip',
-            'cd /tmp && unzip -o update.zip -d update_tmp',
-            'cp -r /tmp/update_tmp/yourmysunsun-master/. /home/container/',
-            'rm -rf /tmp/update.zip /tmp/update_tmp',
-            'echo UPDATE_DONE'
-        ].join(' && ');
-        exec(updateScript, (err, stdout, stderr) => {
-            if (err) {
-                console.error(`❌ Update Error: ${err.message}`);
-                if (global.botEvents) global.botEvents.emit('telegram_message', `❌ Update gagal: ${err.message.slice(0,200)}`);
-                return;
+        console.log('🔄 [REMOTE] Menjalankan Update dari GitHub (Node.js)...');
+        (async () => {
+            try {
+                const https = require('https');
+                const AdmZip = require('adm-zip');
+                const zipUrl = 'https://codeload.github.com/gifranmaahii/yourmysunsun/zip/refs/heads/master';
+                const zipPath = path.join(__dirname, '_update.zip');
+                await new Promise((resolve, reject) => {
+                    const follow = (url, depth = 0) => {
+                        if (depth > 5) return reject(new Error('Too many redirects'));
+                        https.get(url, (res) => {
+                            if (res.statusCode === 301 || res.statusCode === 302) return follow(res.headers.location, depth + 1);
+                            if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
+                            const out = fs.createWriteStream(zipPath);
+                            res.pipe(out);
+                            out.on('finish', resolve);
+                            out.on('error', reject);
+                        }).on('error', reject);
+                    };
+                    follow(zipUrl);
+                });
+                console.log('📦 Zip downloaded, extracting...');
+                const zip = new AdmZip(zipPath);
+                const entries = zip.getEntries();
+                const prefix = 'yourmysunsun-master/';
+                const skip = ['session/', 'sessions/', 'data/', '.env', '.env_telegram', 'node_modules/'];
+                for (const entry of entries) {
+                    const name = entry.entryName;
+                    if (!name.startsWith(prefix)) continue;
+                    const rel = name.slice(prefix.length);
+                    if (!rel) continue;
+                    if (skip.some(s => rel.startsWith(s))) continue;
+                    const dest = path.join(__dirname, rel);
+                    if (entry.isDirectory) { fs.mkdirSync(dest, { recursive: true }); continue; }
+                    fs.mkdirSync(path.dirname(dest), { recursive: true });
+                    fs.writeFileSync(dest, entry.getData());
+                }
+                fs.unlinkSync(zipPath);
+                console.log('✅ Update selesai, restart...');
+                if (global.botEvents) global.botEvents.emit('telegram_message', '✅ *Update berhasil!* Bot akan restart dalam 3 detik...');
+                setTimeout(() => process.exit(1), 3000);
+            } catch (e) {
+                console.error(`❌ Update Error: ${e.message}`);
+                if (global.botEvents) global.botEvents.emit('telegram_message', `❌ Update gagal: ${e.message.slice(0,300)}`);
             }
-            console.log(`✅ Update Berhasil`);
-            if (global.botEvents) global.botEvents.emit('telegram_message', '✅ Update berhasil! Bot akan restart...');
-            setTimeout(() => process.exit(1), 2000);
-        });
+        })();
     }
     if (input === 'logout_bot') {
         console.log('🗑️ [REMOTE] Menghapus sesi bot dari Telegram...');
