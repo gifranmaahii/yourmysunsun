@@ -860,31 +860,18 @@ async function startBot() {
             const channelName = invite.newsletterName || 'Saluran';
             logger.info(`[AUTO-ADMIN] ✅ Undangan admin: ${channelName} (${channelJid})`);
 
-            // WhatsApp memblokir auto-accept admin saluran via API/XMPP
-            // Kirim notif ke owner dengan instruksi accept manual
-            const ownerJids = (cfg.getConfig().ownerNumber || '').split(',').map(n => {
-                const num = cfg.cleanNumber(n.trim());
-                return num ? num + '@s.whatsapp.net' : null;
-            }).filter(Boolean);
+            // Kirim notif hanya ke sender yang kirim invite (bukan semua owner)
+            const senderJid = rawMsg?.key?.remoteJid || rawMsg?.key?.participant;
 
-            // Juga coba kirim ke LID owner jika ada
-            const ownerLids = (cfg.getConfig().ownerNumber || '').split(',').map(n => {
-                const num = cfg.cleanNumber(n.trim());
-                return num ? num + '@lid' : null;
-            }).filter(Boolean);
-
-            const notifText = `📢 *UNDANGAN ADMIN SALURAN DITERIMA!*\n\n` +
+            const notifText = `📢 *UNDANGAN ADMIN SALURAN MASUK!*\n\n` +
                 `📛 Saluran: *${channelName}*\n` +
                 `🔑 JID: \`${channelJid}\`\n\n` +
-                `⚠️ *WhatsApp memblokir auto-accept via API.*\n` +
-                `Silakan buka HP dan accept undangan admin secara manual.\n\n` +
-                `Setelah accept, gunakan:\n` +
-                `\`.accsaluran https://whatsapp.com/channel/${channelJid.split('@')[0]}\`\n` +
-                `untuk set sebagai channel default bot.`;
+                `⚠️ Accept manual dari HP ya, WhatsApp blokir auto-accept via API.\n\n` +
+                `Setelah accept, ketik:\n` +
+                `\`.accsaluran https://whatsapp.com/channel/${channelJid.split('@')[0]}\``;
 
-            const allNotifTargets = [...new Set([...ownerJids, ...ownerLids])];
-            for (const jid of allNotifTargets) {
-                await sock.sendMessage(jid, { text: notifText }).catch(() => {});
+            if (senderJid) {
+                await sock.sendMessage(senderJid, { text: notifText }).catch(() => {});
             }
 
             const success = false; // placeholder agar log di bawah tetap jalan
