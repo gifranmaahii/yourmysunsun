@@ -17,6 +17,7 @@ const { exec } = require('child_process');
 
 // --- PENDENGAR PERINTAH INTERNAL (Untuk Telegram Control) ---
 if (!global.botEvents) {
+    const { EventEmitter } = require('events');
     global.botEvents = new EventEmitter();
 }
 global.botEvents.on('console_command', (data) => {

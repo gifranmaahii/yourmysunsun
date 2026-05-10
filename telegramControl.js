@@ -17,6 +17,11 @@ let lastChatId = null;
 let logBuffer = []; // Simpan 20 log terakhir
 const MAX_LOGS = 20;
 
+if (!global.botEvents) {
+    const { EventEmitter } = require('events');
+    global.botEvents = new EventEmitter();
+}
+
 console.log('🚀 Telegram Panel Control is starting...');
 
 // Instance Axios untuk Pterodactyl
