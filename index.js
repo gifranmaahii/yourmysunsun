@@ -1,4 +1,32 @@
 require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+
+// Helper untuk kirim notifikasi ke Telegram (mendukung main & child bots)
+const notifyTelegram = (message) => {
+    // Jika sesi utama, gunakan event emitter (lebih efisien)
+    if (typeof SESSION_NAME !== 'undefined' && SESSION_NAME === 'session') {
+        if (global.botEvents) global.botEvents.emit('telegram_message', message);
+    } else {
+        // Untuk bot anak, kirim langsung via API ke semua ID terdaftar
+        const tgPath = path.join(__dirname, '.env_telegram');
+        if (fs.existsSync(tgPath)) {
+            const content = fs.readFileSync(tgPath, 'utf8');
+            const tokenMatch = content.match(/TELEGRAM_BOT_TOKEN=(.*)/);
+            const ownerMatch = content.match(/TELEGRAM_OWNER_ID=(.*)/);
+            if (tokenMatch && ownerMatch) {
+                const token = tokenMatch[1].trim();
+                const ownerIds = ownerMatch[1].trim().split(',');
+                const axios = require('axios');
+                for (const id of ownerIds) {
+                    if (id.trim()) {
+                        axios.get(`https://api.telegram.org/bot${token}/sendMessage?chat_id=${id.trim()}&text=${encodeURIComponent(message)}&parse_mode=Markdown`).catch(() => {});
+                    }
+                }
+            }
+        }
+    }
+};
 
 const {
     default: makeWASocket,
@@ -40,6 +68,22 @@ global.botEvents.on('console_command', (data) => {
         } else {
             console.log('❌ Folder sesi tidak ditemukan.');
         }
+    }
+    if (input === 'restart_all_bots') {
+        console.log('🔄 [REMOTE] Merestart SEMUA bot anak dari Telegram...');
+        exec('npx pm2 restart "/^bot_/"', (err) => {
+            if (err) return console.error(`❌ Restart All Error: ${err.message}`);
+            console.log('✅ Semua bot anak berhasil direstart.');
+        });
+    }
+    if (input.startsWith('restart_bot_ku ')) {
+        const target = input.replace('restart_bot_ku ', '');
+        const botName = target.startsWith('bot_') ? target : `bot_${target.replace(/[^0-9]/g, '')}`;
+        console.log(`🔄 [REMOTE] Merestart bot anak: ${botName}...`);
+        exec(`npx pm2 restart ${botName}`, (err) => {
+            if (err) return console.error(`❌ Restart Bot Error: ${err.message}`);
+            console.log(`✅ Bot ${botName} berhasil direstart.`);
+        });
     }
     if (input.startsWith('add_bot ')) {
         const args = input.replace('add_bot ', '').split(' ');
@@ -659,6 +703,12 @@ async function startBot() {
             const shouldReconnect = code !== DisconnectReason.loggedOut;
 
             logger.warn(`⚠️ Koneksi terputus (kode: ${code}, error: ${errorMsg}). Reconnect: ${shouldReconnect}`);
+            
+            if (code === DisconnectReason.loggedOut) {
+                notifyTelegram(`🚫 *Bot Terputus (LOGOUT)*\n\n📱 Sesi: ${SESSION_NAME}\n⚠️ Status: Sesi dihapus dari HP.`);
+            } else {
+                notifyTelegram(`⚠️ *Koneksi Terputus!*\n\n📱 Sesi: ${SESSION_NAME}\n❌ Error: ${errorMsg}\n🔄 Reconnect: ${shouldReconnect ? 'Ya' : 'Tidak'}`);
+            }
 
             if (shouldReconnect) {
                 if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -745,6 +795,8 @@ async function startBot() {
 
             // Aktifkan Auto-Manager (Sewa & Auto-Mute)
             groupFeatures.initAutoManager(sock);
+            
+            notifyTelegram(`✅ *Bot WhatsApp Terhubung!*\n\n👤 Nama: ${BOT_NAME}\n📱 Sesi: ${SESSION_NAME}\n🟢 Status: Online`);
         }
     });
 
@@ -2336,6 +2388,30 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     continue;
                 }
 
+                if (textContent.startsWith(PREFIX + 'restartbotku')) {
+                    if (!senderIsOwner) continue;
+                    const args = textContent.split(' ');
+                    const target = args[1];
+                    if (!target) return sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}restartbotku <nomor/all>*` }, { quoted: msg });
+                    
+                    const { exec } = require('child_process');
+                    if (target.toLowerCase() === 'all') {
+                        await sock.sendMessage(remoteJid, { text: `⏳ *Sedang merestart SEMUA bot anak...*\nMungkin memakan waktu beberapa detik.` }, { quoted: msg });
+                        // Restart semua proses PM2 yang namanya diawali 'bot_'
+                        exec(`npx pm2 restart "/^bot_/"`, { windowsHide: true }, (err) => {
+                            if (err) return sock.sendMessage(remoteJid, { text: `❌ Gagal restart: ${err.message}` }, { quoted: msg });
+                            sock.sendMessage(remoteJid, { text: `✅ Berhasil merestart SEMUA bot anak. Sekarang semua fitur baru sudah aktif di semua bot.` }, { quoted: msg });
+                        });
+                    } else {
+                        const botName = target.startsWith('bot_') ? target : `bot_${target.replace(/[^0-9]/g, '')}`;
+                        exec(`npx pm2 restart ${botName}`, { windowsHide: true }, (err) => {
+                            if (err) return sock.sendMessage(remoteJid, { text: `❌ Gagal restart bot: ${err.message}` }, { quoted: msg });
+                            sock.sendMessage(remoteJid, { text: `✅ Bot *${botName}* berhasil direstart.` }, { quoted: msg });
+                        });
+                    }
+                    continue;
+                }
+
                 // ── Spesial: .updategitgw (RAHASIA - OWNER ONLY) ──
                 if (textContent.trim() === PREFIX + 'updategitgw') {
                     if (!senderIsOwner) {
@@ -2909,20 +2985,21 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                                 `  ⌬ .linkgc, .revokelink\n\n` +
                                 
                                 `◈ *GRUP: PENGATURAN*\n` +
-                                `  ⌬ .setnamegc, .setdescgc, .setppgc\n` +
+                                `  ⌬ .setnamegc, .setppgc\n` +
                                 `  ⌬ .setopen, .setclose\n` +
-                                `  ⌬ .welcome (on/off), .left (on/off)\n` +
-                                `  ⌬ .setwelcome, .setleft\n\n` +
+                                `  ⌬ .welcome, .setwelcome, .setwelcomeimg\n` +
+                                `  ⌬ .left, .setleft, .setleftimg\n\n` +
                                 
                                 `◈ *GRUP: MODERASI & AI*\n` +
-                                `  ⌬ .antilink, .antibadword\n` +
+                                `  ⌬ .antilink, .antilinkgc, .antilinkch\n` +
+                                `  ⌬ .antikick, .antibot, .antibadword\n` +
                                 `  ⌬ .antidelete, .antiviewonce\n` +
-                                `  ⌬ .antibot, .automute\n\n` +
+                                `  ⌬ .automute, .mulaiabsen\n\n` +
                                 
                                 `◈ *GRUP: TOOLS & GAME*\n` +
                                 `  ⌬ .addsewa, .ceksewa, .delsewa\n` +
                                 `  ⌬ .mulaiabsen, .deleteabsen\n` +
-                                `  ⌬ .addlist, .dellist\n` +
+                                `  ⌬ .addlist, .dellist, .restartbotku\n` +
                                 `  ⌬ .warn, .blacklist\n` +
                                 `┗━━━━━━━━━━━━━━━━━━━◧\n\n`;
                         }

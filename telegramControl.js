@@ -40,8 +40,12 @@ global.botEvents.on('telegram_auth', (data) => {
 });
 
 global.botEvents.on('telegram_message', (text) => {
-    if (!lastChatId) return;
-    bot.sendMessage(lastChatId, text, { parse_mode: 'Markdown' }).catch(console.error);
+    const ownerIds = process.env.TELEGRAM_OWNER_ID ? process.env.TELEGRAM_OWNER_ID.split(',') : [];
+    for (const id of ownerIds) {
+        if (id.trim()) {
+            bot.sendMessage(id.trim(), text, { parse_mode: 'Markdown' }).catch(() => {});
+        }
+    }
 });
 
 console.log('🚀 Telegram Panel Control is starting...');
@@ -144,13 +148,34 @@ connectToConsole();
 bot.onText(/\/start/, (msg) => {
     if (!isOwner(msg)) return bot.sendMessage(msg.chat.id, '❌ Anda bukan owner bot ini.');
     lastChatId = msg.chat.id;
+
+    // AUTO-SET OWNER ID (Wow factor: bot detects you automatically)
+    const currentOwner = process.env.TELEGRAM_OWNER_ID;
+    if (!currentOwner || currentOwner.length > 11) { // Jika ID berupa nomor HP (panjang > 11) atau kosong
+        try {
+            const envPath = path.join(__dirname, '.env_telegram');
+            let content = fs.readFileSync(envPath, 'utf8');
+            if (content.includes('TELEGRAM_OWNER_ID=')) {
+                content = content.replace(/TELEGRAM_OWNER_ID=.*/, `TELEGRAM_OWNER_ID=${msg.chat.id}`);
+            } else {
+                content += `\nTELEGRAM_OWNER_ID=${msg.chat.id}`;
+            }
+            fs.writeFileSync(envPath, content);
+            process.env.TELEGRAM_OWNER_ID = msg.chat.id;
+            bot.sendMessage(msg.chat.id, `✅ *ID Telegram Terdeteksi!*\n\nID Anda (*${msg.chat.id}*) telah didaftarkan sebagai owner utama untuk notifikasi bot.`, { parse_mode: 'Markdown' });
+        } catch (e) {
+            console.error('Gagal update .env_telegram:', e.message);
+        }
+    }
+
     const welcome = `👋 Halo! Saya Bot Pengendali Panel.\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `⚙️ *SISTEM KONTROL*\n` +
         `🔹 /status - Cek status bot\n` +
-        `🔹 /startbot - Nyalakan bot\n` +
-        `🔹 /stopbot - Matikan bot\n` +
-        `🔹 /restartbot - Restart bot\n` +
+        `🔹 /startbot - Nyalakan bot utama\n` +
+        `🔹 /stopbot - Matikan bot utama\n` +
+        `🔹 /restartbot - Restart bot utama\n` +
+        `🔹 /restartall - Restart SEMUA bot anak\n` +
         `🔹 /update - Git Pull (Tarik kodingan baru)\n\n` +
         `🔑 *WA & PAIRING*\n` +
         `🔹 /pair [nomor] - Login pake Pairing Code\n` +
@@ -159,12 +184,17 @@ bot.onText(/\/start/, (msg) => {
         `🔹 /addbot [nomor] [nama] [hari] [owner] - Tambah (Pairing Code)\n` +
         `🔹 /addbotqr [nomor] [nama] [hari] [owner] - Tambah (QR Code)\n` +
         `🔹 /listbots - Daftar Bot Anak\n` +
-        `🔹 /delbot [nomor/nama] - Hapus Bot Anak\n` +
-        `🔹 /delbots [nomor/nama] - Hapus Bot Anak (Alias)\n\n` +
+        `🔹 /restartbotku [nomor] - Restart Bot Anak tertentu\n` +
+        `🔹 /delbot [nomor/nama] - Hapus Bot Anak\n\n` +
         `📋 *MONITORING*\n` +
         `🔹 /logs - Lihat log console terakhir\n` +
+        `🔹 /myid - Cek ID Telegram Anda/Grup\n` +
         `━━━━━━━━━━━━━━━━━━`;
     bot.sendMessage(msg.chat.id, welcome, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/myid/, (msg) => {
+    bot.sendMessage(msg.chat.id, `🆔 *ID Chat Ini:* \`${msg.chat.id}\``, { parse_mode: 'Markdown' });
 });
 
 // Helper: Cek Status
@@ -227,9 +257,25 @@ bot.onText(/\/stopbot/, async (msg) => {
 bot.onText(/\/restartbot/, async (msg) => {
     if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
-    bot.sendMessage(msg.chat.id, '⏳ Me-restart bot...');
+    bot.sendMessage(msg.chat.id, '⏳ Me-restart bot utama...');
     const success = await sendPowerAction('restart');
-    bot.sendMessage(msg.chat.id, success ? '🔄 Bot sedang proses restart...' : '❌ Gagal me-restart.');
+    bot.sendMessage(msg.chat.id, success ? '🔄 Bot utama sedang proses restart...' : '❌ Gagal me-restart bot utama.');
+});
+
+bot.onText(/\/restartall/, async (msg) => {
+    if (!isOwner(msg)) return;
+    lastChatId = msg.chat.id;
+    bot.sendMessage(msg.chat.id, '⏳ Mengirim perintah restart ke SEMUA bot anak...');
+    global.botEvents.emit('console_command', 'restart_all_bots');
+    bot.sendMessage(msg.chat.id, '✅ Perintah restart semua bot anak telah dikirim.');
+});
+
+bot.onText(/\/restartbotku (.+)/, async (msg, match) => {
+    if (!isOwner(msg)) return;
+    lastChatId = msg.chat.id;
+    const target = match[1];
+    bot.sendMessage(msg.chat.id, `⏳ Me-restart bot anak: *${target}*...`, { parse_mode: 'Markdown' });
+    global.botEvents.emit('console_command', `restart_bot_ku ${target}`);
 });
 
 bot.onText(/\/update/, async (msg) => {
@@ -340,5 +386,32 @@ bot.onText(/\/logs/, async (msg) => {
     bot.sendMessage(msg.chat.id, `📋 *LAST CONSOLE LOGS:*\n\n\`\`\`\n${logText.slice(-4000)}\n\`\`\``, { parse_mode: 'Markdown' });
 });
 
-console.log('✅ Telegram Bot Control is ONLINE!');
+bot.on('message', (msg) => {
+    if (!msg.text) return;
+    const chatId = msg.chat.id;
+    const envPath = path.join(__dirname, '.env_telegram');
+    
+    // Auto-Whitelisting: Tambahkan ID ke daftar owner jika belum ada
+    let currentOwners = process.env.TELEGRAM_OWNER_ID ? process.env.TELEGRAM_OWNER_ID.split(',') : [];
+    if (!currentOwners.includes(chatId.toString())) {
+        currentOwners.push(chatId.toString());
+        // Bersihkan daftar dari nomor HP yang salah input jika ada
+        currentOwners = currentOwners.filter(id => id.length < 12 || id.startsWith('-'));
+        
+        try {
+            let content = fs.readFileSync(envPath, 'utf8');
+            const newOwnersStr = currentOwners.join(',');
+            if (content.includes('TELEGRAM_OWNER_ID=')) {
+                content = content.replace(/TELEGRAM_OWNER_ID=.*/, `TELEGRAM_OWNER_ID=${newOwnersStr}`);
+            } else {
+                content += `\nTELEGRAM_OWNER_ID=${newOwnersStr}`;
+            }
+            fs.writeFileSync(envPath, content);
+            process.env.TELEGRAM_OWNER_ID = newOwnersStr;
+            bot.sendMessage(chatId, `✅ *Akses Berhasil Didaftarkan!*\n\nChat ID ini (*${chatId}*) sekarang terdaftar sebagai owner/penerima notifikasi bot.`, { parse_mode: 'Markdown' });
+        } catch (e) {
+            console.error('Gagal update owner list:', e.message);
+        }
+    }
+});
 

@@ -99,20 +99,52 @@ connectToConsole();
 
 bot.onText(/\/start/, (msg) => {
     lastChatId = msg.chat.id;
+    
+    // AUTO-SET OWNER ID
+    const currentOwner = process.env.TELEGRAM_OWNER_ID;
+    if (!currentOwner || currentOwner.length > 11) {
+        try {
+            const envPath = path.join(__dirname, '.env_telegram');
+            let content = fs.readFileSync(envPath, 'utf8');
+            const newId = msg.chat.id;
+            if (content.includes('TELEGRAM_OWNER_ID=')) {
+                content = content.replace(/TELEGRAM_OWNER_ID=.*/, `TELEGRAM_OWNER_ID=${newId}`);
+            } else {
+                content += `\nTELEGRAM_OWNER_ID=${newId}`;
+            }
+            fs.writeFileSync(envPath, content);
+            process.env.TELEGRAM_OWNER_ID = newId.toString();
+            bot.sendMessage(msg.chat.id, `✅ *ID Telegram Terdeteksi!*\n\nID Anda (*${newId}*) telah didaftarkan sebagai owner utama.`, { parse_mode: 'Markdown' });
+        } catch (e) {}
+    }
+
     const welcome = `👋 Halo! Saya Bot Pengendali Panel.\n\n` +
-        `Gunakan perintah berikut:\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `⚙️ *SISTEM KONTROL*\n` +
         `🔹 /status - Cek status bot\n` +
-        `🔹 /startbot - Nyalakan bot\n` +
-        `🔹 /stopbot - Matikan bot\n` +
-        `🔹 /restartbot - Restart bot\n` +
-        `🔹 /update - Git Pull (Tarik kodingan baru)\n` +
+        `🔹 /startbot - Nyalakan bot utama\n` +
+        `🔹 /stopbot - Matikan bot utama\n` +
+        `🔹 /restartbot - Restart bot utama\n` +
+        `🔹 /restartall - Restart SEMUA bot anak\n` +
+        `🔹 /update - Git Pull (Tarik kodingan baru)\n\n` +
+        `🔑 *WA & PAIRING*\n` +
         `🔹 /pair [nomor] - Login pake Pairing Code\n` +
-        `🔹 /addbot [nomor] [nama] [hari] [owner] - Tambah Bot Anak\n` +
+        `🔹 /logout - Hapus Sesi (Logout Total)\n\n` +
+        `👥 *MANAJEMEN BOT ANAK*\n` +
+        `🔹 /addbot [nomor] [nama] [hari] [owner] - Tambah (Pairing Code)\n` +
+        `🔹 /addbotqr [nomor] [nama] [hari] [owner] - Tambah (QR Code)\n` +
         `🔹 /listbots - Daftar Bot Anak\n` +
-        `🔹 /delbot [nomor/nama] - Hapus Bot Anak\n` +
-        `🔹 /logout - Hapus Sesi (Logout Total)\n` +
-        `🔹 /logs - Lihat log console terakhir`;
-    bot.sendMessage(msg.chat.id, welcome);
+        `🔹 /restartbotku [nomor] - Restart Bot Anak tertentu\n` +
+        `🔹 /delbot [nomor/nama] - Hapus Bot Anak\n\n` +
+        `📋 *MONITORING*\n` +
+        `🔹 /logs - Lihat log console terakhir\n` +
+        `🔹 /myid - Cek ID Telegram Anda/Grup\n` +
+        `━━━━━━━━━━━━━━━━━━`;
+    bot.sendMessage(msg.chat.id, welcome, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/myid/, (msg) => {
+    bot.sendMessage(msg.chat.id, `🆔 *ID Chat Ini:* \`${msg.chat.id}\``, { parse_mode: 'Markdown' });
 });
 
 // Helper: Cek Status

@@ -164,26 +164,7 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
     }
 }
 
-async function handleGroupParticipantsUpdate(sock, update) {
-    const { id, participants, action } = update;
-    try {
-        const settings = groupSettings[id] || {};
-        const groupMetadata = await sock.groupMetadata(id).catch(() => null);
-        const groupName = groupMetadata ? groupMetadata.subject : 'Grup';
-
-        for (let participant of participants) {
-            if (action === 'add' && settings.welcome) {
-                let msg = settings.welcomeMsg || `Halo @user, selamat datang di @group!`;
-                msg = msg.replace(/@user/g, `@${participant.split('@')[0]}`).replace(/@group/g, groupName);
-                await sock.sendMessage(id, { text: msg, mentions: [participant] });
-            } else if (action === 'remove' && settings.left) {
-                let msg = settings.leftMsg || `Selamat tinggal @user dari @group!`;
-                msg = msg.replace(/@user/g, `@${participant.split('@')[0]}`).replace(/@group/g, groupName);
-                await sock.sendMessage(id, { text: msg, mentions: [participant] });
-            }
-        }
-    } catch (err) { }
-}
+// handleGroupParticipantsUpdate removed because of duplicate at the end of file
 
 async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner) {
     if (!remoteJid.endsWith('@g.us')) return false;
@@ -436,9 +417,21 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         }
         else if (command === prefix + 'welcome') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].welcome = !groupSettings[remoteJid].welcome;
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Welcome di-${groupSettings[remoteJid].welcome ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].welcome = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ Fitur *Welcome* (Pesan Sambutan) telah AKTIF.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].welcome = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ Fitur *Welcome* (Pesan Sambutan) telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].welcome ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `👋 *Fitur Welcome*\n\nBerfungsi untuk mengirim pesan sambutan otomatis saat ada member baru bergabung.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}welcome on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'setwelcome') {
             const teks = args.slice(1).join(' ');
@@ -450,9 +443,21 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         }
         else if (command === prefix + 'left') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].left = !groupSettings[remoteJid].left;
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Left di-${groupSettings[remoteJid].left ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].left = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ Fitur *Left* (Pesan Perpisahan) telah AKTIF.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].left = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ Fitur *Left* (Pesan Perpisahan) telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].left ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🏃 *Fitur Left*\n\nBerfungsi untuk mengirim pesan otomatis saat ada member keluar dari grup.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}left on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'setleft') {
             const teks = args.slice(1).join(' ');
@@ -462,43 +467,193 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Teks left diset.` });
         }
+        else if (command === prefix + 'setwelcomeimg') {
+            if (!isAuthorized) return true;
+            const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const isImg = msg.message?.imageMessage || quoted?.imageMessage;
+            if (isImg) {
+                const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+                const targetMsg = msg.message?.imageMessage ? msg.message.imageMessage : quoted.imageMessage;
+                const stream = await downloadContentFromMessage(targetMsg, 'image');
+                let buffer = Buffer.from([]);
+                for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+                
+                const filename = `welcome_${remoteJid.split('@')[0]}.jpg`;
+                const filePath = path.join(__dirname, '../../data/media/welcome', filename);
+                if (!fs.existsSync(path.dirname(filePath))) fs.mkdirSync(path.dirname(filePath), { recursive: true });
+                fs.writeFileSync(filePath, buffer);
+                
+                if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+                groupSettings[remoteJid].welcomeImg = filePath;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ Gambar welcome berhasil disimpan.` });
+            } else if (args[1] && args[1].startsWith('http')) {
+                if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+                groupSettings[remoteJid].welcomeImg = args[1];
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ URL gambar welcome berhasil diset.` });
+            } else {
+                await sock.sendMessage(remoteJid, { text: `❌ Reply gambar atau masukkan URL gambar dengan perintah *${prefix}setwelcomeimg*` });
+            }
+        }
+        else if (command === prefix + 'delwelcomeimg') {
+            if (!isAuthorized) return true;
+            if (groupSettings[remoteJid]?.welcomeImg) {
+                delete groupSettings[remoteJid].welcomeImg;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ Gambar welcome berhasil dihapus.` });
+            } else {
+                await sock.sendMessage(remoteJid, { text: `❌ Tidak ada gambar welcome yang diatur.` });
+            }
+        }
+        else if (command === prefix + 'setleftimg') {
+            if (!isAuthorized) return true;
+            const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const isImg = msg.message?.imageMessage || quoted?.imageMessage;
+            if (isImg) {
+                const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+                const targetMsg = msg.message?.imageMessage ? msg.message.imageMessage : quoted.imageMessage;
+                const stream = await downloadContentFromMessage(targetMsg, 'image');
+                let buffer = Buffer.from([]);
+                for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+                
+                const filename = `left_${remoteJid.split('@')[0]}.jpg`;
+                const filePath = path.join(__dirname, '../../data/media/welcome', filename);
+                if (!fs.existsSync(path.dirname(filePath))) fs.mkdirSync(path.dirname(filePath), { recursive: true });
+                fs.writeFileSync(filePath, buffer);
+                
+                if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+                groupSettings[remoteJid].leftImg = filePath;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ Gambar left berhasil disimpan.` });
+            } else if (args[1] && args[1].startsWith('http')) {
+                if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+                groupSettings[remoteJid].leftImg = args[1];
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ URL gambar left berhasil diset.` });
+            } else {
+                await sock.sendMessage(remoteJid, { text: `❌ Reply gambar atau masukkan URL gambar dengan perintah *${prefix}setleftimg*` });
+            }
+        }
+        else if (command === prefix + 'delleftimg') {
+            if (!isAuthorized) return true;
+            if (groupSettings[remoteJid]?.leftImg) {
+                delete groupSettings[remoteJid].leftImg;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ Gambar left berhasil dihapus.` });
+            } else {
+                await sock.sendMessage(remoteJid, { text: `❌ Tidak ada gambar left yang diatur.` });
+            }
+        }
         else if (command === prefix + 'antilink') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antilink = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antilink);
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link (Semua Link) di-${groupSettings[remoteJid].antilink ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].antilink = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Link* (Semua Link) telah AKTIF.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].antilink = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Link* (Semua Link) telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].antilink ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🔗 *Fitur Anti-Link*\n\nJika aktif, bot akan otomatis menghapus pesan yang mengandung link (http/https).\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antilink on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'antilinkgc') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antilinkgc = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antilinkgc);
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link Grup WA di-${groupSettings[remoteJid].antilinkgc ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].antilinkgc = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Link Grup* telah AKTIF.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].antilinkgc = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Link Grup* telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].antilinkgc ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `👥 *Fitur Anti-Link Grup*\n\nKhusus untuk mendeteksi dan menghapus link undangan grup WhatsApp.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antilinkgc on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'antilinkch') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antilinkch = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antilinkch);
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Forward Saluran di-${groupSettings[remoteJid].antilinkch ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].antilinkch = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Link Saluran* telah AKTIF.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].antilinkch = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Link Saluran* telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].antilinkch ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `📢 *Fitur Anti-Forward Saluran*\n\nBot akan menghapus pesan yang diteruskan (forward) dari Saluran/Channel WhatsApp.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antilinkch on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'antikick') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antikick = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antikick);
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Fitur Otomatis Kick Pelanggar di-${groupSettings[remoteJid].antikick ? 'Aktifkan' : 'Matikan'}.\n\n_Jika ON, bot akan kick orangnya. Jika OFF, bot hanya hapus pesannya saja._` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].antikick = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Kick Pelanggar* telah AKTIF.\nPelanggar aturan (link/badword) akan langsung dikeluarkan.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].antikick = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Kick Pelanggar* telah MATI.\nPelanggar aturan hanya akan dihapus pesannya saja.` });
+            } else {
+                const status = groupSettings[remoteJid].antikick ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🚫 *Fitur Anti-Kick*\n\nMenentukan apakah bot harus mengeluarkan (kick) member yang melanggar aturan.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antikick on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'antibadword') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antibadword = !groupSettings[remoteJid].antibadword;
-            if (groupSettings[remoteJid].antibadword) groupSettings[remoteJid].antibadwordnokick = false;
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Badword (Kick) di-${groupSettings[remoteJid].antibadword ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].antibadword = true;
+                groupSettings[remoteJid].antibadwordnokick = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Badword (Kick)* telah AKTIF.\nMember yang mengucapkan kata kasar akan langsung dikeluarkan.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].antibadword = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Badword (Kick)* telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].antibadword ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🤬 *Fitur Anti-Badword (Kick)*\n\nBot akan menghapus pesan kasar dan mengeluarkan member tersebut.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antibadword on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'antibadwordnokick') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antibadwordnokick = !groupSettings[remoteJid].antibadwordnokick;
-            if (groupSettings[remoteJid].antibadwordnokick) groupSettings[remoteJid].antibadword = false;
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Badword (No Kick) di-${groupSettings[remoteJid].antibadwordnokick ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].antibadwordnokick = true;
+                groupSettings[remoteJid].antibadword = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Badword (No Kick)* telah AKTIF.\nBot hanya akan menghapus pesan kasar tanpa mengeluarkan member.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].antibadwordnokick = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Badword (No Kick)* telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].antibadwordnokick ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🤬 *Fitur Anti-Badword (No Kick)*\n\nBot hanya akan menghapus pesan kasar saja.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antibadwordnokick on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'addbadword') {
             const word = args[1];
@@ -549,15 +704,39 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         }
         else if (command === prefix + 'antidelete') {
             const settings = getGroupSettings(remoteJid);
-            settings.antiDelete = !settings.antiDelete;
-            saveGroupSettings(remoteJid, settings);
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Delete berhasil di *${settings.antiDelete ? 'AKTIFKAN' : 'MATIKAN'}* untuk grup ini.` }, { quoted: msg });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                settings.antiDelete = true;
+                saveGroupSettings(remoteJid, settings);
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Delete* telah AKTIF.\nBot akan mengirim ulang pesan yang dihapus oleh member lain.` });
+            } else if (opt === 'off') {
+                settings.antiDelete = false;
+                saveGroupSettings(remoteJid, settings);
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Delete* telah MATI.` });
+            } else {
+                const status = settings.antiDelete ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🚫 *Fitur Anti-Delete*\n\nBerfungsi untuk menangkap dan mengirim ulang pesan yang sengaja dihapus oleh orang lain.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antidelete on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'antiviewonce') {
             const settings = getGroupSettings(remoteJid);
-            settings.antiViewOnce = !settings.antiViewOnce;
-            saveGroupSettings(remoteJid, settings);
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-ViewOnce berhasil di *${settings.antiViewOnce ? 'AKTIFKAN' : 'MATIKAN'}* untuk grup ini.` }, { quoted: msg });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                settings.antiViewOnce = true;
+                saveGroupSettings(remoteJid, settings);
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-ViewOnce* telah AKTIF.\nBot akan membongkar pesan Sekali Lihat.` });
+            } else if (opt === 'off') {
+                settings.antiViewOnce = false;
+                saveGroupSettings(remoteJid, settings);
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-ViewOnce* telah MATI.` });
+            } else {
+                const status = settings.antiViewOnce ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `👁️ *Fitur Anti-ViewOnce*\n\nBot akan otomatis membuka dan meneruskan pesan "Sekali Lihat" (View Once).\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antiviewonce on/off*` 
+                });
+            }
         }
         // --- ABSEN SYSTEM ---
         else if (command === prefix + 'mulaiabsen' || command === prefix + 'absen') {
@@ -722,9 +901,21 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         else if (command === prefix + 'antibot') {
             if (!isAuthorized) return true;
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antibot = args[1] === 'on';
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Bot di-${groupSettings[remoteJid].antibot ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].antibot = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Anti-Bot* telah AKTIF.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].antibot = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Anti-Bot* telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].antibot ? 'AKTIF' : 'MATI';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🤖 *Fitur Anti-Bot*\n\nBot akan mendeteksi member baru yang menggunakan akun bot/otomatis dan memperingatkan/mengeluarkan mereka.\n\nStatus saat ini: *${status}*\nCara pakai: *${prefix}antibot on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'antibot_kick') {
             if (!isAuthorized) return true;
@@ -738,9 +929,23 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         else if (command === prefix + 'automute') {
             if (!isAuthorized) return true;
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].automute = args[1] === 'on';
-            saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Auto-Mute di-${groupSettings[remoteJid].automute ? 'Aktifkan' : 'Matikan'}.` });
+            const opt = args[1]?.toLowerCase();
+            if (opt === 'on') {
+                groupSettings[remoteJid].automute = true;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `✅ *Auto-Mute* (Buka/Tutup Grup Otomatis) telah AKTIF.` });
+            } else if (opt === 'off') {
+                groupSettings[remoteJid].automute = false;
+                saveSettings();
+                await sock.sendMessage(remoteJid, { text: `❌ *Auto-Mute* (Buka/Tutup Grup Otomatis) telah MATI.` });
+            } else {
+                const status = groupSettings[remoteJid].automute ? 'AKTIF' : 'MATI';
+                const mTime = groupSettings[remoteJid].mute_time || '--:--';
+                const uTime = groupSettings[remoteJid].unmute_time || '--:--';
+                await sock.sendMessage(remoteJid, { 
+                    text: `🕙 *Fitur Auto-Mute*\n\nBerfungsi untuk membuka dan menutup grup secara otomatis pada jam yang ditentukan.\n\nStatus saat ini: *${status}*\n⏰ Tutup: *${mTime}*\n⏰ Buka: *${uTime}*\n\nCara pakai: *${prefix}automute on/off*` 
+                });
+            }
         }
         else if (command === prefix + 'setmute') {
             if (!isAuthorized) return true;
@@ -957,11 +1162,23 @@ async function handleGroupParticipantsUpdate(sock, { id, participants, action })
         if (action === 'add' && settings.welcome) {
             let msg = settings.welcomeMsg || 'Selamat datang @user di grup @group!';
             msg = msg.replace('@user', `@${cleanUser.split('@')[0]}`).replace('@group', groupName);
-            await sock.sendMessage(remoteJid, { text: msg, mentions: [user] });
+            
+            if (settings.welcomeImg) {
+                const imgSource = settings.welcomeImg.startsWith('http') ? { url: settings.welcomeImg } : fs.readFileSync(settings.welcomeImg);
+                await sock.sendMessage(remoteJid, { image: imgSource, caption: msg, mentions: [user] });
+            } else {
+                await sock.sendMessage(remoteJid, { text: msg, mentions: [user] });
+            }
         } else if (action === 'remove' && settings.left) {
             let msg = settings.leftMsg || 'Selamat jalan @user, semoga tenang di sana.';
             msg = msg.replace('@user', `@${cleanUser.split('@')[0]}`).replace('@group', groupName);
-            await sock.sendMessage(remoteJid, { text: msg, mentions: [user] });
+            
+            if (settings.leftImg) {
+                const imgSource = settings.leftImg.startsWith('http') ? { url: settings.leftImg } : fs.readFileSync(settings.leftImg);
+                await sock.sendMessage(remoteJid, { image: imgSource, caption: msg, mentions: [user] });
+            } else {
+                await sock.sendMessage(remoteJid, { text: msg, mentions: [user] });
+            }
         }
     }
 }
