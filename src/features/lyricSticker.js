@@ -10,6 +10,22 @@ const { addExif } = require('./sticker');
 const { getConfig } = require('../utils/config');
 const { logger } = require('../utils/logger');
 
+// ── Rain frames dari video asli (screen blend — bg gelap hilang otomatis) ────
+const _RAIN_FRAMES_DIR = path.join(__dirname, '../../assets');
+let _rainFrames = null; // lazy load saat pertama kali dipakai
+
+async function getRainFrames() {
+    if (_rainFrames) return _rainFrames;
+    _rainFrames = [];
+    for (let i = 1; i <= 16; i++) {
+        const fp = path.join(_RAIN_FRAMES_DIR, `rain_frame_${String(i).padStart(2,'0')}.jpg`);
+        if (fs.existsSync(fp)) {
+            try { _rainFrames.push(await loadImage(fp)); } catch(_) {}
+        }
+    }
+    return _rainFrames;
+}
+
 // ── Multi-font registration ──────────────────────────────────────────────────
 const _FONT_DIRS = [
     path.join(__dirname, '../../assets/fonts'),   // bundled (Linux/panel)
@@ -1026,7 +1042,7 @@ function drawTextRaindrops(ctx, lx, ly, mw, fontSize, animPhase, frameIdx, lineI
     }
 }
 
-function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
+async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     const SIZE = 512;
     const PAD  = 24;
     const maxW = SIZE - PAD * 2;
@@ -1064,8 +1080,19 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     tc.fillStyle = `rgb(${fl},${fl},${fl})`;
     tc.fillRect(0, 0, SIZE, SIZE);
 
-    // Rain di background — greenscreen style
-    drawGreenscreenRain(tc, SIZE, frameIdx, animPhase);
+    // Rain frames asli dari video — overlay dengan screen blend (bg gelap hilang)
+    const rainFrames = await getRainFrames();
+    if (rainFrames.length > 0) {
+        const rf = rainFrames[frameIdx % rainFrames.length];
+        tc.save();
+        tc.globalCompositeOperation = 'screen';
+        tc.globalAlpha = 0.75;
+        tc.drawImage(rf, 0, 0, SIZE, SIZE);
+        tc.restore();
+    } else {
+        // Fallback jika frames tidak ada
+        drawGreenscreenRain(tc, SIZE, frameIdx, animPhase);
+    }
 
     // Teks
     const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
@@ -1142,7 +1169,7 @@ async function createLyricSticker3(lines, secPerLine = 2) {
             for (let f = 0; f < framesPerLine; f++) {
                 const animPhase = (globalTick / FPS3) % 1;
                 // Draw frame langsung — no fisheye
-                const rawBuf = drawLyricFrame3(lines[i], animPhase, globalTick);
+                const rawBuf = await drawLyricFrame3(lines[i], animPhase, globalTick);
                 const fp = path.join(tempDir, `lyric3_frame_${tempId}_${globalTick}.png`);
                 fs.writeFileSync(fp, rawBuf);
                 framePaths.push(fp);
