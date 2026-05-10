@@ -202,18 +202,27 @@ global.botEvents.on('console_command', (data) => {
     }
     if (input === 'list_bots') {
         console.log('📋 [REMOTE] Mengambil daftar bot anak...');
-        const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
-        botManager.listChildBots({ sendMessage: (jid, msg) => {
-            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
-        }}, targetJid);
+        const fakeSock = { sendMessage: (_jid, msgObj) => {
+            const txt = (msgObj && msgObj.text) ? msgObj.text : JSON.stringify(msgObj);
+            if (global.botEvents) global.botEvents.emit('telegram_message', txt);
+            return Promise.resolve();
+        }};
+        botManager.listChildBots(fakeSock, 'telegram').catch(e => {
+            if (global.botEvents) global.botEvents.emit('telegram_message', `❌ Error list bots: ${e.message}`);
+        });
     }
     if (input.startsWith('delete_bot ') || input.startsWith('delete_bots ')) {
         const target = input.replace(/delete_bots? /, '').trim();
         console.log(`🗑️ [REMOTE] Menghapus bot anak: ${target}`);
+        const fakeSock2 = { sendMessage: (_jid, msgObj) => {
+            const txt = (msgObj && msgObj.text) ? msgObj.text : JSON.stringify(msgObj);
+            if (global.botEvents) global.botEvents.emit('telegram_message', txt);
+            return Promise.resolve();
+        }};
         const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
-        botManager.deleteChildBot({ sendMessage: (jid, msg) => {
-            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
-        }}, targetJid, target);
+        botManager.deleteChildBot(fakeSock2, targetJid, target).catch(e => {
+            if (global.botEvents) global.botEvents.emit('telegram_message', `❌ Error delete bot: ${e.message}`);
+        });
     }
     if (input.startsWith('pair_bot ')) {
         const num = input.replace('pair_bot ', '').trim();
