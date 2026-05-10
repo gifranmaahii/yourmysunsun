@@ -26,6 +26,7 @@ const FONT_DEFS = [
     { key: 'arial',     aliases: ['sans','biasa'],                             paths: ['arialbd.ttf','arial.ttf'],      family: 'LF_Arial',    weight: 'bold'   },
     { key: 'courier',   aliases: ['mono','typewriter','ketik','mesin'],        paths: ['courbd.ttf','cour.ttf'],        family: 'LF_Courier',  weight: 'bold'   },
     { key: 'trebuchet', aliases: ['trebo','stylish'],                          paths: ['trebucbd.ttf','trebuc.ttf'],    family: 'LF_Trebuch',  weight: 'bold'   },
+    { key: 'montserrat', aliases: ['mont','modern','nightclub','club'],        paths: ['montserrat.woff2','Montserrat-Bold.ttf'], family: 'LF_Montserrat', weight: 'bold' },
 ];
 
 const _fontMap  = {};
@@ -844,4 +845,224 @@ async function createStickerCover(title, artist = '', opts = {}) {
     return addExif(webpBuf, stickerPackName, stickerPackAuthor);
 }
 
-module.exports = { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor, parseGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS, LYRIC_ANIM_KEYS };
+// ─────────────────────────────────────────────────────────────────────────────
+// createLyricSticker3 — Nightclub edition
+//   • Font     : Montserrat Bold
+//   • Lens      : Fisheye warp (barrel distortion via pixel remap)
+//   • Camera    : Shake per-frame (random translate + slight rotate)
+//   • Particles : Raindrop sparkles on text (green-screen style, bright drops)
+// ─────────────────────────────────────────────────────────────────────────────
+function drawRaindropSparkles(ctx, lineX, lineY, textW, fontSize, animPhase) {
+    const count  = Math.max(8, Math.floor(textW / 18));
+    for (let i = 0; i < count; i++) {
+        const baseX  = lineX + seededRand(i * 3131) * textW;
+        const phase  = (animPhase * 1.4 + seededRand(i * 1777)) % 1;
+        const py     = lineY - fontSize * 0.9 + phase * fontSize * 2.2;
+        const px     = baseX + Math.sin(phase * Math.PI * 3 + seededRand(i * 2311) * 5) * fontSize * 0.04;
+        const len    = Math.max(4, seededRand(i * 5113) * fontSize * 0.22);
+        const fade   = phase < 0.1 ? phase * 10 : phase > 0.85 ? (1 - phase) / 0.15 : 1;
+        if (fade < 0.05) continue;
+        ctx.save();
+        ctx.globalAlpha = fade * 0.85;
+        const grad = ctx.createLinearGradient(px, py, px, py + len);
+        grad.addColorStop(0, 'rgba(255,255,255,0.0)');
+        grad.addColorStop(0.3, 'rgba(200,230,255,0.9)');
+        grad.addColorStop(1, 'rgba(255,255,255,0.95)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth   = Math.max(0.8, seededRand(i * 7777) * 1.8);
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + (seededRand(i * 9001) - 0.5) * 2, py + len);
+        ctx.stroke();
+        // drop at bottom
+        ctx.fillStyle = 'rgba(200,230,255,0.7)';
+        ctx.beginPath();
+        ctx.arc(px, py + len, Math.max(1, seededRand(i * 4321) * 2.2), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+function applyFisheyeToCanvas(srcCanvas) {
+    const SIZE   = srcCanvas.width;
+    const dst    = createCanvas(SIZE, SIZE);
+    const dctx   = dst.getContext('2d');
+    const src    = srcCanvas.getContext('2d');
+    const srcData = src.getImageData(0, 0, SIZE, SIZE);
+    const dstData = dctx.createImageData(SIZE, SIZE);
+    const cx = SIZE / 2, cy = SIZE / 2;
+    const R  = SIZE / 2;
+    const k  = 0.38; // barrel strength 0=none, 1=max
+    for (let y = 0; y < SIZE; y++) {
+        for (let x = 0; x < SIZE; x++) {
+            const nx = (x - cx) / R;
+            const ny = (y - cy) / R;
+            const r  = Math.sqrt(nx * nx + ny * ny);
+            const rf = r < 1 ? r * (1 + k * r * r) : r;
+            const sx = Math.round(cx + (nx / r || 0) * rf * R);
+            const sy = Math.round(cy + (ny / r || 0) * rf * R);
+            const di = (y * SIZE + x) * 4;
+            if (sx >= 0 && sx < SIZE && sy >= 0 && sy < SIZE) {
+                const si = (sy * SIZE + sx) * 4;
+                dstData.data[di]     = srcData.data[si];
+                dstData.data[di + 1] = srcData.data[si + 1];
+                dstData.data[di + 2] = srcData.data[si + 2];
+                dstData.data[di + 3] = srcData.data[si + 3];
+            }
+        }
+    }
+    dctx.putImageData(dstData, 0, 0);
+    return dst;
+}
+
+function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
+    const SIZE    = 512;
+    const PADDING = 40;
+    const maxW    = SIZE - PADDING * 2;
+    const maxH    = SIZE - 80;
+    const fOpts   = _fontMap['montserrat'] || _defFont;
+
+    // Dark nightclub gradient bg
+    const bgColors = [['#0a0010','#1a0030'],['#000818','#001840'],['#100008','#300010']];
+    const bgPair   = bgColors[Math.floor(animPhase * 3) % bgColors.length];
+
+    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 96, 22, fOpts);
+    const fontStr = `bold ${fontSize}px "${fOpts.family}", "LF_Serif", Georgia, serif`;
+    const lineH   = fontSize * 1.32;
+    const totalH  = lines.length * lineH;
+
+    // Camera shake: seeded per frame so it's consistent but varied
+    const shakeX = (seededRand(frameIdx * 13 + 1) - 0.5) * 6;
+    const shakeY = (seededRand(frameIdx * 17 + 3) - 0.5) * 4;
+    const shakeR = (seededRand(frameIdx * 7  + 5) - 0.5) * 0.012;
+
+    const canvas = createCanvas(SIZE, SIZE);
+    const ctx    = canvas.getContext('2d');
+
+    // BG gradient
+    const grad = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+    grad.addColorStop(0, bgPair[0]);
+    grad.addColorStop(1, bgPair[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Subtle vignette
+    const vig = ctx.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.25, SIZE/2, SIZE/2, SIZE*0.72);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.68)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Apply camera shake transform
+    ctx.save();
+    ctx.translate(SIZE/2 + shakeX, SIZE/2 + shakeY);
+    ctx.rotate(shakeR);
+    ctx.translate(-SIZE/2, -SIZE/2);
+
+    ctx.font         = fontStr;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+
+    const startY = (SIZE - totalH) / 2 + lineH * 0.5;
+
+    for (let i = 0; i < lines.length; i++) {
+        const ly  = startY + i * lineH;
+        const mw  = Math.min(ctx.measureText(lines[i]).width, maxW);
+        const lx  = SIZE / 2 - mw / 2;
+
+        // Neon glow on text
+        ctx.save();
+        ctx.shadowColor = 'rgba(120,80,255,0.9)';
+        ctx.shadowBlur  = fontSize * 0.45;
+        ctx.fillStyle   = '#FFFFFF';
+        ctx.fillText(lines[i], SIZE / 2, ly);
+        ctx.shadowColor = 'rgba(0,180,255,0.5)';
+        ctx.shadowBlur  = fontSize * 0.22;
+        ctx.fillText(lines[i], SIZE / 2, ly);
+        ctx.restore();
+
+        // Raindrop sparkles on text
+        drawRaindropSparkles(ctx, lx, ly, mw, fontSize, animPhase);
+    }
+
+    ctx.restore(); // end camera shake
+
+    // Bottom star deco
+    ctx.font      = `bold 20px Arial, sans-serif`;
+    ctx.fillStyle = 'rgba(180,120,255,0.7)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✦  ✦  ✦', SIZE / 2, SIZE - 32);
+
+    return canvas.toBuffer('image/png');
+}
+
+async function createLyricSticker3(lines, secPerLine = 2) {
+    const FPS3         = 15;
+    const framesPerLine = Math.max(2, Math.round(FPS3 * secPerLine));
+    const tempId       = randomBytes(6).toString('hex');
+    const tempDir      = path.join(__dirname, '../../temp');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+    const framePaths = [];
+    const concatPath = path.join(tempDir, `lyric3_concat_${tempId}.txt`);
+    const outputPath = path.join(tempDir, `lyric3_out_${tempId}.webp`);
+
+    function cleanup() {
+        for (const fp of framePaths) { try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch (_) {} }
+        try { if (fs.existsSync(concatPath)) fs.unlinkSync(concatPath); } catch (_) {}
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (_) {}
+    }
+
+    try {
+        let globalTick = 0;
+        for (let i = 0; i < lines.length; i++) {
+            for (let f = 0; f < framesPerLine; f++) {
+                const animPhase = (globalTick / FPS3) % 1;
+                // Draw frame, then apply fisheye warp
+                const rawBuf  = drawLyricFrame3(lines[i], animPhase, globalTick);
+                const rawCanvas = createCanvas(512, 512);
+                const rctx      = rawCanvas.getContext('2d');
+                const img       = await loadImage(rawBuf);
+                rctx.drawImage(img, 0, 0);
+                const warpedCanvas = applyFisheyeToCanvas(rawCanvas);
+                const fp = path.join(tempDir, `lyric3_frame_${tempId}_${globalTick}.png`);
+                fs.writeFileSync(fp, warpedCanvas.toBuffer('image/png'));
+                framePaths.push(fp);
+                globalTick++;
+            }
+        }
+
+        const frameDur = (1 / FPS3).toFixed(4);
+        const toFFPath = p => p.replace(/\\/g, '/');
+        let concatTxt  = '';
+        for (const fp of framePaths) concatTxt += `file '${toFFPath(fp)}'\nduration ${frameDur}\n`;
+        concatTxt += `file '${toFFPath(framePaths[framePaths.length - 1])}'\nduration 0.001\n`;
+        fs.writeFileSync(concatPath, concatTxt);
+
+        return await new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(concatPath)
+                .inputOptions(['-f concat', '-safe 0'])
+                .outputOptions([
+                    '-vcodec libwebp', '-vf', 'format=rgba',
+                    '-lossless 0', '-compression_level 6',
+                    '-q:v 80', '-loop 0', '-preset default', '-an', '-vsync 0'
+                ])
+                .toFormat('webp')
+                .on('end', async () => {
+                    try {
+                        const outBuf = fs.readFileSync(outputPath);
+                        cleanup();
+                        const cfg = getConfig();
+                        resolve(await addExif(outBuf, cfg.stickerPackName, cfg.stickerPackAuthor).catch(() => outBuf));
+                        logger.info(`🎵 Lyric3 sticker: ${lines.length} line(s) × ${framesPerLine} frames`);
+                    } catch (e) { cleanup(); reject(e); }
+                })
+                .on('error', (err) => { logger.error(`❌ Lyric3 ffmpeg: ${err.message}`); cleanup(); reject(err); })
+                .save(outputPath);
+        });
+    } catch (e) { cleanup(); throw e; }
+}
+
+module.exports = { createLyricSticker, createLyricStickerStatic, createLyricSticker3, createStickerCover, parseColor, parseGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS, LYRIC_ANIM_KEYS };

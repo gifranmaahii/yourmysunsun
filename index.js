@@ -77,7 +77,7 @@ const games = require('./src/features/games');
 const statusFeatures = require('./src/features/status');
 const { applyVoiceFilter } = require('./src/features/voiceChanger');
 const groupFeatures = require('./src/features/group');
-const { createLyricSticker, createLyricStickerStatic, createStickerCover, parseColor: parseLyricColor, parseGradient: parseLyricGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS, LYRIC_ANIM_KEYS } = require('./src/features/lyricSticker');
+const { createLyricSticker, createLyricStickerStatic, createLyricSticker3, createStickerCover, parseColor: parseLyricColor, parseGradient: parseLyricGradient, LYRIC_FONT_KEYS, LYRIC_THEME_KEYS, LYRIC_EFFECT_KEYS, LYRIC_ANIM_KEYS } = require('./src/features/lyricSticker');
 const _lyricFontSet   = new Set(LYRIC_FONT_KEYS.concat(['georgia','classic','elegan','romantis','heavy','tebal','besar','comic','fun','lucu','santai','clean','rapi','compact','tahoma','sans','biasa','arial','mono','typewriter','ketik','mesin','courier','trebo','stylish','trebuchet','verdana','impact']));
 const _lyricThemeSet  = new Set(LYRIC_THEME_KEYS);
 const _lyricEffectSet = new Set(LYRIC_EFFECT_KEYS);
@@ -1272,6 +1272,7 @@ async function startBot() {
 ┃
 ┣⌬ ${PREFIX}stickerlirik — Sticker lirik animasi per baris
 ┣⌬ ${PREFIX}stickerlirik2 — Sticker lirik tampil bertahap
+┣⌬ ${PREFIX}stickerlirik3 — Nightclub edition 🎛️ (fisheye + shake + raindrop)
 ┣⌬ ${PREFIX}stickercover — Sticker cover judul lagu
 ┃
 ┃ Ketik tanpa teks untuk lihat semua opsi & tutorial
@@ -4050,6 +4051,38 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                 }
 
                 // -----------------------------------------------
+                // FITUR: STICKER LIRIK NIGHTCLUB — .stickerlirik3
+                // Perintah: .stickerlirik3 baris1, baris2
+                // -----------------------------------------------
+                if (textContent.startsWith(PREFIX + 'stickerlirik3')) {
+                    let lyric3Raw = textContent.replace(new RegExp('^\\' + PREFIX + 'stickerlirik3\\s*', 'i'), '').trim();
+                    if (!lyric3Raw) {
+                        await sock.sendMessage(remoteJid, { text:
+                            `🎛️ *STICKER LIRIK 3 — NIGHTCLUB EDITION*\n\n` +
+                            `Cara pakai:\n` +
+                            `\`${PREFIX}stickerlirik3 baris1, baris2, baris3\`\n\n` +
+                            `Contoh:\n` +
+                            `\`${PREFIX}stickerlirik3 aku cinta kamu, selalu dan selamanya\`\n\n` +
+                            `✨ Otomatis: font Montserrat, fisheye lens, camera shake, raindrop`
+                        }, { quoted: msg });
+                        continue;
+                    }
+                    const lines3 = lyric3Raw.split(',').map(l => l.trim()).filter(Boolean);
+                    if (lines3.length === 0) continue;
+                    await simulateTyping(sock, remoteJid, 1000);
+                    await sock.sendMessage(remoteJid, { text: '🎛️ Membuat sticker nightclub...' }, { quoted: msg });
+                    try {
+                        const secPerLine3 = 2;
+                        const buf3 = await createLyricSticker3(lines3, secPerLine3);
+                        await sock.sendMessage(remoteJid, { sticker: buf3 }, { quoted: msg });
+                        logger.info(`🎵 Lyric3 sticker dikirim ke ${remoteJid} — ${lines3.length} baris`);
+                    } catch (err3) {
+                        logger.error('❌ stickerlirik3: ' + err3.message);
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal buat sticker: ${err3.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
                 // FITUR: STICKER LIRIK 1 FRAME — .stickerlirik2
                 // Perintah: .stickerlirik2 baris1, baris2 | warna
                 // Atau kirim foto + caption .stickerlirik2 baris1, baris2
