@@ -42,6 +42,14 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
     const loginMethod = (method || 'pairing').toLowerCase();
     const bots = getChildBots();
     
+    // VALIDASI: Cek apakah nomor atau nama sudah terdaftar
+    const existingBot = bots.find(b => b.phone === phone || b.name.toLowerCase() === name.toLowerCase());
+    if (existingBot) {
+        const errorMsg = `❌ Bot dengan ${existingBot.phone === phone ? 'nomor' : 'nama'} *${existingBot.phone === phone ? phone : name}* sudah terdaftar!\n\nSilakan hapus terlebih dahulu menggunakan perintah *${require('./../../src/utils/config').getConfig().prefix || '.'}deletebot ${phone}* jika ingin mendaftar ulang.`;
+        await sock.sendMessage(remoteJid, { text: errorMsg });
+        return;
+    }
+
     // Hitung waktu kadaluarsa (default 30 hari jika invalid)
     const durationDays = parseInt(days) || 30;
     const expiryDate = new Date();
@@ -370,11 +378,51 @@ const initChildBots = async () => {
     console.log('✅ [BotManager] Semua bot anak berhasil diproses.');
 };
 
+/**
+ * Memantau status bot anak dan memberikan notifikasi jika ada yang mati
+ */
+const monitorChildBots = async (sock) => {
+    const bots = getChildBots();
+    const activeBots = bots.filter(b => b.status === 'active');
+    if (activeBots.length === 0) return;
+
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    const pm2Path = '/home/container/node_modules/.bin/pm2';
+
+    for (const bot of activeBots) {
+        try {
+            const botName = bot.sessionName;
+            const { stdout } = await execPromise(`${pm2Path} jlist`, { windowsHide: true }).catch(() => execPromise('npx --yes pm2 jlist', { windowsHide: true }));
+            const pm2List = JSON.parse(stdout);
+            const proc = pm2List.find(p => p.name === botName);
+
+            if (!proc || proc.pm2_env.status !== 'online') {
+                const status = proc ? proc.pm2_env.status : 'NOT_FOUND';
+                console.log(`⚠️ [Monitor] Bot ${botName} terdeteksi OFFLINE (Status: ${status})`);
+                
+                // Kirim notifikasi ke owner utama
+                const targetJid = bot.owner.includes('@') ? bot.owner : `${bot.owner}@s.whatsapp.net`;
+                await sock.sendMessage(targetJid, { 
+                    text: `⚠️ *LAPORAN BOT MATI*\n\nBot Abang *${bot.name}* (${bot.phone}) terdeteksi sedang tidak aktif (OFFLINE).\n\nStatus: *${status}*\nSistem akan mencoba menghidupkannya kembali.`
+                }).catch(() => {});
+                
+                // Coba restart otomatis
+                await execPromise(`${pm2Path} restart ${botName}`, { windowsHide: true }).catch(() => execPromise(`npx --yes pm2 restart ${botName}`, { windowsHide: true }));
+            }
+        } catch (e) {
+            console.error(`[Monitor] Error checking status for ${bot.phone}:`, e.message);
+        }
+    }
+};
+
 module.exports = {
     getChildBots,
     saveChildBots,
     addChildBot,
     listChildBots,
     deleteChildBot,
-    initChildBots
+    initChildBots,
+    monitorChildBots
 };

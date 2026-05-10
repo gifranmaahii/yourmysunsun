@@ -424,6 +424,10 @@ async function startBot() {
     if (SESSION_NAME === 'session') {
         try {
             await botManager.initChildBots();
+            // Jalankan monitoring setiap 10 menit
+            setInterval(() => {
+                if (currentSock) botManager.monitorChildBots(currentSock);
+            }, 10 * 60 * 1000);
         } catch (e) {
             console.error('❌ Gagal inisialisasi bot anak:', e.message);
         }
