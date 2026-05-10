@@ -34,26 +34,8 @@ async function getRainFrames() {
         const fp = path.join(dir, `rain_frame_${String(i).padStart(2,'0')}.jpg`);
         if (!fs.existsSync(fp)) continue;
         try {
-            const src = await loadImage(fp);
-            // Pre-process: hapus bg gelap, sisakan tetesan — lakukan SEKALI saat load
-            const SIZE = 512;
-            const c = createCanvas(SIZE, SIZE);
-            const cx = c.getContext('2d');
-            cx.drawImage(src, 0, 0, SIZE, SIZE);
-            const imgD = cx.getImageData(0, 0, SIZE, SIZE);
-            const d = imgD.data;
-            for (let j = 0; j < d.length; j += 4) {
-                const r = Math.min(255, d[j]   * 2.5);
-                const g = Math.min(255, d[j+1] * 2.5);
-                const b = Math.min(255, d[j+2] * 2.5);
-                const br = (r + g + b) / 3;
-                d[j+3] = br < 55 ? 0 : br < 130 ? Math.floor((br-55)/75*160) : 210;
-                const v = Math.min(255, br + 20);
-                d[j] = d[j+1] = d[j+2] = v;
-            }
-            cx.putImageData(imgD, 0, 0);
-            // Simpan sebagai canvas (bukan image) supaya langsung bisa drawImage
-            _rainFrames.push(c);
+            // BG sudah hitam — simpan as-is, pakai screen blend saat render
+            _rainFrames.push(await loadImage(fp));
         } catch(e) { logger.warn('rain frame load fail: ' + fp); }
     }
     logger.info(`Rain frames loaded+processed: ${_rainFrames.length}`);
@@ -1141,12 +1123,12 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     }
     tc.restore();
 
-    // Rain di atas teks — overlay SETELAH teks digambar
+    // Rain di atas teks — screen blend: hitam hilang, tetesan tampil di atas font
     if (rainFrames.length > 0) {
         const rf = rainFrames[frameIdx % rainFrames.length];
         tc.save();
-        tc.globalCompositeOperation = 'source-over';
-        tc.globalAlpha = 0.65;
+        tc.globalCompositeOperation = 'screen';
+        tc.globalAlpha = 0.90;
         tc.drawImage(rf, 0, 0, SIZE, SIZE);
         tc.restore();
     } else {
