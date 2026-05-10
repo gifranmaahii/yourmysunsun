@@ -78,6 +78,9 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
         
         console.log(`[BotManager] Memulai bot anak: ${botName} (${phone})`);
         
+        // Hapus proses lama jika ada agar argumen terupdate
+        await execPromise(`${pm2Path} delete ${botName}`, { cwd: path.join(__dirname, '../../'), windowsHide: true }).catch(() => {});
+
         // Start PM2 dengan argumen yang benar
         let startCmd = loginMethod === 'qr'
             ? `${pm2Path} start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList} --qr`
@@ -89,7 +92,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
                 : `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList} --low-ram`;
         }
         
-        // Fallback ke npx jika pm2 tidak ada
+        // Eksekusi start
         await execPromise(startCmd, { cwd: path.join(__dirname, '../../'), windowsHide: true }).catch(async (e) => {
             console.log(`⚠️ Local PM2 failed: ${e.message}, trying npx...`);
             const npxCmd = startCmd.includes(pm2Path) ? startCmd.replace(pm2Path, 'npx --yes pm2') : `npx --yes pm2 start index.js ...`;
