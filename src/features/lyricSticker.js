@@ -977,6 +977,18 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
         const ly = startY + i * lineH;
         const lx = PAD;
 
+        // Fisheye ringan pada teks — baris tengah sedikit lebih besar
+        const centerRatio = 1 - Math.abs((ly - SIZE / 2) / (SIZE / 2)); // 0..1, max di tengah
+        const lensScale   = 1 + centerRatio * 0.10; // max +10% scale di baris tengah
+        const scalePivotY = ly;
+
+        ctx.save();
+        ctx.translate(SIZE / 2, scalePivotY);
+        ctx.scale(lensScale, lensScale);
+        ctx.translate(-SIZE / 2, -scalePivotY);
+
+        ctx.font = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
+
         // Shadow hitam kasar (offset)
         ctx.fillStyle = 'rgba(0,0,0,0.9)';
         ctx.fillText(lines[i], lx + 4, ly + 4);
@@ -985,7 +997,13 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
         ctx.fillStyle = '#FFFFFF';
         ctx.fillText(lines[i], lx, ly);
 
-        // Distressed scratches di dalam area teks
+        ctx.restore();
+        ctx.save();
+        ctx.translate(SIZE / 2, scalePivotY);
+        ctx.scale(lensScale, lensScale);
+        ctx.translate(-SIZE / 2, -scalePivotY);
+
+        // Distressed scratches di dalam area teks (dalam transform lens)
         const mw = Math.min(ctx.measureText(lines[i]).width, maxW);
         for (let s = 0; s < 5; s++) {
             const sx    = lx + seededRand(s * 313 + i * 77 + frameIdx * 3) * mw;
@@ -1002,6 +1020,7 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
             ctx.stroke();
             ctx.restore();
         }
+        ctx.restore(); // tutup lens scale per baris
     }
 
     ctx.restore(); // end shake
