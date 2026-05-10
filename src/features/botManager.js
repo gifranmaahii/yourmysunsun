@@ -80,12 +80,12 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
         
         // Start PM2 dengan argumen yang benar
         let startCmd = loginMethod === 'qr'
-            ? `${pm2Path} start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList}`
+            ? `${pm2Path} start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList} --qr`
             : `${pm2Path} start index.js --name ${botName} -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList}`;
         
         if (lowRam) {
             startCmd = loginMethod === 'qr'
-                ? `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --low-ram`
+                ? `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --qr --low-ram`
                 : `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --pairing=${phone} --owner=${fullOwnerList} --low-ram`;
         }
         

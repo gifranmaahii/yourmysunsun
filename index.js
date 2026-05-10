@@ -493,36 +493,45 @@ async function startBot() {
         if (!usePairingCode && (argv.pairing || process.env.PAIRING_NUMBER)) {
             usePairingCode = true;
             phoneNumber = String(argv.pairing || process.env.PAIRING_NUMBER).replace(/[^0-9]/g, '');
+        } else if (!usePairingCode && argv.qr) {
+            usePairingCode = false;
+            console.log(' 📱 QR Mode aktif via flag --qr.');
         } else if (!usePairingCode) {
-            const readline = require('readline').createInterface({
-                input: process.stdin,
-                output: process.stdout
-            });
+            // Jika bukan TTY (terminal interaktif), default ke QR untuk keamanan (biar gak hang di PM2)
+            if (!process.stdin.isTTY && SESSION_NAME !== 'session') {
+                console.log(' 📱 Non-interactive terminal detected. Defaulting to QR Mode.');
+                usePairingCode = false;
+            } else {
+                const readline = require('readline').createInterface({
+                    input: process.stdin,
+                    output: process.stdout
+                });
 
-            const question = (text) => new Promise(resolve => readline.question(text, resolve));
+                const question = (text) => new Promise(resolve => readline.question(text, resolve));
 
-            console.log(`\n========================================================`);
-            console.log(` 🤖 LOGIN ${BOT_NAME.toUpperCase()} [${SESSION_NAME}]`);
-            console.log(`========================================================`);
-            console.log(` 1. QR Code (Scan langsung)`);
-            console.log(` 2. Pairing Code (Masukkan nomor HP)`);
-            console.log(`========================================================`);
-            
-            const choice = await question(' 🛠️ Pilih metode login (1/2): ');
-            
-            if (choice === '2') {
-                usePairingCode = true;
-                const num = await question(' 📞 Masukkan nomor WhatsApp (contoh: 628123456789): ');
-                phoneNumber = num.replace(/[^0-9]/g, '');
-                if (!phoneNumber) {
-                    console.log(' ❌ Nomor tidak valid! Mengalihkan ke QR Code...');
+                console.log(`\n========================================================`);
+                console.log(` 🤖 LOGIN ${BOT_NAME.toUpperCase()} [${SESSION_NAME}]`);
+                console.log(`========================================================`);
+                console.log(` 1. QR Code (Scan langsung)`);
+                console.log(` 2. Pairing Code (Masukkan nomor HP)`);
+                console.log(`========================================================`);
+                
+                const choice = await question(' 🛠️ Pilih metode login (1/2): ');
+                
+                if (choice === '2') {
+                    usePairingCode = true;
+                    const num = await question(' 📞 Masukkan nomor WhatsApp (contoh: 628123456789): ');
+                    phoneNumber = num.replace(/[^0-9]/g, '');
+                    if (!phoneNumber) {
+                        console.log(' ❌ Nomor tidak valid! Mengalihkan ke QR Code...');
+                        usePairingCode = false;
+                    }
+                } else {
+                    console.log(' 📱 Menyiapkan QR Code...');
                     usePairingCode = false;
                 }
-            } else {
-                console.log(' 📱 Menyiapkan QR Code...');
-                usePairingCode = false;
+                readline.close();
             }
-            readline.close();
         }
     } else {
         logger.info('🔑 Sesi ditemukan. Melanjutkan login otomatis...');
