@@ -146,11 +146,23 @@ let isRestarting = false; // Flag untuk mencegah multiple restart
 global.botEvents.on('console_command', (data) => {
     const input = data.toString().trim();
     if (input === 'git_pull') {
-        console.log('🔄 [REMOTE] Menjalankan Update Paksa dari Telegram...');
-        exec('git fetch --all && git reset --hard origin/master', (err, stdout, stderr) => {
-            if (err) return console.error(`❌ Update Error: ${err.message}`);
-            console.log(`✅ Update Berhasil: ${stdout}`);
-            process.exit(1); 
+        console.log('🔄 [REMOTE] Menjalankan Update dari GitHub (wget)...');
+        const updateScript = [
+            'wget -q -O /tmp/update.zip https://github.com/gifranmaahii/yourmysunsun/archive/refs/heads/master.zip',
+            'cd /tmp && unzip -o update.zip -d update_tmp',
+            'cp -r /tmp/update_tmp/yourmysunsun-master/. /home/container/',
+            'rm -rf /tmp/update.zip /tmp/update_tmp',
+            'echo UPDATE_DONE'
+        ].join(' && ');
+        exec(updateScript, (err, stdout, stderr) => {
+            if (err) {
+                console.error(`❌ Update Error: ${err.message}`);
+                if (global.botEvents) global.botEvents.emit('telegram_message', `❌ Update gagal: ${err.message.slice(0,200)}`);
+                return;
+            }
+            console.log(`✅ Update Berhasil`);
+            if (global.botEvents) global.botEvents.emit('telegram_message', '✅ Update berhasil! Bot akan restart...');
+            setTimeout(() => process.exit(1), 2000);
         });
     }
     if (input === 'logout_bot') {
