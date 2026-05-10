@@ -22,7 +22,6 @@ let _rainFrames = null;
 async function getRainFrames() {
     if (_rainFrames !== null) return _rainFrames;
     _rainFrames = [];
-    // Cari dir yang mengandung rain_frame_01.jpg
     let dir = null;
     for (const d of _RAIN_FRAMES_CANDIDATES) {
         if (fs.existsSync(path.join(d, 'rain_frame_01.jpg'))) { dir = d; break; }
@@ -33,11 +32,31 @@ async function getRainFrames() {
     }
     for (let i = 1; i <= 16; i++) {
         const fp = path.join(dir, `rain_frame_${String(i).padStart(2,'0')}.jpg`);
-        if (fs.existsSync(fp)) {
-            try { _rainFrames.push(await loadImage(fp)); } catch(e) { logger.warn('rain frame load fail: ' + fp); }
-        }
+        if (!fs.existsSync(fp)) continue;
+        try {
+            const src = await loadImage(fp);
+            // Pre-process: hapus bg gelap, sisakan tetesan — lakukan SEKALI saat load
+            const SIZE = 512;
+            const c = createCanvas(SIZE, SIZE);
+            const cx = c.getContext('2d');
+            cx.drawImage(src, 0, 0, SIZE, SIZE);
+            const imgD = cx.getImageData(0, 0, SIZE, SIZE);
+            const d = imgD.data;
+            for (let j = 0; j < d.length; j += 4) {
+                const r = Math.min(255, d[j]   * 2.5);
+                const g = Math.min(255, d[j+1] * 2.5);
+                const b = Math.min(255, d[j+2] * 2.5);
+                const br = (r + g + b) / 3;
+                d[j+3] = br < 55 ? 0 : br < 130 ? Math.floor((br-55)/75*160) : 210;
+                const v = Math.min(255, br + 20);
+                d[j] = d[j+1] = d[j+2] = v;
+            }
+            cx.putImageData(imgD, 0, 0);
+            // Simpan sebagai canvas (bukan image) supaya langsung bisa drawImage
+            _rainFrames.push(c);
+        } catch(e) { logger.warn('rain frame load fail: ' + fp); }
     }
-    logger.info(`Rain frames loaded: ${_rainFrames.length}`);
+    logger.info(`Rain frames loaded+processed: ${_rainFrames.length}`);
     return _rainFrames;
 }
 
@@ -1095,17 +1114,18 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     tc.fillStyle = `rgb(${fl},${fl},${fl})`;
     tc.fillRect(0, 0, SIZE, SIZE);
 
-    // Rain frames asli dari video — overlay dengan screen blend (bg gelap hilang)
+    // Rain frames asli dari video — hapus bg gelap, sisakan tetesan saja
     const rainFrames = await getRainFrames();
     if (rainFrames.length > 0) {
         const rf = rainFrames[frameIdx % rainFrames.length];
+
+        // Overlay tetesan (sudah pre-processed, bg transparan) di atas BG hitam
         tc.save();
-        tc.globalCompositeOperation = 'screen';
-        tc.globalAlpha = 0.75;
+        tc.globalCompositeOperation = 'source-over';
+        tc.globalAlpha = 0.70;
         tc.drawImage(rf, 0, 0, SIZE, SIZE);
         tc.restore();
     } else {
-        // Fallback jika frames tidak ada
         drawGreenscreenRain(tc, SIZE, frameIdx, animPhase);
     }
 
