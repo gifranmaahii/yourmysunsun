@@ -201,15 +201,7 @@ global.botEvents.on('console_command', (data) => {
         }
     }
     if (input === 'list_bots') {
-        console.log('📋 [REMOTE] Mengambil daftar bot anak...');
-        const fakeSock = { sendMessage: (_jid, msgObj) => {
-            const txt = (msgObj && msgObj.text) ? msgObj.text : JSON.stringify(msgObj);
-            if (global.botEvents) global.botEvents.emit('telegram_message', txt);
-            return Promise.resolve();
-        }};
-        botManager.listChildBots(fakeSock, 'telegram').catch(e => {
-            if (global.botEvents) global.botEvents.emit('telegram_message', `❌ Error list bots: ${e.message}`);
-        });
+        console.log('📋 [REMOTE] list_bots ditangani langsung di telegramControl.js');
     }
     if (input.startsWith('delete_bot ') || input.startsWith('delete_bots ')) {
         const target = input.replace(/delete_bots? /, '').trim();
