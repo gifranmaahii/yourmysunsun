@@ -152,8 +152,14 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
         }
     }, 360000); // 6 menit total timeout
 
-    logWatcher.stdout.on('data', async (data) => {
-        const output = data.toString();
+    const readline = require('readline');
+    const rl = readline.createInterface({
+        input: logWatcher.stdout,
+        terminal: false
+    });
+
+    rl.on('line', async (line) => {
+        const output = line.trim();
         // Cari pola kode pairing
         const pairingMatch = output.match(/KODE PAIRING ANDA: ([A-Z0-9]{4}-[A-Z0-9]{4})/);
         // Cari pola QR Code
@@ -163,7 +169,7 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
             authDataSent = true;
             const code = pairingMatch[1];
             newBot.pairingCode = code;
-            console.log(`PAIRING_CODE: ${code}`); // Re-log agar ditangkap Telegram Control
+            console.log(`[BotManager] Detected Pairing Code for ${phone}: ${code}`);
             
             await sock.sendMessage(remoteJid, {
                 text: `✅ *Bot Anak Berhasil Disiapkan!*\n\n` +
@@ -172,13 +178,8 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
                       `⏳ Sewa: ${days} Hari\n` +
                       `📅 Expired: ${expiryDate.toLocaleDateString('id-ID')}\n\n` +
                       `🔑 *KODE PAIRING:*\n` +
-                      `*${code}*\n\n` +
-                      `💡 Buka WhatsApp HP → Setelan → Perangkat Tertaut\n` +
-                      `   → Tautkan Perangkat → Tautkan dengan nomor telepon\n` +
-                      `   → Masukkan kode di atas\n\n` +
-                      `_(Menunggu kamu memasukkan kode... Maksimal 3 menit)_`
+                      `*${code}*`
             });
-            
             
             if (global.botEvents) {
                 global.botEvents.emit('telegram_auth', {
@@ -193,38 +194,33 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
             saveChildBots(bots);
         } else if (qrMatch && !authDataSent) {
             authDataSent = true;
-            const qrRaw = qrMatch[1];
+            const qrRaw = qrMatch[1].trim();
             newBot.pairingCode = "QR_CODE";
+            console.log(`[BotManager] Detected QR Code for ${phone}`);
             
             try {
-                const qrcode = require('qrcode');
-                const qrBuffer = await qrcode.toBuffer(qrRaw, { scale: 8 });
+                const qrcodeLib = require('qrcode');
+                const qrBuffer = await qrcodeLib.toBuffer(qrRaw, { scale: 8 });
                 
                 await sock.sendMessage(remoteJid, {
                     image: qrBuffer,
                     caption: `✅ *Bot Anak Berhasil Disiapkan!*\n\n` +
                           `👤 Nama: ${name}\n` +
                           `📱 ID Sesi: ${phone}\n` +
-                          `⏳ Sewa: ${days} Hari\n` +
-                          `📅 Expired: ${expiryDate.toLocaleDateString('id-ID')}\n\n` +
-                          `💡 Silakan Scan QR Code ini dari fitur Perangkat Tertaut WhatsApp HP tujuan.\n\n` +
-                          `_(Menunggu kamu scan... Maksimal 3 menit)_`
+                          `⏳ Sewa: ${days} Hari\n\n` +
+                          `💡 Silakan Scan QR Code ini.`
                 });
-            } catch (qrErr) {
-                await sock.sendMessage(remoteJid, { text: `❌ Gagal memproses gambar QR Code.` });
-            }
-            
-            if (global.botEvents) {
-                try {
-                    const qrcodeLib = require('qrcode');
-                    const qrBufferForTg = await qrcodeLib.toBuffer(qrRaw, { scale: 8 });
+
+                if (global.botEvents) {
                     global.botEvents.emit('telegram_auth', {
                         type: 'qr',
                         phone, name, days,
-                        buffer: qrBufferForTg,
+                        buffer: qrBuffer,
                         expiryDate: expiryDate.toLocaleDateString('id-ID')
                     });
-                } catch (e) {}
+                }
+            } catch (qrErr) {
+                console.error('[BotManager] QR Buffer Error:', qrErr.message);
             }
             
             newBot.status = 'pending';
