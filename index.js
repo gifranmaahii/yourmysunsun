@@ -139,8 +139,8 @@ const argv = minimist(process.argv.slice(2));
 const SESSION_NAME = argv.session || argv._[0] || 'session';
 const SESSION_PATH = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
 
-// Start Telegram Control ONLY for main session
-if (SESSION_NAME === 'session') {
+// Start Telegram Control ONLY for main session and if not disabled
+if (SESSION_NAME === 'session' && !process.env.DISABLE_TELEGRAM && !argv['no-tg']) {
     try {
         require('./telegramControl.js');
         console.log('🤖 Telegram Remote Control Integrated & Started.');

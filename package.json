@@ -4,7 +4,7 @@
   "description": "Bot WhatsApp - Forward audio ke saluran & sticker maker (dengan session persistence)",
   "main": "index.js",
   "scripts": {
-    "start": "npm install pm2 && npx pm2-runtime start ecosystem.config.js",
+    "start": "node index.js --no-tg",
     "dev": "node --watch index.js"
   },
   "dependencies": {
