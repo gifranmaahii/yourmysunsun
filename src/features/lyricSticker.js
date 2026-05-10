@@ -11,18 +11,33 @@ const { getConfig } = require('../utils/config');
 const { logger } = require('../utils/logger');
 
 // ── Rain frames dari video asli (screen blend — bg gelap hilang otomatis) ────
-const _RAIN_FRAMES_DIR = path.join(__dirname, '../../assets');
-let _rainFrames = null; // lazy load saat pertama kali dipakai
+// src/features/ -> ../../assets = root/assets
+const _RAIN_FRAMES_CANDIDATES = [
+    path.join(__dirname, '../../assets'),
+    path.join(__dirname, '../assets'),
+    path.join(process.cwd(), 'assets'),
+];
+let _rainFrames = null;
 
 async function getRainFrames() {
-    if (_rainFrames) return _rainFrames;
+    if (_rainFrames !== null) return _rainFrames;
     _rainFrames = [];
+    // Cari dir yang mengandung rain_frame_01.jpg
+    let dir = null;
+    for (const d of _RAIN_FRAMES_CANDIDATES) {
+        if (fs.existsSync(path.join(d, 'rain_frame_01.jpg'))) { dir = d; break; }
+    }
+    if (!dir) {
+        logger.warn('rain_frame_01.jpg not found, rain overlay disabled');
+        return _rainFrames;
+    }
     for (let i = 1; i <= 16; i++) {
-        const fp = path.join(_RAIN_FRAMES_DIR, `rain_frame_${String(i).padStart(2,'0')}.jpg`);
+        const fp = path.join(dir, `rain_frame_${String(i).padStart(2,'0')}.jpg`);
         if (fs.existsSync(fp)) {
-            try { _rainFrames.push(await loadImage(fp)); } catch(_) {}
+            try { _rainFrames.push(await loadImage(fp)); } catch(e) { logger.warn('rain frame load fail: ' + fp); }
         }
     }
+    logger.info(`Rain frames loaded: ${_rainFrames.length}`);
     return _rainFrames;
 }
 
