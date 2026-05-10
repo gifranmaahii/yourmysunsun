@@ -982,118 +982,166 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
     ctx.restore();
 }
 
-function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
-    const SIZE    = 512;
-    const PAD     = 28;
-    const maxW    = SIZE - PAD * 2;
-    const maxH    = SIZE - 40;
-    const fOpts   = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
+function applyBarrelWarp(srcCtx, dstCtx, SIZE, strength = 0.30) {
+    // Barrel distortion (cembung) — pixel remap dari src ke dst
+    const src = srcCtx.getImageData(0, 0, SIZE, SIZE);
+    const dst = dstCtx.createImageData(SIZE, SIZE);
+    const cx = SIZE / 2, cy = SIZE / 2;
+    const R  = SIZE / 2;
+    for (let y = 0; y < SIZE; y++) {
+        for (let x = 0; x < SIZE; x++) {
+            const nx = (x - cx) / R;
+            const ny = (y - cy) / R;
+            const r  = Math.sqrt(nx * nx + ny * ny);
+            // barrel: r' = r*(1 - strength*r^2) — invert mapping (sample dari src)
+            const rf = r < 1 ? r / (1 + strength * r * r) : r;
+            const sx = Math.round(cx + (r > 0 ? nx / r : 0) * rf * R);
+            const sy = Math.round(cy + (r > 0 ? ny / r : 0) * rf * R);
+            const di = (y * SIZE + x) * 4;
+            if (sx >= 0 && sx < SIZE && sy >= 0 && sy < SIZE) {
+                const si = (sy * SIZE + sx) * 4;
+                dst.data[di]     = src.data[si];
+                dst.data[di + 1] = src.data[si + 1];
+                dst.data[di + 2] = src.data[si + 2];
+                dst.data[di + 3] = src.data[si + 3];
+            }
+        }
+    }
+    dstCtx.putImageData(dst, 0, 0);
+}
 
-    // SELALU muat: hitung fontSize sampai totalH <= maxH
-    let fontSize = 130;
+function drawTextRaindrops(ctx, lx, ly, mw, fontSize, animPhase, frameIdx, lineIdx) {
+    // Tetesan air menempel di bawah huruf — jatuh dari batas bawah teks
+    const dropCount = Math.max(6, Math.floor(mw / 28));
+    for (let d = 0; d < dropCount; d++) {
+        const baseX  = lx + seededRand(d * 3131 + lineIdx * 999) * mw;
+        const speed  = 0.5 + seededRand(d * 2711 + lineIdx * 777) * 1.0;
+        const phase  = (animPhase * speed + seededRand(d * 1777 + lineIdx * 555)) % 1;
+        // Tetes mulai dari bawah huruf, jatuh ke bawah
+        const dropY  = ly + fontSize * 0.5 + phase * fontSize * 1.8;
+        const dropX  = baseX + (seededRand(d * 4441 + lineIdx) - 0.5) * 4;
+        const len    = 6 + seededRand(d * 5113) * fontSize * 0.22;
+        const w      = 0.8 + seededRand(d * 9001) * 1.4;
+        const fade   = phase < 0.08 ? phase / 0.08 : phase > 0.82 ? (1 - phase) / 0.18 : 1;
+        const alpha  = fade * (0.35 + seededRand(d * 7777) * 0.45);
+        if (alpha < 0.05) continue;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Batang tetes
+        const g = ctx.createLinearGradient(dropX, dropY, dropX, dropY + len);
+        g.addColorStop(0,   'rgba(255,255,255,0.95)');
+        g.addColorStop(0.6, 'rgba(200,230,255,0.7)');
+        g.addColorStop(1,   'rgba(255,255,255,0.0)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth   = w;
+        ctx.lineCap     = 'round';
+        ctx.beginPath();
+        ctx.moveTo(dropX, dropY);
+        ctx.lineTo(dropX + (seededRand(d * 3317) - 0.5) * 2, dropY + len);
+        ctx.stroke();
+
+        // Kepala bulat di atas
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.beginPath();
+        ctx.arc(dropX, dropY, w * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
+    const SIZE = 512;
+    const PAD  = 24;
+    const maxW = SIZE - PAD * 2;
+    const maxH = SIZE - 48;
+    const fOpts = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
+
+    // Fit font — turun sampai semua baris muat di maxH
+    let fontSize = 128;
     let lines    = [];
     for (; fontSize >= 14; fontSize -= 2) {
-        const tmp    = createCanvas(600, 100);
-        const tc     = tmp.getContext('2d');
-        tc.font      = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
-        lines        = wordWrap(tc, text, maxW);
-        const lh     = fontSize * 1.18;
-        if (lines.length * lh <= maxH) break;
+        const tmp = createCanvas(maxW + 10, 100);
+        const tc  = tmp.getContext('2d');
+        tc.font   = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
+        const wrapped = wordWrap(tc, text, maxW);
+        if (wrapped.length * fontSize * 1.18 <= maxH) { lines = wrapped; break; }
     }
+    if (lines.length === 0) {
+        const tmp = createCanvas(maxW + 10, 100);
+        const tc  = tmp.getContext('2d');
+        tc.font   = `bold 14px "${fOpts.family}", Impact, Arial Black, sans-serif`;
+        lines     = wordWrap(tc, text, maxW);
+        fontSize  = 14;
+    }
+
     const lineH  = fontSize * 1.18;
     const totalH = lines.length * lineH;
-
-    // Camera shake ringan — natural, bukan berputar
-    const shakeX = (seededRand(frameIdx * 13 + 1) - 0.5) * 4;
-    const shakeY = (seededRand(frameIdx * 17 + 3) - 0.5) * 3;
-
-    const canvas = createCanvas(SIZE, SIZE);
-    const ctx    = canvas.getContext('2d');
-
-    // BG hitam dengan flicker brightness tipis
-    const fl = 6 + Math.floor(seededRand(frameIdx * 31) * 10);
-    ctx.fillStyle = `rgb(${fl},${fl},${fl})`;
-    ctx.fillRect(0, 0, SIZE, SIZE);
-
-    // Air hujan mengalir di kaca — vertikal ke bawah
-    drawWindowRain(ctx, SIZE, frameIdx, animPhase);
-
-    // Camera shake — translate saja, NO rotate, NO fisheye
-    ctx.save();
-    ctx.translate(shakeX, shakeY);
-
-    const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
-    ctx.font         = fontStr;
-    ctx.textAlign    = 'left';
-    ctx.textBaseline = 'middle';
-
-    // Teks mulai dari kiri atas, agak ke bawah tengah
     const startY = (SIZE - totalH) / 2 + lineH * 0.5;
+
+    // ── Render ke canvas sementara (sebelum barrel warp) ──────────────────────
+    const tmpCanvas = createCanvas(SIZE, SIZE);
+    const tc        = tmpCanvas.getContext('2d');
+
+    // BG hitam + flicker
+    const fl = 6 + Math.floor(seededRand(frameIdx * 31) * 10);
+    tc.fillStyle = `rgb(${fl},${fl},${fl})`;
+    tc.fillRect(0, 0, SIZE, SIZE);
+
+    // Rain di background (window rain)
+    drawWindowRain(tc, SIZE, frameIdx, animPhase);
+
+    // Teks
+    const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
+    tc.font         = fontStr;
+    tc.textAlign    = 'left';
+    tc.textBaseline = 'middle';
+
+    // Clip ketat supaya teks tidak keluar
+    tc.save();
+    tc.beginPath();
+    tc.rect(0, 0, SIZE, SIZE);
+    tc.clip();
 
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
         const lx = PAD;
+        // Shadow
+        tc.fillStyle = 'rgba(0,0,0,0.85)';
+        tc.fillText(lines[i], lx + 3, ly + 3);
+        // Teks putih
+        tc.fillStyle = '#FFFFFF';
+        tc.fillText(lines[i], lx, ly);
+    }
+    tc.restore();
 
-        // Fisheye ringan pada teks — baris tengah sedikit lebih besar
-        const centerRatio = 1 - Math.abs((ly - SIZE / 2) / (SIZE / 2)); // 0..1, max di tengah
-        const lensScale   = 1 + centerRatio * 0.40; // max +40% bulge kuat di tengah
-        const scalePivotY = ly;
-
-        ctx.save();
-        ctx.translate(SIZE / 2, scalePivotY);
-        ctx.scale(lensScale, lensScale);
-        ctx.translate(-SIZE / 2, -scalePivotY);
-
-        ctx.font = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
-
-        // Shadow hitam kasar (offset)
-        ctx.fillStyle = 'rgba(0,0,0,0.9)';
-        ctx.fillText(lines[i], lx + 4, ly + 4);
-
-        // Teks putih utama
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(lines[i], lx, ly);
-
-        ctx.restore();
-        ctx.save();
-        ctx.translate(SIZE / 2, scalePivotY);
-        ctx.scale(lensScale, lensScale);
-        ctx.translate(-SIZE / 2, -scalePivotY);
-
-        // Distressed scratches di dalam area teks (dalam transform lens)
-        const mw = Math.min(ctx.measureText(lines[i]).width, maxW);
-        for (let s = 0; s < 5; s++) {
-            const sx    = lx + seededRand(s * 313 + i * 77 + frameIdx * 3) * mw;
-            const sy    = ly - fontSize * 0.4 + seededRand(s * 717 + i * 13) * fontSize * 0.8;
-            const sw    = seededRand(s * 191 + frameIdx) * fontSize * 0.9;
-            const alpha = 0.08 + seededRand(s * 523 + frameIdx) * 0.15;
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth   = Math.max(0.5, seededRand(s * 811) * 2);
-            ctx.beginPath();
-            ctx.moveTo(sx, sy);
-            ctx.lineTo(sx + sw, sy + (seededRand(s * 419) - 0.5) * 3);
-            ctx.stroke();
-            ctx.restore();
-        }
-        ctx.restore(); // tutup lens scale per baris
+    // Tetesan air dari bawah tiap baris teks
+    for (let i = 0; i < lines.length; i++) {
+        const ly = startY + i * lineH;
+        const lx = PAD;
+        tc.font  = fontStr;
+        const mw = Math.min(tc.measureText(lines[i]).width, maxW);
+        drawTextRaindrops(tc, lx, ly, mw, fontSize, animPhase, frameIdx, i);
     }
 
-    ctx.restore(); // end shake
+    // ── Apply barrel warp (cembung) ke canvas final ───────────────────────────
+    const outCanvas = createCanvas(SIZE, SIZE);
+    const oc        = outCanvas.getContext('2d');
+    applyBarrelWarp(tc, oc, SIZE, 0.32);
 
-    // Vignette kuat — pojok gelap seperti referensi
-    const vig = ctx.createRadialGradient(SIZE*0.5, SIZE*0.5, SIZE*0.2, SIZE*0.5, SIZE*0.5, SIZE*0.82);
+    // Vignette di atas warp result
+    const vig = oc.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.18, SIZE/2, SIZE/2, SIZE*0.80);
     vig.addColorStop(0,   'rgba(0,0,0,0)');
-    vig.addColorStop(0.5, 'rgba(0,0,0,0.15)');
-    vig.addColorStop(1,   'rgba(0,0,0,0.92)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, SIZE, SIZE);
+    vig.addColorStop(0.55,'rgba(0,0,0,0.12)');
+    vig.addColorStop(1,   'rgba(0,0,0,0.90)');
+    oc.fillStyle = vig;
+    oc.fillRect(0, 0, SIZE, SIZE);
 
-    // Film grain noise
-    drawGrainNoise(ctx, SIZE, frameIdx, 0.20);
+    // Film grain
+    drawGrainNoise(oc, SIZE, frameIdx, 0.18);
 
-    return canvas.toBuffer('image/png');
+    return outCanvas.toBuffer('image/png');
 }
 
 async function createLyricSticker3(lines, secPerLine = 2) {
