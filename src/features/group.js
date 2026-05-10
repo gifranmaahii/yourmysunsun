@@ -81,9 +81,17 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
     if (fromMe) return; 
 
     const sender = msg.key.participant || msg.key.remoteJid;
-    
-    // --- CHECK SEWA / PUBLIC MODE ---
+
+    // --- PRIMARY OWNER: KEBAL DARI SEMUA MODERASI ---
     const globalCfg = require('../utils/config').getConfig();
+    const { cleanNumber } = require('../utils/config');
+    const primaryOwners = (process.env.PRIMARY_OWNER || '').split(',').map(n => cleanNumber(n.trim())).filter(Boolean);
+    const ownerNumbers = (globalCfg.ownerNumber || '').split(',').map(n => cleanNumber(n.trim())).filter(Boolean);
+    const allSuperOwners = [...new Set([...primaryOwners, ...ownerNumbers])];
+    const cleanSenderForOwner = cleanNumber(sender);
+    if (allSuperOwners.some(o => cleanSenderForOwner === o || cleanSenderForOwner.endsWith(o) || o.endsWith(cleanSenderForOwner))) return;
+
+    // --- CHECK SEWA / PUBLIC MODE ---
     const isPublic = globalCfg.ownerdewasa;
     const isRented = sewaData[remoteJid] && sewaData[remoteJid].expire > Date.now();
     const isActiveGroup = isPublic || isRented;
@@ -143,13 +151,30 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
         const clean = require('../utils/config').cleanNumber;
         const cleanSender = clean(sender);
         
-        const p = metadata.participants.find(x => clean(x.id) === cleanSender);
+        const p = metadata.participants.find(x => clean(x.id) === cleanSender || (x.lid && clean(x.lid) === cleanSender));
         isAdmin = p ? (p.admin === 'admin' || p.admin === 'superadmin') : false;
 
         const myJid = clean(sock.user.id);
-        const botP = metadata.participants.find(x => clean(x.id) === myJid);
+        const myLid = sock.user.lid ? clean(sock.user.lid) : null;
+        const botP = metadata.participants.find(x => {
+            const xClean = clean(x.id);
+            const xLid = x.lid ? clean(x.lid) : null;
+            return xClean === myJid || (myLid && xClean === myLid) || (xLid && xLid === myJid) || (myLid && xLid && xLid === myLid);
+        });
         botIsAdmin = botP ? (botP.admin === 'admin' || botP.admin === 'superadmin') : false;
-    } catch (e) { }
+
+        if (!botIsAdmin) {
+            const meta2 = await sock.groupMetadata(remoteJid);
+            const botP2 = meta2.participants.find(x => {
+                const xClean = clean(x.id);
+                const xLid = x.lid ? clean(x.lid) : null;
+                return xClean === myJid || (myLid && xClean === myLid) || (xLid && xLid === myJid) || (myLid && xLid && xLid === myLid);
+            });
+            botIsAdmin = botP2 ? (botP2.admin === 'admin' || botP2.admin === 'superadmin') : false;
+        }
+    } catch (e) { console.log('[ANTICH] metadata error:', e.message); }
+
+    if (settings.antilinkch) console.log(`[ANTICH] botIsAdmin=${botIsAdmin} isAdmin=${isAdmin} myJid=${sock.user?.id} myLid=${sock.user?.lid}`);
 
     if (isAdmin) return;
 
@@ -178,7 +203,8 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
         await sock.sendMessage(remoteJid, { delete: msg.key }).catch(() => {});
 
         // 2. Kick jika antikick ON
-        if (settings.antikick) {
+        const isSuperOwner = allSuperOwners.some(o => cleanSenderForOwner === o || cleanSenderForOwner.endsWith(o) || o.endsWith(cleanSenderForOwner));
+        if (settings.antikick && !isSuperOwner) {
             await sock.sendMessage(remoteJid, { text: `🚫 *ANTILINK SYSTEM*\n\nMaaf @user, kamu melanggar aturan: *${violationReason}*.\nSesuai pengaturan grup, kamu akan dikeluarkan.`, mentions: [sender] });
             await sock.groupParticipantsUpdate(remoteJid, [sender], "remove").catch(() => { });
         }
