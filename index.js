@@ -47,7 +47,8 @@ global.botEvents.on('console_command', (data) => {
             const [phone, nameRaw, days, owner] = args;
             const name = nameRaw.replace(/_/g, ' ');
             console.log(`🚀 [REMOTE] Menambah bot anak: ${name} (${phone}) untuk ${days} hari...`);
-            botManager.addChildBot(currentSock, PRIMARY_OWNER, phone, name, days, owner, 'pairing', true);
+            const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
+            botManager.addChildBot(currentSock, targetJid, phone, name, days, owner, 'pairing', true);
         }
     }
     if (input === 'list_bots') {
