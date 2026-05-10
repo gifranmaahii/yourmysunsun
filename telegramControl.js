@@ -363,8 +363,30 @@ bot.onText(/\/addbotqr (.+)/, async (msg, match) => {
 bot.onText(/\/listbots/, async (msg) => {
     if (!isOwner(msg)) return;
     lastChatId = msg.chat.id;
-    bot.sendMessage(lastChatId, '⏳ Mengambil daftar bot anak dari console...');
-    global.botEvents.emit('console_command', 'list_bots');
+    try {
+        const fs2 = require('fs');
+        const path2 = require('path');
+        const dbPath = path2.join(__dirname, 'data/child_bots.json');
+        if (!fs2.existsSync(dbPath)) {
+            return bot.sendMessage(lastChatId, '📭 File data bot belum ada. Belum ada bot anak yang terdaftar.');
+        }
+        const bots = JSON.parse(fs2.readFileSync(dbPath, 'utf8'));
+        if (!bots || bots.length === 0) {
+            return bot.sendMessage(lastChatId, '📭 Belum ada bot anak yang terdaftar.');
+        }
+        let text = `📋 *DAFTAR BOT ANAK (RESELLER)*\n\n`;
+        bots.forEach((b, i) => {
+            const remaining = Math.ceil((new Date(b.expiryAt) - new Date()) / (1000 * 60 * 60 * 24));
+            const status = remaining > 0 ? '🟢 Aktif' : '🔴 Expired';
+            text += `${i + 1}. *${b.name}* (${b.phone})\n`;
+            text += `   Status: ${status}\n`;
+            text += `   Sisa: ${remaining} Hari\n`;
+            text += `   Sesi: ${b.sessionName}\n\n`;
+        });
+        bot.sendMessage(lastChatId, text.trim(), { parse_mode: 'Markdown' });
+    } catch (e) {
+        bot.sendMessage(lastChatId, `❌ Error membaca data bot: ${e.message}`);
+    }
 });
 
 bot.onText(/\/(delbot|delbots) (.+)/, async (msg, match) => {
