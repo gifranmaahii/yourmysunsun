@@ -948,30 +948,37 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
     ctx.restore();
 }
 
-function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.28) {
-    // Bulge (cembung ke DEPAN) — tengah membesar, pinggir mengecil
-    // Untuk setiap pixel dst, cari sumber di src dengan reverse mapping
+function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.45) {
+    // Bulge BENAR (cembung ke depan, seperti mata ikan/fisheye lens):
+    // Pixel dst (x,y) diambil dari src yang LEBIH DEKAT ke tengah
+    // → area tengah src "diperbesar" ke seluruh dst
+    // Formula: rf = r^(1/(1+strength)) — power curve, rf < r untuk r<1
     const src = srcCtx.getImageData(0, 0, SIZE, SIZE);
     const dst = dstCtx.createImageData(SIZE, SIZE);
     const cx = SIZE / 2, cy = SIZE / 2;
     const R  = SIZE / 2;
+    const pw = 1 / (1 + strength); // < 1, jadi rf < r
     for (let y = 0; y < SIZE; y++) {
         for (let x = 0; x < SIZE; x++) {
-            const nx = (x - cx) / R; // -1..1
+            const nx = (x - cx) / R;
             const ny = (y - cy) / R;
             const r  = Math.sqrt(nx * nx + ny * ny);
-            // Bulge: piksel dst (x,y) diambil dari src yang lebih ke pinggir
-            // rf > r sehingga tengah 'ditarik' dari area lebih luas (membesar)
-            const rf = r < 1 ? r * (1 + strength * (1 - r * r)) : r;
-            const sx = Math.round(cx + (r > 0 ? nx / r : 0) * rf * R);
-            const sy = Math.round(cy + (r > 0 ? ny / r : 0) * rf * R);
+            if (r === 0) {
+                const di = (y * SIZE + x) * 4;
+                const si = (cy * SIZE + cx) * 4;
+                dst.data[di] = src.data[si]; dst.data[di+1] = src.data[si+1];
+                dst.data[di+2] = src.data[si+2]; dst.data[di+3] = src.data[si+3];
+                continue;
+            }
+            // rf < r → src pixel diambil dari lebih dekat tengah → tengah membesar
+            const rf = r < 1 ? Math.pow(r, pw) : r;
+            const sx = Math.round(cx + (nx / r) * rf * R);
+            const sy = Math.round(cy + (ny / r) * rf * R);
             const di = (y * SIZE + x) * 4;
             if (sx >= 0 && sx < SIZE && sy >= 0 && sy < SIZE) {
                 const si = (sy * SIZE + sx) * 4;
-                dst.data[di]     = src.data[si];
-                dst.data[di + 1] = src.data[si + 1];
-                dst.data[di + 2] = src.data[si + 2];
-                dst.data[di + 3] = src.data[si + 3];
+                dst.data[di]   = src.data[si];   dst.data[di+1] = src.data[si+1];
+                dst.data[di+2] = src.data[si+2]; dst.data[di+3] = src.data[si+3];
             }
         }
     }
