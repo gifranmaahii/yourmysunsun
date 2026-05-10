@@ -96,9 +96,8 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
 
     const settings = groupSettings[remoteJid] || {};
     
-    // Deteksi Link yang lebih luas (HTTP, HTTPS, atau WA Link)
-    const isLink = textContent.match(/https?:\/\/[^\s]+/gi) || 
-                   textContent.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/i) || 
+    // Deteksi Link WhatsApp saja (chat.whatsapp.com atau wa.me)
+    const isLink = textContent.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/i) || 
                    textContent.match(/wa\.me\//i);
 
     let isAdmin = false;
