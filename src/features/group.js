@@ -225,7 +225,7 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
     const groupCommands = [
         prefix + 'kick', prefix + 'add', prefix + 'promote', prefix + 'demote', prefix + 'setnamegc', prefix + 'setdescgc', prefix + 'setopen', prefix + 'setclose',
         prefix + 'hidetag', prefix + 'tagall', prefix + 'leavegc', prefix + 'linkgc', prefix + 'revokelink', prefix + 'groupinfo', prefix + 'welcome', prefix + 'setwelcome', 
-        prefix + 'left', prefix + 'setleft', prefix + 'antilink', prefix + 'antilinknokick', prefix + 'antibadword', prefix + 'antibadwordnokick', 
+        prefix + 'left', prefix + 'setleft', prefix + 'antilink', prefix + 'antilinknokick', prefix + 'antilinkgcwa', prefix + 'antibadword', prefix + 'antibadwordnokick', 
         prefix + 'addbadword', prefix + 'delbadword', prefix + 'listbadword', prefix + 'resetbadword',
         prefix + 'afk', prefix + 'antidelete', prefix + 'antiviewonce',
         prefix + 'absen', prefix + 'cekabsen', prefix + 'deleteabsen', prefix + 'mulaiabsen',
@@ -462,12 +462,12 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             saveSettings();
             await sock.sendMessage(remoteJid, { text: `✅ Anti-Link (Kick) di-${groupSettings[remoteJid].antilink ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === prefix + 'antilinknokick') {
+        else if (command === prefix + 'antilinknokick' || command === prefix + 'antilinkgcwa') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             groupSettings[remoteJid].antilinknokick = !groupSettings[remoteJid].antilinknokick;
             if (groupSettings[remoteJid].antilinknokick) groupSettings[remoteJid].antilink = false;
             saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link (No Kick) di-${groupSettings[remoteJid].antilinknokick ? 'Aktifkan' : 'Matikan'}.` });
+            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link GC WA (No Kick) di-${groupSettings[remoteJid].antilinknokick ? 'Aktifkan' : 'Matikan'}.` });
         }
         else if (command === prefix + 'antibadword') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
