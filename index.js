@@ -168,9 +168,7 @@ const abstract = require('./src/features/abstract');
 const phonespecs = require('./src/features/phonespecs');
 const limit = require('./src/features/limit');
 const qrcode = require('qrcode-terminal');
-const path = require('path');
 const { EventEmitter } = require('events');
-const fs = require('fs');
 
 // ============================================================
 // KONFIGURASI
