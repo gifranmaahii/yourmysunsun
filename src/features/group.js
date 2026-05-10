@@ -104,16 +104,29 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
                       textContent.match(/wa\.me\//i);
     
     // 3. Deteksi Forward dari Saluran (Channel)
-    const contextInfo = msg.message?.extendedTextMessage?.contextInfo || 
-                        msg.message?.imageMessage?.contextInfo || 
-                        msg.message?.videoMessage?.contextInfo || 
-                        msg.message?.documentMessage?.contextInfo || 
-                        msg.message?.viewOnceMessage?.message?.imageMessage?.contextInfo ||
-                        msg.message?.viewOnceMessage?.message?.videoMessage?.contextInfo ||
-                        msg.message?.viewOnceMessageV2?.message?.imageMessage?.contextInfo ||
-                        msg.message?.viewOnceMessageV2?.message?.videoMessage?.contextInfo ||
+    const msgContent = msg.message || {};
+    const contextInfo = msgContent.extendedTextMessage?.contextInfo || 
+                        msgContent.imageMessage?.contextInfo || 
+                        msgContent.videoMessage?.contextInfo || 
+                        msgContent.documentMessage?.contextInfo ||
+                        msgContent.audioMessage?.contextInfo ||
+                        msgContent.stickerMessage?.contextInfo ||
+                        msgContent.contactMessage?.contextInfo ||
+                        msgContent.locationMessage?.contextInfo ||
+                        msgContent.viewOnceMessage?.message?.imageMessage?.contextInfo ||
+                        msgContent.viewOnceMessage?.message?.videoMessage?.contextInfo ||
+                        msgContent.viewOnceMessageV2?.message?.imageMessage?.contextInfo ||
+                        msgContent.viewOnceMessageV2?.message?.videoMessage?.contextInfo ||
+                        msgContent.ephemeralMessage?.message?.extendedTextMessage?.contextInfo ||
                         {};
-    const isForwardedChannel = contextInfo.forwardedNewsletterMessageInfo ? true : false;
+    const isForwardedChannel = !!(
+        contextInfo.forwardedNewsletterMessageInfo ||
+        contextInfo.newsletterParentKey ||
+        (contextInfo.externalAdReply?.containsAutoReply === false && contextInfo.externalAdReply?.renderLargerThumbnail)
+    );
+    if (settings.antilinkch && contextInfo.isForwarded) {
+        console.log(`[ANTICH] forwardScore=${contextInfo.forwardingScore} newsletterInfo=${!!contextInfo.forwardedNewsletterMessageInfo} newsletterKey=${!!contextInfo.newsletterParentKey} detected=${isForwardedChannel}`);
+    }
 
     let isAdmin = false;
     let botIsAdmin = false;
