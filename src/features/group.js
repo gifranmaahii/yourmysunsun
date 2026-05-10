@@ -415,6 +415,31 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
             let textInfo = `*📊 INFO GRUP*\n\n*Nama:* ${groupMetadata.subject}\n*ID:* ${groupMetadata.id}\n*Dibuat:* ${new Date(groupMetadata.creation * 1000).toLocaleString()}\n*Member:* ${groupMetadata.participants.length}\n*Admin:* ${groupMetadata.participants.filter(p => p.admin).length}\n*Deskripsi:*\n${groupMetadata.desc ? groupMetadata.desc.toString() : 'Tidak ada'}`;
             await sock.sendMessage(remoteJid, { text: textInfo });
         }
+        else if (command === prefix + 'settings' || command === prefix + 'ceksetting') {
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            const s = groupSettings[remoteJid];
+            const on = '🟢 *ON*';
+            const off = '🔴 *OFF*';
+            
+            let text = `⚙️ *PENGATURAN GRUP*\n\n` +
+                `🛡️ *MODERASI & KEAMANAN*\n` +
+                `🔹 Anti-Link: ${s.antilink ? on : off}\n` +
+                `🔹 Anti-Link GC: ${s.antilinkgc ? on : off}\n` +
+                `🔹 Anti-Channel: ${s.antilinkch ? on : off}\n` +
+                `🔹 Anti-Bot: ${s.antibot ? on : off}\n` +
+                `🔹 Anti-ViewOnce: ${s.antiviewonce ? on : off}\n` +
+                `🔹 Anti-Delete: ${s.antidelete ? on : off}\n` +
+                `🔹 Anti-Badword: ${s.antibadword ? on : off}\n\n` +
+                `⚖️ *KEBIJAKAN HUKUMAN*\n` +
+                `🔹 Mode Kick: ${s.antikick ? '🚫 *KICK*' : '🗑️ *HAPUS SAJA*'}\n\n` +
+                `👋 *OTOMATISASI*\n` +
+                `🔹 Welcome: ${s.welcome ? on : off}\n` +
+                `🔹 Left: ${s.left ? on : off}\n` +
+                `🔹 Auto-Mute: ${s.automute ? on : off}\n\n` +
+                `💡 _Ketik perintah fitur (misal: .antilink) tanpa on/off untuk penjelasan detail._`;
+            
+            await sock.sendMessage(remoteJid, { text });
+        }
         else if (command === prefix + 'welcome') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
             const opt = args[1]?.toLowerCase();

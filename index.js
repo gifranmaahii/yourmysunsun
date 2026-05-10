@@ -2993,7 +2993,7 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                                 `  ⌬ .antilink, .antilinkgc, .antilinkch\n` +
                                 `  ⌬ .antikick, .antibot, .antibadword\n` +
                                 `  ⌬ .antidelete, .antiviewonce\n` +
-                                `  ⌬ .automute, .mulaiabsen\n\n` +
+                                `  ⌬ .automute, .settings (Cek Status)\n\n` +
                                 
                                 `◈ *GRUP: TOOLS & GAME*\n` +
                                 `  ⌬ .addsewa, .ceksewa, .delsewa\n` +
