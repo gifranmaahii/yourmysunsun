@@ -852,29 +852,43 @@ async function createStickerCover(title, artist = '', opts = {}) {
 //   • Camera    : Shake per-frame (random translate + slight rotate)
 //   • Particles : Raindrop sparkles on text (green-screen style, bright drops)
 // ─────────────────────────────────────────────────────────────────────────────
-function drawBgRainSplash(ctx, SIZE, frameIdx, animPhase) {
-    // Titik-titik splash hujan menyebar di seluruh background
-    const count = 55;
+function drawBgRain(ctx, SIZE, frameIdx, animPhase) {
+    // Greenscreen-style rain — garis diagonal jatuh, panjang bervariasi
+    const count = 80;
     for (let i = 0; i < count; i++) {
-        const phase = (animPhase * 1.6 + seededRand(i * 1777 + frameIdx * 3)) % 1;
-        const px    = seededRand(i * 3131) * SIZE;
-        const py    = seededRand(i * 2711) * SIZE * 0.9 + SIZE * (phase * 0.12);
-        const r     = Math.max(0.5, seededRand(i * 5113) * 2.2);
-        const fade  = phase < 0.1 ? phase * 10 : phase > 0.8 ? (1 - phase) / 0.2 : 1;
-        if (fade < 0.04) continue;
+        // Setiap tetes punya posisi X tetap, Y bergerak ke bawah
+        const baseX  = seededRand(i * 3131) * (SIZE + 60) - 30;
+        const speed  = 0.6 + seededRand(i * 2711) * 0.8; // kecepatan beda tiap tetes
+        const phase  = (animPhase * speed + seededRand(i * 1777)) % 1;
+        const py     = phase * (SIZE + 80) - 40; // jatuh dari atas ke bawah
+        const px     = baseX - py * 0.08;        // sedikit miring ke kiri
+
+        const len    = 18 + seededRand(i * 5113) * 38; // panjang 18-56px
+        const alpha  = 0.18 + seededRand(i * 7777) * 0.45;
+        const w      = 0.6 + seededRand(i * 9001) * 1.0;
+
         ctx.save();
-        ctx.globalAlpha = fade * (0.25 + seededRand(i * 7777) * 0.35);
-        ctx.fillStyle   = '#ffffff';
+        ctx.globalAlpha = alpha;
+        // Gradient transparan di atas, opak di bawah (seperti ekor tetes)
+        const g = ctx.createLinearGradient(px, py, px - len * 0.08, py + len);
+        g.addColorStop(0, 'rgba(255,255,255,0)');
+        g.addColorStop(0.3, 'rgba(200,230,255,0.7)');
+        g.addColorStop(1, 'rgba(255,255,255,0.95)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth   = w;
+        ctx.lineCap     = 'round';
         ctx.beginPath();
-        ctx.arc(px, py, r, 0, Math.PI * 2);
-        ctx.fill();
-        // splash ring sesekali
-        if (seededRand(i * 411 + frameIdx) > 0.72) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-            ctx.lineWidth   = 0.5;
+        ctx.moveTo(px, py);
+        ctx.lineTo(px - len * 0.08, py + len);
+        ctx.stroke();
+
+        // Percikan kecil di ujung bawah sesekali
+        if (seededRand(i * 411 + frameIdx) > 0.65 && py + len < SIZE - 10) {
+            ctx.globalAlpha = alpha * 0.5;
+            ctx.fillStyle   = 'rgba(200,230,255,0.8)';
             ctx.beginPath();
-            ctx.arc(px, py, r * 2.5, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.arc(px - len * 0.08, py + len, 1.2, 0, Math.PI * 2);
+            ctx.fill();
         }
         ctx.restore();
     }
@@ -958,8 +972,8 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     ctx.fillStyle = `rgb(${fl},${fl},${fl})`;
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // Rain splash dots di background — menyebar di seluruh frame
-    drawBgRainSplash(ctx, SIZE, frameIdx, animPhase);
+    // Greenscreen rain — garis jatuh diagonal di seluruh frame
+    drawBgRain(ctx, SIZE, frameIdx, animPhase);
 
     // Camera shake — translate saja, NO rotate, NO fisheye
     ctx.save();
@@ -979,7 +993,7 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
 
         // Fisheye ringan pada teks — baris tengah sedikit lebih besar
         const centerRatio = 1 - Math.abs((ly - SIZE / 2) / (SIZE / 2)); // 0..1, max di tengah
-        const lensScale   = 1 + centerRatio * 0.10; // max +10% scale di baris tengah
+        const lensScale   = 1 + centerRatio * 0.25; // max +25% bulge di baris tengah
         const scalePivotY = ly;
 
         ctx.save();
