@@ -117,12 +117,13 @@ async function connectToConsole() {
                     if (lastChatId) bot.sendMessage(lastChatId, '✅ *Bot WhatsApp Berhasil Terhubung!*', { parse_mode: 'Markdown' });
                 }
 
-                // Tangkap Error Penting
-                if (text.toLowerCase().includes('error') || text.toLowerCase().includes('crash') || text.toLowerCase().includes('failed')) {
+                // Tangkap Error Penting (skip error object panjang / TelegramError)
+                const isLongObject = text.includes('_events:') || text.includes('_readableState') || text.includes('Symbol(') || text.includes('TelegramError');
+                if (!isLongObject && (text.toLowerCase().includes('error') || text.toLowerCase().includes('crash') || text.toLowerCase().includes('failed'))) {
                     if (lastChatId) {
                         const cleanErr = text.replace(/\u001b\[[0-9;]*m/g, '').trim();
-                        if (cleanErr.length > 5) {
-                            bot.sendMessage(lastChatId, `⚠️ *NOTIFIKASI LOG:* \n\n\`${cleanErr.slice(0, 500)}\``, { parse_mode: 'Markdown' });
+                        if (cleanErr.length > 5 && cleanErr.length < 300) {
+                            bot.sendMessage(lastChatId, `⚠️ *NOTIFIKASI LOG:* \n\n\`${cleanErr.slice(0, 250)}\``, { parse_mode: 'Markdown' }).catch(() => {});
                         }
                     }
                 }
@@ -374,16 +375,17 @@ bot.onText(/\/listbots/, async (msg) => {
         if (!bots || bots.length === 0) {
             return bot.sendMessage(lastChatId, '📭 Belum ada bot anak yang terdaftar.');
         }
-        let text = `📋 *DAFTAR BOT ANAK (RESELLER)*\n\n`;
+        const esc = (s) => String(s).replace(/[_*`\[\]()~>#+=|{}.!-]/g, '\\$&');
+        let text = `📋 *DAFTAR BOT ANAK \(RESELLER\)*\n\n`;
         bots.forEach((b, i) => {
             const remaining = Math.ceil((new Date(b.expiryAt) - new Date()) / (1000 * 60 * 60 * 24));
             const status = remaining > 0 ? '🟢 Aktif' : '🔴 Expired';
-            text += `${i + 1}. *${b.name}* (${b.phone})\n`;
+            text += `${i + 1}\. *${esc(b.name)}* \(${esc(b.phone)}\)\n`;
             text += `   Status: ${status}\n`;
             text += `   Sisa: ${remaining} Hari\n`;
-            text += `   Sesi: ${b.sessionName}\n\n`;
+            text += `   Sesi: ${esc(b.sessionName)}\n\n`;
         });
-        bot.sendMessage(lastChatId, text.trim(), { parse_mode: 'Markdown' });
+        bot.sendMessage(lastChatId, text.trim(), { parse_mode: 'MarkdownV2' });
     } catch (e) {
         bot.sendMessage(lastChatId, `❌ Error membaca data bot: ${e.message}`);
     }
