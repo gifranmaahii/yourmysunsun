@@ -96,9 +96,24 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
 
     const settings = groupSettings[remoteJid] || {};
     
-    // Deteksi Link WhatsApp saja (chat.whatsapp.com atau wa.me)
-    const isLink = textContent.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/i) || 
-                   textContent.match(/wa\.me\//i);
+    // 1. Deteksi Link (Semua HTTP/HTTPS)
+    const hasAllLink = textContent.match(/https?:\/\/[^\s]+/gi);
+    
+    // 2. Deteksi Link WhatsApp Group
+    const hasGcLink = textContent.match(/chat\.whatsapp\.com\/[a-zA-Z0-9]/i) || 
+                      textContent.match(/wa\.me\//i);
+    
+    // 3. Deteksi Forward dari Saluran (Channel)
+    const contextInfo = msg.message?.extendedTextMessage?.contextInfo || 
+                        msg.message?.imageMessage?.contextInfo || 
+                        msg.message?.videoMessage?.contextInfo || 
+                        msg.message?.documentMessage?.contextInfo || 
+                        msg.message?.viewOnceMessage?.message?.imageMessage?.contextInfo ||
+                        msg.message?.viewOnceMessage?.message?.videoMessage?.contextInfo ||
+                        msg.message?.viewOnceMessageV2?.message?.imageMessage?.contextInfo ||
+                        msg.message?.viewOnceMessageV2?.message?.videoMessage?.contextInfo ||
+                        {};
+    const isForwardedChannel = contextInfo.forwardedNewsletterMessageInfo ? true : false;
 
     let isAdmin = false;
     let botIsAdmin = false;
@@ -107,52 +122,44 @@ async function handleGroupModeration(sock, msg, textContent, remoteJid, fromMe) 
         const clean = require('../utils/config').cleanNumber;
         const cleanSender = clean(sender);
         
-        // Cek Admin Pengirim
         const p = metadata.participants.find(x => clean(x.id) === cleanSender);
         isAdmin = p ? (p.admin === 'admin' || p.admin === 'superadmin') : false;
 
-        // Cek Admin Bot
         const myJid = clean(sock.user.id);
         const botP = metadata.participants.find(x => clean(x.id) === myJid);
         botIsAdmin = botP ? (botP.admin === 'admin' || botP.admin === 'superadmin') : false;
     } catch (e) { }
 
-    // Jika pengirim adalah Admin/Owner, abaikan (jangan hapus)
     if (isAdmin) return;
 
-    if (!isAdmin) {
-        let isViolating = false;
-        let shouldKick = false;
+    let isViolating = false;
+    let violationReason = '';
 
-        if (isLink && (settings.antilink || settings.antilinknokick)) {
-            isViolating = true;
-            if (settings.antilink) shouldKick = true;
+    // Cek Pelanggaran Berdasarkan Setting
+    if (settings.antilink && hasAllLink) {
+        isViolating = true;
+        violationReason = 'Mengirim Link';
+    } else if (settings.antilinkgc && hasGcLink) {
+        isViolating = true;
+        violationReason = 'Mengirim Link Grup WA';
+    } else if (settings.antilinkch && isForwardedChannel) {
+        isViolating = true;
+        violationReason = 'Forward dari Saluran';
+    }
+
+    if (isViolating) {
+        if (!botIsAdmin) {
+            console.log(`⚠️ [Moderasi] Pelanggaran terdeteksi tapi bot bukan admin di ${remoteJid}`);
+            return;
         }
 
-        if (!isViolating && (settings.antibadword || settings.antibadwordnokick)) {
-            const badwords = settings.badwords || [];
-            const textLower = textContent.toLowerCase();
-            const isBad = badwords.some(word => textLower.includes(word.toLowerCase()));
-            if (isBad) {
-                isViolating = true;
-                if (settings.antibadword) shouldKick = true;
-            }
-        }
+        // 1. Hapus Pesan
+        await sock.sendMessage(remoteJid, { delete: msg.key }).catch(() => {});
 
-        if (isViolating) {
-            // Beri peringatan jika bot bukan admin (tidak bisa hapus)
-            if (!botIsAdmin) {
-                console.log(`⚠️ [Antilink] Bot terdeteksi bukan admin di ${remoteJid}, gagal menghapus pesan.`);
-                return;
-            }
-
-            await sock.sendMessage(remoteJid, { delete: msg.key }).catch((err) => { 
-                console.error('❌ [Antilink] Gagal menghapus pesan:', err.message);
-            });
-            
-            if (shouldKick) {
-                await sock.groupParticipantsUpdate(remoteJid, [sender], "remove").catch(() => { });
-            }
+        // 2. Kick jika antikick ON
+        if (settings.antikick) {
+            await sock.sendMessage(remoteJid, { text: `🚫 *ANTILINK SYSTEM*\n\nMaaf @user, kamu melanggar aturan: *${violationReason}*.\nSesuai pengaturan grup, kamu akan dikeluarkan.`, mentions: [sender] });
+            await sock.groupParticipantsUpdate(remoteJid, [sender], "remove").catch(() => { });
         }
     }
 }
@@ -225,7 +232,7 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
     const groupCommands = [
         prefix + 'kick', prefix + 'add', prefix + 'promote', prefix + 'demote', prefix + 'setnamegc', prefix + 'setdescgc', prefix + 'setopen', prefix + 'setclose',
         prefix + 'hidetag', prefix + 'tagall', prefix + 'leavegc', prefix + 'linkgc', prefix + 'revokelink', prefix + 'groupinfo', prefix + 'welcome', prefix + 'setwelcome', 
-        prefix + 'left', prefix + 'setleft', prefix + 'antilink', prefix + 'antilinknokick', prefix + 'antilinkgcwa', prefix + 'antibadword', prefix + 'antibadwordnokick', 
+        prefix + 'left', prefix + 'setleft', prefix + 'antilink', prefix + 'antilinkgc', prefix + 'antilinkch', prefix + 'antikick', prefix + 'antibadword', prefix + 'antibadwordnokick', 
         prefix + 'addbadword', prefix + 'delbadword', prefix + 'listbadword', prefix + 'resetbadword',
         prefix + 'afk', prefix + 'antidelete', prefix + 'antiviewonce',
         prefix + 'absen', prefix + 'cekabsen', prefix + 'deleteabsen', prefix + 'mulaiabsen',
@@ -457,17 +464,27 @@ async function handleGroupCommand(sock, msg, textContent, remoteJid, isBotOwner)
         }
         else if (command === prefix + 'antilink') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antilink = !groupSettings[remoteJid].antilink;
-            if (groupSettings[remoteJid].antilink) groupSettings[remoteJid].antilinknokick = false;
+            groupSettings[remoteJid].antilink = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antilink);
             saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link (Kick) di-${groupSettings[remoteJid].antilink ? 'Aktifkan' : 'Matikan'}.` });
+            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link (Semua Link) di-${groupSettings[remoteJid].antilink ? 'Aktifkan' : 'Matikan'}.` });
         }
-        else if (command === prefix + 'antilinknokick' || command === prefix + 'antilinkgcwa') {
+        else if (command === prefix + 'antilinkgc') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
-            groupSettings[remoteJid].antilinknokick = !groupSettings[remoteJid].antilinknokick;
-            if (groupSettings[remoteJid].antilinknokick) groupSettings[remoteJid].antilink = false;
+            groupSettings[remoteJid].antilinkgc = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antilinkgc);
             saveSettings();
-            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link GC WA (No Kick) di-${groupSettings[remoteJid].antilinknokick ? 'Aktifkan' : 'Matikan'}.` });
+            await sock.sendMessage(remoteJid, { text: `✅ Anti-Link Grup WA di-${groupSettings[remoteJid].antilinkgc ? 'Aktifkan' : 'Matikan'}.` });
+        }
+        else if (command === prefix + 'antilinkch') {
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            groupSettings[remoteJid].antilinkch = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antilinkch);
+            saveSettings();
+            await sock.sendMessage(remoteJid, { text: `✅ Anti-Forward Saluran di-${groupSettings[remoteJid].antilinkch ? 'Aktifkan' : 'Matikan'}.` });
+        }
+        else if (command === prefix + 'antikick') {
+            if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
+            groupSettings[remoteJid].antikick = args[1] === 'on' ? true : (args[1] === 'off' ? false : !groupSettings[remoteJid].antikick);
+            saveSettings();
+            await sock.sendMessage(remoteJid, { text: `✅ Fitur Otomatis Kick Pelanggar di-${groupSettings[remoteJid].antikick ? 'Aktifkan' : 'Matikan'}.\n\n_Jika ON, bot akan kick orangnya. Jika OFF, bot hanya hapus pesannya saja._` });
         }
         else if (command === prefix + 'antibadword') {
             if (!groupSettings[remoteJid]) groupSettings[remoteJid] = {};
