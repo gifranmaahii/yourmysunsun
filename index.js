@@ -1146,11 +1146,12 @@ async function startBot() {
 ┣⌬ ${PREFIX}promote / ${PREFIX}demote
 ┣⌬ ${PREFIX}setnamegc / ${PREFIX}setopen
 ┣⌬ ${PREFIX}linkgc / ${PREFIX}revokelink
-┣⌬ ${PREFIX}antilink / ${PREFIX}antibot
-┣⌬ ${PREFIX}welcome / ${PREFIX}antidelete
-┣⌬ ${PREFIX}tagall / ${PREFIX}hidetag
-┣⌬ ${PREFIX}groupinfo / ${PREFIX}list
-┣⌬ ${PREFIX}afk / ${PREFIX}absen
+┣⌬ ${PREFIX}antilink / ${PREFIX}antilinkgc
+┣⌬ ${PREFIX}antilinkch / ${PREFIX}antikick
+┣⌬ ${PREFIX}antibot / ${PREFIX}welcome 
+┣⌬ ${PREFIX}antidelete / ${PREFIX}tagall
+┣⌬ ${PREFIX}hidetag / ${PREFIX}groupinfo
+┣⌬ ${PREFIX}afk / ${PREFIX}absen / ${PREFIX}list
 ┗━━━━━━━◧
 
 ┏━『 *TOOLS & SEARCH* 』
