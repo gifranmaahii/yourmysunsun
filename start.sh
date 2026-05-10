@@ -4,5 +4,5 @@
 echo "📦 Memastikan PM2 terinstall..."
 npm install pm2 -g
 
-echo "🚀 Menjalankan Bot Utama dengan PM2..."
-pm2-runtime start index.js --name "bot-utama"
+echo "🚀 Menjalankan Bot Utama & Telegram Panel dengan PM2..."
+pm2-runtime start ecosystem.config.js
