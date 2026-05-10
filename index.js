@@ -48,85 +48,6 @@ if (!global.botEvents) {
     const { EventEmitter } = require('events');
     global.botEvents = new EventEmitter();
 }
-global.botEvents.on('console_command', (data) => {
-    const input = data.toString().trim();
-    if (input === 'git_pull') {
-        console.log('🔄 [REMOTE] Menjalankan Git Pull dari Telegram...');
-        exec('git pull', (err, stdout, stderr) => {
-            if (err) return console.error(`❌ Git Pull Error: ${err.message}`);
-            console.log(`✅ Git Pull Berhasil: ${stdout}`);
-            process.exit(1); 
-        });
-    }
-    if (input === 'logout_bot') {
-        console.log('🗑️ [REMOTE] Menghapus sesi bot dari Telegram...');
-        const sessionPath = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
-        if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log('✅ Sesi berhasil dihapus.');
-            process.exit(1);
-        } else {
-            console.log('❌ Folder sesi tidak ditemukan.');
-        }
-    }
-    if (input === 'restart_all_bots') {
-        console.log('🔄 [REMOTE] Merestart SEMUA bot anak dari Telegram...');
-        exec('npx pm2 restart "/^bot_/"', (err) => {
-            if (err) return console.error(`❌ Restart All Error: ${err.message}`);
-            console.log('✅ Semua bot anak berhasil direstart.');
-        });
-    }
-    if (input.startsWith('restart_bot_ku ')) {
-        const target = input.replace('restart_bot_ku ', '');
-        const botName = target.startsWith('bot_') ? target : `bot_${target.replace(/[^0-9]/g, '')}`;
-        console.log(`🔄 [REMOTE] Merestart bot anak: ${botName}...`);
-        exec(`npx pm2 restart ${botName}`, (err) => {
-            if (err) return console.error(`❌ Restart Bot Error: ${err.message}`);
-            console.log(`✅ Bot ${botName} berhasil direstart.`);
-        });
-    }
-    if (input.startsWith('add_bot ')) {
-        const args = input.replace('add_bot ', '').split(' ');
-        if (args.length >= 4) {
-            const [phone, nameRaw, days, owner] = args;
-            const name = nameRaw.replace(/_/g, ' ');
-            console.log(`🚀 [REMOTE] Menambah bot anak: ${name} (${phone}) untuk ${days} hari...`);
-            const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
-            botManager.addChildBot(currentSock, targetJid, phone, name, days, owner, 'pairing', true);
-        }
-    }
-    if (input.startsWith('add_bot_qr ')) {
-        const args = input.replace('add_bot_qr ', '').split(' ');
-        if (args.length >= 4) {
-            const [phone, nameRaw, days, owner] = args;
-            const name = nameRaw.replace(/_/g, ' ');
-            console.log(`🚀 [REMOTE] Menambah bot anak via QR: ${name} (${phone}) untuk ${days} hari...`);
-            const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
-            botManager.addChildBot(currentSock, targetJid, phone, name, days, owner, 'qr', true);
-        }
-    }
-    if (input === 'list_bots') {
-        console.log('📋 [REMOTE] Mengambil daftar bot anak...');
-        botManager.listChildBots({ sendMessage: (jid, msg) => {
-            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
-        }}, PRIMARY_OWNER);
-    }
-    if (input.startsWith('delete_bot ') || input.startsWith('delete_bots ')) {
-        const target = input.replace(/delete_bots? /, '').trim();
-        console.log(`🗑️ [REMOTE] Menghapus bot anak: ${target}`);
-        botManager.deleteChildBot({ sendMessage: (jid, msg) => {
-            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
-        }}, PRIMARY_OWNER, target);
-    }
-    if (input.startsWith('pair_bot ')) {
-        const num = input.replace('pair_bot ', '').trim();
-        console.log(`🔑 [REMOTE] Menyiapkan pairing code untuk: ${num}`);
-        fs.writeFileSync(path.join(__dirname, 'pairing.json'), JSON.stringify({ number: num }));
-        const sessionPath = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
-        if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
-        process.exit(1);
-    }
-});
 const { randomDelay, simulateTyping, rateLimiter, shouldProcess } = require('./src/utils/antiBan');
 const cfg = require('./src/utils/config');
 const { 
@@ -221,6 +142,86 @@ const MAX_RECONNECT_ATTEMPTS = 50; // Batas percobaan sebelum restart total
 let currentSock = null; // Referensi socket aktif saat ini
 let keepaliveInterval = null; // Interval keepalive
 let isRestarting = false; // Flag untuk mencegah multiple restart
+
+global.botEvents.on('console_command', (data) => {
+    const input = data.toString().trim();
+    if (input === 'git_pull') {
+        console.log('🔄 [REMOTE] Menjalankan Update Paksa dari Telegram...');
+        exec('git fetch --all && git reset --hard origin/master', (err, stdout, stderr) => {
+            if (err) return console.error(`❌ Update Error: ${err.message}`);
+            console.log(`✅ Update Berhasil: ${stdout}`);
+            process.exit(1); 
+        });
+    }
+    if (input === 'logout_bot') {
+        console.log('🗑️ [REMOTE] Menghapus sesi bot dari Telegram...');
+        const sessionPath = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
+        if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            console.log('✅ Sesi berhasil dihapus.');
+            process.exit(1);
+        } else {
+            console.log('❌ Folder sesi tidak ditemukan.');
+        }
+    }
+    if (input === 'restart_all_bots') {
+        console.log('🔄 [REMOTE] Merestart SEMUA bot anak dari Telegram...');
+        exec('npx pm2 restart "/^bot_/"', (err) => {
+            if (err) return console.error(`❌ Restart All Error: ${err.message}`);
+            console.log('✅ Semua bot anak berhasil direstart.');
+        });
+    }
+    if (input.startsWith('restart_bot_ku ')) {
+        const target = input.replace('restart_bot_ku ', '');
+        const botName = target.startsWith('bot_') ? target : `bot_${target.replace(/[^0-9]/g, '')}`;
+        console.log(`🔄 [REMOTE] Merestart bot anak: ${botName}...`);
+        exec(`npx pm2 restart ${botName}`, (err) => {
+            if (err) return console.error(`❌ Restart Bot Error: ${err.message}`);
+            console.log(`✅ Bot ${botName} berhasil direstart.`);
+        });
+    }
+    if (input.startsWith('add_bot ')) {
+        const args = input.replace('add_bot ', '').split(' ');
+        if (args.length >= 4) {
+            const [phone, nameRaw, days, owner] = args;
+            const name = nameRaw.replace(/_/g, ' ');
+            console.log(`🚀 [REMOTE] Menambah bot anak: ${name} (${phone}) untuk ${days} hari...`);
+            const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
+            botManager.addChildBot(currentSock, targetJid, phone, name, days, owner, 'pairing', true);
+        }
+    }
+    if (input.startsWith('add_bot_qr ')) {
+        const args = input.replace('add_bot_qr ', '').split(' ');
+        if (args.length >= 4) {
+            const [phone, nameRaw, days, owner] = args;
+            const name = nameRaw.replace(/_/g, ' ');
+            console.log(`🚀 [REMOTE] Menambah bot anak via QR: ${name} (${phone}) untuk ${days} hari...`);
+            const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
+            botManager.addChildBot(currentSock, targetJid, phone, name, days, owner, 'qr', true);
+        }
+    }
+    if (input === 'list_bots') {
+        console.log('📋 [REMOTE] Mengambil daftar bot anak...');
+        botManager.listChildBots({ sendMessage: (jid, msg) => {
+            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
+        }}, PRIMARY_OWNER);
+    }
+    if (input.startsWith('delete_bot ') || input.startsWith('delete_bots ')) {
+        const target = input.replace(/delete_bots? /, '').trim();
+        console.log(`🗑️ [REMOTE] Menghapus bot anak: ${target}`);
+        botManager.deleteChildBot({ sendMessage: (jid, msg) => {
+            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
+        }}, PRIMARY_OWNER, target);
+    }
+    if (input.startsWith('pair_bot ')) {
+        const num = input.replace('pair_bot ', '').trim();
+        console.log(`🔑 [REMOTE] Menyiapkan pairing code untuk: ${num}`);
+        fs.writeFileSync(path.join(__dirname, 'pairing.json'), JSON.stringify({ number: num }));
+        const sessionPath = path.join(__dirname, SESSION_NAME === 'session' ? 'session' : `sessions/${SESSION_NAME}`);
+        if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+        process.exit(1);
+    }
+});
 
 /**
  * Hitung delay reconnect dengan exponential backoff
@@ -2418,12 +2419,10 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     await sock.sendMessage(remoteJid, { text: `⏳ *Mengunduh pembaruan dari Github...*` }, { quoted: msg });
                     try {
                         const { exec } = require('child_process');
-                        exec('git pull', { windowsHide: true }, async (error, stdout, stderr) => {
+                        exec('git fetch --all && git reset --hard origin/master', { windowsHide: true }, async (error, stdout, stderr) => {
                             let resultText = `✅ *Update Selesai!*\n\n*Output:*\n${stdout}`;
                             if (error) {
                                 resultText = `❌ *Gagal Update!*\n\n*Error:*\n${error.message}\n${stderr}`;
-                            } else if (stdout.includes('Already up to date')) {
-                                resultText = `✅ *Bot sudah berada di versi terbaru!* (Tidak ada file baru di Github)`;
                             } else {
                                 resultText += `\n\n🔄 *Pembaruan berhasil! Bot sedang melakukan restart otomatis...*`;
                             }
