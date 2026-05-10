@@ -375,17 +375,16 @@ bot.onText(/\/listbots/, async (msg) => {
         if (!bots || bots.length === 0) {
             return bot.sendMessage(lastChatId, '📭 Belum ada bot anak yang terdaftar.');
         }
-        const esc = (s) => String(s).replace(/[_*`\[\]()~>#+=|{}.!-]/g, '\\$&');
-        let text = `📋 *DAFTAR BOT ANAK \(RESELLER\)*\n\n`;
+        let text = `📋 DAFTAR BOT ANAK (RESELLER)\n${'─'.repeat(28)}\n\n`;
         bots.forEach((b, i) => {
             const remaining = Math.ceil((new Date(b.expiryAt) - new Date()) / (1000 * 60 * 60 * 24));
             const status = remaining > 0 ? '🟢 Aktif' : '🔴 Expired';
-            text += `${i + 1}\. *${esc(b.name)}* \(${esc(b.phone)}\)\n`;
-            text += `   Status: ${status}\n`;
-            text += `   Sisa: ${remaining} Hari\n`;
-            text += `   Sesi: ${esc(b.sessionName)}\n\n`;
+            text += `${i + 1}. ${b.name} (${b.phone})\n`;
+            text += `   Status : ${status}\n`;
+            text += `   Sisa   : ${remaining} Hari\n`;
+            text += `   Sesi   : ${b.sessionName}\n\n`;
         });
-        bot.sendMessage(lastChatId, text.trim(), { parse_mode: 'MarkdownV2' });
+        bot.sendMessage(lastChatId, text.trim());
     } catch (e) {
         bot.sendMessage(lastChatId, `❌ Error membaca data bot: ${e.message}`);
     }
