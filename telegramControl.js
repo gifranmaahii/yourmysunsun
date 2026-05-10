@@ -33,6 +33,11 @@ global.botEvents.on('telegram_auth', (data) => {
     }
 });
 
+global.botEvents.on('telegram_message', (text) => {
+    if (!lastChatId) return;
+    bot.sendMessage(lastChatId, text, { parse_mode: 'Markdown' }).catch(console.error);
+});
+
 console.log('🚀 Telegram Panel Control is starting...');
 
 // Instance Axios untuk Pterodactyl

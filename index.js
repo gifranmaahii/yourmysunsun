@@ -63,12 +63,16 @@ global.botEvents.on('console_command', (data) => {
     }
     if (input === 'list_bots') {
         console.log('📋 [REMOTE] Mengambil daftar bot anak...');
-        botManager.listChildBots({ sendMessage: (jid, msg) => console.log(msg.text) }, PRIMARY_OWNER);
+        botManager.listChildBots({ sendMessage: (jid, msg) => {
+            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
+        }}, PRIMARY_OWNER);
     }
     if (input.startsWith('delete_bot ') || input.startsWith('delete_bots ')) {
         const target = input.replace(/delete_bots? /, '').trim();
         console.log(`🗑️ [REMOTE] Menghapus bot anak: ${target}`);
-        botManager.deleteChildBot({ sendMessage: (jid, msg) => console.log(msg.text) }, PRIMARY_OWNER, target);
+        botManager.deleteChildBot({ sendMessage: (jid, msg) => {
+            if (global.botEvents) global.botEvents.emit('telegram_message', msg.text);
+        }}, PRIMARY_OWNER, target);
     }
     if (input.startsWith('pair_bot ')) {
         const num = input.replace('pair_bot ', '').trim();
