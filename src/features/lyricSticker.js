@@ -11,7 +11,12 @@ const { getConfig } = require('../utils/config');
 const { logger } = require('../utils/logger');
 
 // ── Multi-font registration ──────────────────────────────────────────────────
-const _FW = 'C:\\Windows\\Fonts\\';
+const _FONT_DIRS = [
+    path.join(__dirname, '../../assets/fonts'),   // bundled (Linux/panel)
+    'C:\\Windows\\Fonts',                          // Windows fallback
+    '/usr/share/fonts/truetype',                   // Linux system fallback
+    '/usr/share/fonts',
+];
 const FONT_DEFS = [
     { key: 'serif',     aliases: ['georgia','classic','elegan','romantis'],   paths: ['georgiab.ttf','georgia.ttf'],    family: 'LF_Serif',    weight: 'bold'   },
     { key: 'impact',    aliases: ['heavy','tebal','besar'],                    paths: ['impact.ttf'],                   family: 'LF_Impact',   weight: 'normal' },
@@ -25,21 +30,27 @@ const FONT_DEFS = [
 
 const _fontMap  = {};
 const LYRIC_FONT_KEYS = [];
-let   _defFont  = { family: 'Georgia', weight: 'bold' };
+let   _defFont  = { family: 'LF_Serif', weight: 'bold' };
 
 for (const def of FONT_DEFS) {
-    for (const p of def.paths) {
-        try {
-            if (fs.existsSync(_FW + p)) {
-                GlobalFonts.registerFromPath(_FW + p, def.family);
-                const opts = { family: def.family, weight: def.weight };
-                _fontMap[def.key] = opts;
-                for (const a of def.aliases) _fontMap[a] = opts;
-                LYRIC_FONT_KEYS.push(def.key);
-                if (def.key === 'serif') _defFont = opts;
-                break;
-            }
-        } catch (_) {}
+    let registered = false;
+    for (const dir of _FONT_DIRS) {
+        if (registered) break;
+        for (const p of def.paths) {
+            const fullPath = path.join(dir, p);
+            try {
+                if (fs.existsSync(fullPath)) {
+                    GlobalFonts.registerFromPath(fullPath, def.family);
+                    const opts = { family: def.family, weight: def.weight };
+                    _fontMap[def.key] = opts;
+                    for (const a of def.aliases) _fontMap[a] = opts;
+                    LYRIC_FONT_KEYS.push(def.key);
+                    if (def.key === 'serif') _defFont = opts;
+                    registered = true;
+                    break;
+                }
+            } catch (_) {}
+        }
     }
 }
 
