@@ -484,7 +484,7 @@ async function startBot() {
     let usePairingCode = false;
     let phoneNumber = '';
 
-    if (!hasSession && !state.creds.registered) {
+    if (!hasSession) {
         // Cek file pairing.json (dari Telegram Remote)
         const pairingFile = path.join(__dirname, 'pairing.json');
         if (fs.existsSync(pairingFile)) {
@@ -502,12 +502,13 @@ async function startBot() {
         if (argv.qr) {
             usePairingCode = false;
             console.log(' 📱 QR Mode aktif via flag --qr.');
-        } else if (!usePairingCode && (argv.pairing || process.env.PAIRING_NUMBER)) {
+        } else if (!usePairingCode && (argv.pairing || (SESSION_NAME === 'session' && process.env.PAIRING_NUMBER))) {
             usePairingCode = true;
             phoneNumber = String(argv.pairing || process.env.PAIRING_NUMBER).replace(/[^0-9]/g, '');
+            logger.info(`🔑 Pairing mode otomatis menggunakan nomor: ${phoneNumber}`);
         } else if (!usePairingCode) {
             // Jika bukan TTY (terminal interaktif), default ke QR untuk keamanan (biar gak hang di PM2)
-            if (!process.stdin.isTTY && SESSION_NAME !== 'session') {
+            if (!process.stdin.isTTY) {
                 console.log(' 📱 Non-interactive terminal detected. Defaulting to QR Mode.');
                 usePairingCode = false;
             } else {
@@ -543,7 +544,7 @@ async function startBot() {
             }
         }
     } else {
-        logger.info('🔑 Sesi ditemukan. Melanjutkan login otomatis...');
+        logger.info('🔑 Sesi valid ditemukan. Melanjutkan login otomatis...');
     }
 
     // Buat socket WA
