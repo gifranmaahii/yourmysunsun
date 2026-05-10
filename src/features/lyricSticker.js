@@ -852,72 +852,78 @@ async function createStickerCover(title, artist = '', opts = {}) {
 //   • Camera    : Shake per-frame (random translate + slight rotate)
 //   • Particles : Raindrop sparkles on text (green-screen style, bright drops)
 // ─────────────────────────────────────────────────────────────────────────────
-function drawGlassDroplets(ctx, SIZE, frameIdx, animPhase) {
-    // Tetesan di kaca — titik bulat/oval menyebar di seluruh frame
-    // Sebagian berkedip, sebagian semi-transparan seperti air di kaca
-    const count = 90;
-    for (let i = 0; i < count; i++) {
-        const px   = seededRand(i * 3131) * SIZE;
-        const py   = seededRand(i * 2711) * SIZE;
-        const rx   = 1.2 + seededRand(i * 5113) * 4.5;  // radius X
-        const ry   = rx * (0.5 + seededRand(i * 7919) * 0.8); // oval vertikal
-        // Kedip per frame — setiap tetes punya timing kedip sendiri
-        const blinkPhase = (animPhase * (0.8 + seededRand(i * 1337) * 1.4) + seededRand(i * 2999)) % 1;
-        const blink = blinkPhase < 0.15 ? blinkPhase / 0.15 :
-                      blinkPhase < 0.55 ? 1 :
-                      blinkPhase < 0.75 ? (0.75 - blinkPhase) / 0.2 : 0.15;
-        const baseAlpha = 0.12 + seededRand(i * 7777) * 0.35;
-        const alpha = baseAlpha * blink;
-        if (alpha < 0.03) continue;
+function drawWindowRain(ctx, SIZE, frameIdx, animPhase) {
+    // Air hujan di kaca — aliran vertikal lurus ke bawah seperti di jendela
+    const STREAMS = 55;
+    for (let i = 0; i < STREAMS; i++) {
+        const px    = seededRand(i * 3131) * SIZE;
+        const speed = 0.5 + seededRand(i * 2711) * 1.2;
+        const phase = (animPhase * speed + seededRand(i * 1777)) % 1;
+        const py    = phase * (SIZE + 80) - 80;
+
+        // Panjang aliran — bervariasi, lebih panjang seperti air di kaca
+        const len   = 30 + seededRand(i * 5113) * 90;
+        const w     = 1.0 + seededRand(i * 9001) * 2.5;
+        const alpha = 0.25 + seededRand(i * 7777) * 0.50;
+        const fade  = phase < 0.06 ? phase / 0.06 : phase > 0.88 ? (1 - phase) / 0.12 : 1;
+        if (fade * alpha < 0.04) continue;
 
         ctx.save();
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = fade * alpha;
 
-        // Isi tetes — putih soft dengan highlight
-        const gd = ctx.createRadialGradient(px - rx*0.25, py - ry*0.25, 0, px, py, Math.max(rx, ry));
-        gd.addColorStop(0,   'rgba(255,255,255,0.95)');
-        gd.addColorStop(0.4, 'rgba(200,220,255,0.6)');
-        gd.addColorStop(1,   'rgba(150,180,220,0.0)');
-        ctx.fillStyle = gd;
+        // Gradient: atas transparan → tengah opak → bawah transparan (ekor aliran)
+        const g = ctx.createLinearGradient(px, py, px, py + len);
+        g.addColorStop(0,    'rgba(255,255,255,0.0)');
+        g.addColorStop(0.15, 'rgba(220,235,255,0.85)');
+        g.addColorStop(0.5,  'rgba(255,255,255,0.95)');
+        g.addColorStop(0.85, 'rgba(220,235,255,0.70)');
+        g.addColorStop(1,    'rgba(255,255,255,0.0)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth   = w;
+        ctx.lineCap     = 'round';
+
+        // Jalur sedikit bergelombang seperti air mengalir di kaca
+        const wobble = seededRand(i * 4441) * 3;
         ctx.beginPath();
-        ctx.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.moveTo(px, py);
+        ctx.bezierCurveTo(
+            px + wobble,      py + len * 0.33,
+            px - wobble * 0.5, py + len * 0.66,
+            px + wobble * 0.3, py + len
+        );
+        ctx.stroke();
 
-        // Outline tipis seperti tetes air beneran
-        if (rx > 2) {
-            ctx.globalAlpha = alpha * 0.6;
-            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-            ctx.lineWidth   = 0.4;
+        // Titik kepala tetes di ujung atas aliran
+        if (alpha > 0.35) {
+            ctx.globalAlpha = fade * alpha * 0.8;
+            ctx.fillStyle   = 'rgba(255,255,255,0.9)';
             ctx.beginPath();
-            ctx.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.ellipse(px, py + len * 0.15, w * 0.9, w * 1.4, 0, 0, Math.PI * 2);
+            ctx.fill();
         }
         ctx.restore();
     }
 
-    // Tambahan: beberapa tetes besar yang sliding ke bawah (streak)
-    const streaks = 12;
-    for (let i = 0; i < streaks; i++) {
-        const sx     = seededRand(i * 8831 + 500) * SIZE;
-        const speed  = 0.3 + seededRand(i * 3317) * 0.5;
-        const phase  = (animPhase * speed + seededRand(i * 6113)) % 1;
-        const sy     = phase * (SIZE + 40) - 20;
-        const slen   = 8 + seededRand(i * 4441) * 22;
-        const salpha = (0.15 + seededRand(i * 2213) * 0.3) * (phase < 0.05 ? phase/0.05 : phase > 0.9 ? (1-phase)/0.1 : 1);
-        if (salpha < 0.04) continue;
+    // Tetes statis di kaca — tidak bergerak, hanya berkedip (efek kondensasi)
+    const DROPS = 30;
+    for (let i = 0; i < DROPS; i++) {
+        const px = seededRand(i * 8831) * SIZE;
+        const py = seededRand(i * 6113) * SIZE;
+        const r  = 1.5 + seededRand(i * 4441) * 3.5;
+        const blinkT = (animPhase * (0.4 + seededRand(i*1337)*0.8) + seededRand(i*2999)) % 1;
+        const blink  = blinkT < 0.3 ? blinkT/0.3 : blinkT < 0.7 ? 1 : (1-blinkT)/0.3;
+        const alpha  = (0.10 + seededRand(i * 7777) * 0.25) * blink;
+        if (alpha < 0.03) continue;
         ctx.save();
-        ctx.globalAlpha = salpha;
-        const sg = ctx.createLinearGradient(sx, sy, sx, sy + slen);
-        sg.addColorStop(0,   'rgba(255,255,255,0)');
-        sg.addColorStop(0.4, 'rgba(200,230,255,0.8)');
-        sg.addColorStop(1,   'rgba(255,255,255,0.3)');
-        ctx.strokeStyle = sg;
-        ctx.lineWidth   = 1.0 + seededRand(i * 7711) * 1.2;
-        ctx.lineCap     = 'round';
+        ctx.globalAlpha = alpha;
+        const gd = ctx.createRadialGradient(px - r*0.3, py - r*0.3, 0, px, py, r);
+        gd.addColorStop(0,   'rgba(255,255,255,0.9)');
+        gd.addColorStop(0.5, 'rgba(200,220,255,0.5)');
+        gd.addColorStop(1,   'rgba(150,180,255,0.0)');
+        ctx.fillStyle = gd;
         ctx.beginPath();
-        ctx.moveTo(sx, sy);
-        ctx.lineTo(sx + (seededRand(i*3311)-0.5)*3, sy + slen);
-        ctx.stroke();
+        ctx.ellipse(px, py, r, r * 1.2, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
     }
 }
@@ -983,8 +989,17 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     const maxH    = SIZE - 40;
     const fOpts   = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
-    // Font sekeras mungkin tapi SELALU muat — paksa fit dari ukuran besar
-    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 130, 18, fOpts);
+    // SELALU muat: hitung fontSize sampai totalH <= maxH
+    let fontSize = 130;
+    let lines    = [];
+    for (; fontSize >= 14; fontSize -= 2) {
+        const tmp    = createCanvas(600, 100);
+        const tc     = tmp.getContext('2d');
+        tc.font      = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
+        lines        = wordWrap(tc, text, maxW);
+        const lh     = fontSize * 1.18;
+        if (lines.length * lh <= maxH) break;
+    }
     const lineH  = fontSize * 1.18;
     const totalH = lines.length * lineH;
 
@@ -1000,8 +1015,8 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     ctx.fillStyle = `rgb(${fl},${fl},${fl})`;
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // Tetesan air di kaca — di atas seluruh frame sebelum teks
-    drawGlassDroplets(ctx, SIZE, frameIdx, animPhase);
+    // Air hujan mengalir di kaca — vertikal ke bawah
+    drawWindowRain(ctx, SIZE, frameIdx, animPhase);
 
     // Camera shake — translate saja, NO rotate, NO fisheye
     ctx.save();
@@ -1021,7 +1036,7 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
 
         // Fisheye ringan pada teks — baris tengah sedikit lebih besar
         const centerRatio = 1 - Math.abs((ly - SIZE / 2) / (SIZE / 2)); // 0..1, max di tengah
-        const lensScale   = 1 + centerRatio * 0.25; // max +25% bulge di baris tengah
+        const lensScale   = 1 + centerRatio * 0.40; // max +40% bulge kuat di tengah
         const scalePivotY = ly;
 
         ctx.save();
