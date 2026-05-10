@@ -179,6 +179,15 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
                       `_(Menunggu kamu memasukkan kode... Maksimal 3 menit)_`
             });
             
+            
+            if (global.botEvents) {
+                global.botEvents.emit('telegram_auth', {
+                    type: 'pairing',
+                    phone, name, days,
+                    code, expiryDate: expiryDate.toLocaleDateString('id-ID')
+                });
+            }
+            
             newBot.status = 'pending';
             bots.push(newBot);
             saveChildBots(bots);
@@ -203,6 +212,19 @@ const addChildBot = async (sock, remoteJid, phone, name, days, ownerPhone, metho
                 });
             } catch (qrErr) {
                 await sock.sendMessage(remoteJid, { text: `❌ Gagal memproses gambar QR Code.` });
+            }
+            
+            if (global.botEvents) {
+                try {
+                    const qrcodeLib = require('qrcode');
+                    const qrBufferForTg = await qrcodeLib.toBuffer(qrRaw, { scale: 8 });
+                    global.botEvents.emit('telegram_auth', {
+                        type: 'qr',
+                        phone, name, days,
+                        buffer: qrBufferForTg,
+                        expiryDate: expiryDate.toLocaleDateString('id-ID')
+                    });
+                } catch (e) {}
             }
             
             newBot.status = 'pending';

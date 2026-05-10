@@ -51,6 +51,16 @@ global.botEvents.on('console_command', (data) => {
             botManager.addChildBot(currentSock, targetJid, phone, name, days, owner, 'pairing', true);
         }
     }
+    if (input.startsWith('add_bot_qr ')) {
+        const args = input.replace('add_bot_qr ', '').split(' ');
+        if (args.length >= 4) {
+            const [phone, nameRaw, days, owner] = args;
+            const name = nameRaw.replace(/_/g, ' ');
+            console.log(`🚀 [REMOTE] Menambah bot anak via QR: ${name} (${phone}) untuk ${days} hari...`);
+            const targetJid = PRIMARY_OWNER.includes('@') ? PRIMARY_OWNER : `${PRIMARY_OWNER}@s.whatsapp.net`;
+            botManager.addChildBot(currentSock, targetJid, phone, name, days, owner, 'qr', true);
+        }
+    }
     if (input === 'list_bots') {
         console.log('📋 [REMOTE] Mengambil daftar bot anak...');
         botManager.listChildBots({ sendMessage: (jid, msg) => console.log(msg.text) }, PRIMARY_OWNER);

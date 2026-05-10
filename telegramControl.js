@@ -22,6 +22,17 @@ if (!global.botEvents) {
     global.botEvents = new EventEmitter();
 }
 
+global.botEvents.on('telegram_auth', (data) => {
+    if (!lastChatId) return;
+    if (data.type === 'qr') {
+        const caption = `✅ *QR Code Berhasil Dibuat!*\n\n👤 Nama: ${data.name}\n📱 Nomor: ${data.phone}\n⏳ Sewa: ${data.days} Hari\n📅 Expired: ${data.expiryDate}\n\n💡 Silakan Scan QR Code ini dari menu Perangkat Tertaut WhatsApp (Maksimal 3 menit).`;
+        bot.sendPhoto(lastChatId, data.buffer, { caption: caption, parse_mode: 'Markdown' }).catch(console.error);
+    } else if (data.type === 'pairing') {
+        const caption = `✅ *Kode Pairing Berhasil Dibuat!*\n\n👤 Nama: ${data.name}\n📱 Nomor: ${data.phone}\n⏳ Sewa: ${data.days} Hari\n📅 Expired: ${data.expiryDate}\n\n🔑 *KODE PAIRING:*\n*${data.code}*\n\n💡 Masukkan kode ini ke WhatsApp tujuan!`;
+        bot.sendMessage(lastChatId, caption, { parse_mode: 'Markdown' });
+    }
+});
+
 console.log('🚀 Telegram Panel Control is starting...');
 
 // Instance Axios untuk Pterodactyl
@@ -262,6 +273,27 @@ bot.onText(/\/addbot (.+)/, async (msg, match) => {
 
     bot.sendMessage(lastChatId, `⏳ Menambahkan bot *${name.replace(/_/g, ' ')}* (${phone}) ke sistem...`, { parse_mode: 'Markdown' });
     global.botEvents.emit('console_command', `add_bot ${phone} ${name} ${days} ${owner}`);
+});
+
+bot.onText(/\/addbotqr (.+)/, async (msg, match) => {
+    if (!isOwner(msg)) return;
+    lastChatId = msg.chat.id;
+    
+    const args = match[1].trim().split(/\s+/);
+    if (args.length < 4) {
+        return bot.sendMessage(lastChatId, '❌ Format salah! Gunakan: /addbotqr [nomor] [nama] [hari] [owner]');
+    }
+    
+    let phone = args[0].replace(/[^0-9]/g, '');
+    let owner = args[args.length - 1].replace(/[^0-9]/g, '');
+    let days = args[args.length - 2].replace(/[^0-9]/g, '');
+    let name = args.slice(1, args.length - 2).join('_');
+    
+    if (phone.startsWith('0')) phone = '62' + phone.slice(1);
+    if (owner.startsWith('0')) owner = '62' + owner.slice(1);
+
+    bot.sendMessage(lastChatId, `⏳ Menyiapkan QR Code untuk bot *${name.replace(/_/g, ' ')}* (${phone})...`, { parse_mode: 'Markdown' });
+    global.botEvents.emit('console_command', `add_bot_qr ${phone} ${name} ${days} ${owner}`);
 });
 
 bot.onText(/\/listbots/, async (msg) => {
