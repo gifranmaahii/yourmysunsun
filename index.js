@@ -490,12 +490,12 @@ async function startBot() {
             }
         }
 
-        if (!usePairingCode && (argv.pairing || process.env.PAIRING_NUMBER)) {
-            usePairingCode = true;
-            phoneNumber = String(argv.pairing || process.env.PAIRING_NUMBER).replace(/[^0-9]/g, '');
-        } else if (!usePairingCode && argv.qr) {
+        if (argv.qr) {
             usePairingCode = false;
             console.log(' 📱 QR Mode aktif via flag --qr.');
+        } else if (!usePairingCode && (argv.pairing || process.env.PAIRING_NUMBER)) {
+            usePairingCode = true;
+            phoneNumber = String(argv.pairing || process.env.PAIRING_NUMBER).replace(/[^0-9]/g, '');
         } else if (!usePairingCode) {
             // Jika bukan TTY (terminal interaktif), default ke QR untuk keamanan (biar gak hang di PM2)
             if (!process.stdin.isTTY && SESSION_NAME !== 'session') {
