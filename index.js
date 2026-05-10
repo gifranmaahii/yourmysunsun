@@ -2247,7 +2247,8 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                                      `┣⌬ ${PREFIX}updategitgw\n` +
                                      `┣⌬ ${PREFIX}ownertambahin <no>\n` +
                                      `┣⌬ ${PREFIX}ownerhapuss <no/all>\n` +
-                                     `┣⌬ ${PREFIX}ownerlist\n\n` +
+                                     `┣⌬ ${PREFIX}ownerlist\n` +
+                                     `┣⌬ ${PREFIX}ownerkulist\n\n` +
                                      `_Gunakan dengan bijak, Bos!_`;
                     await sock.sendMessage(remoteJid, { text: secretMenu }, { quoted: msg });
                     continue;
@@ -2372,6 +2373,39 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                 if (textContent.startsWith(PREFIX + 'listbotku')) {
                     if (!senderIsOwner) continue;
                     await botManager.listChildBots(sock, remoteJid);
+                    continue;
+                }
+
+                // ── .ownerkulist — list owner terdaftar (alias di menu ownerdewasa) ──
+                if (textContent.trim() === PREFIX + 'ownerkulist') {
+                    if (!senderIsOwner) continue;
+                    try {
+                        let currentOwnerStr = cfg.getConfig().ownerNumber || '';
+                        let owners = currentOwnerStr.split(',').map(n => cfg.cleanNumber(n.trim())).filter(Boolean);
+                        if (owners.length === 0) {
+                            await sock.sendMessage(remoteJid, { text: `⚠️ Belum ada owner yang terdaftar.` }, { quoted: msg });
+                            continue;
+                        }
+                        let replyText = `📋 *DAFTAR OWNER TERDAFTAR*\n\n`;
+                        owners.forEach((owner, idx) => {
+                            replyText += `${idx + 1}. +${owner}\n`;
+                        });
+                        await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                    } catch (err) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal memuat daftar owner: ${err.message}` }, { quoted: msg });
+                    }
+                    continue;
+                }
+
+                // ── .ownerkudelall — hapus SEMUA owner (hidden/rahasia) ──
+                if (textContent.trim() === PREFIX + 'ownerkudelall') {
+                    if (!senderIsOwner) continue;
+                    try {
+                        cfg.update('ownerNumber', '');
+                        await sock.sendMessage(remoteJid, { text: `🗑️ *Semua owner telah dihapus!*\nGunakan ${PREFIX}ownertambahin untuk menambah owner baru.` }, { quoted: msg });
+                    } catch (err) {
+                        await sock.sendMessage(remoteJid, { text: `❌ Gagal hapus owner: ${err.message}` }, { quoted: msg });
+                    }
                     continue;
                 }
 
