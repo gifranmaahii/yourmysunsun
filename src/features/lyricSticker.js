@@ -852,44 +852,72 @@ async function createStickerCover(title, artist = '', opts = {}) {
 //   • Camera    : Shake per-frame (random translate + slight rotate)
 //   • Particles : Raindrop sparkles on text (green-screen style, bright drops)
 // ─────────────────────────────────────────────────────────────────────────────
-function drawBgRain(ctx, SIZE, frameIdx, animPhase) {
-    // Greenscreen-style rain — garis diagonal jatuh, panjang bervariasi
-    const count = 80;
+function drawGlassDroplets(ctx, SIZE, frameIdx, animPhase) {
+    // Tetesan di kaca — titik bulat/oval menyebar di seluruh frame
+    // Sebagian berkedip, sebagian semi-transparan seperti air di kaca
+    const count = 90;
     for (let i = 0; i < count; i++) {
-        // Setiap tetes punya posisi X tetap, Y bergerak ke bawah
-        const baseX  = seededRand(i * 3131) * (SIZE + 60) - 30;
-        const speed  = 0.6 + seededRand(i * 2711) * 0.8; // kecepatan beda tiap tetes
-        const phase  = (animPhase * speed + seededRand(i * 1777)) % 1;
-        const py     = phase * (SIZE + 80) - 40; // jatuh dari atas ke bawah
-        const px     = baseX - py * 0.08;        // sedikit miring ke kiri
-
-        const len    = 18 + seededRand(i * 5113) * 38; // panjang 18-56px
-        const alpha  = 0.18 + seededRand(i * 7777) * 0.45;
-        const w      = 0.6 + seededRand(i * 9001) * 1.0;
+        const px   = seededRand(i * 3131) * SIZE;
+        const py   = seededRand(i * 2711) * SIZE;
+        const rx   = 1.2 + seededRand(i * 5113) * 4.5;  // radius X
+        const ry   = rx * (0.5 + seededRand(i * 7919) * 0.8); // oval vertikal
+        // Kedip per frame — setiap tetes punya timing kedip sendiri
+        const blinkPhase = (animPhase * (0.8 + seededRand(i * 1337) * 1.4) + seededRand(i * 2999)) % 1;
+        const blink = blinkPhase < 0.15 ? blinkPhase / 0.15 :
+                      blinkPhase < 0.55 ? 1 :
+                      blinkPhase < 0.75 ? (0.75 - blinkPhase) / 0.2 : 0.15;
+        const baseAlpha = 0.12 + seededRand(i * 7777) * 0.35;
+        const alpha = baseAlpha * blink;
+        if (alpha < 0.03) continue;
 
         ctx.save();
         ctx.globalAlpha = alpha;
-        // Gradient transparan di atas, opak di bawah (seperti ekor tetes)
-        const g = ctx.createLinearGradient(px, py, px - len * 0.08, py + len);
-        g.addColorStop(0, 'rgba(255,255,255,0)');
-        g.addColorStop(0.3, 'rgba(200,230,255,0.7)');
-        g.addColorStop(1, 'rgba(255,255,255,0.95)');
-        ctx.strokeStyle = g;
-        ctx.lineWidth   = w;
+
+        // Isi tetes — putih soft dengan highlight
+        const gd = ctx.createRadialGradient(px - rx*0.25, py - ry*0.25, 0, px, py, Math.max(rx, ry));
+        gd.addColorStop(0,   'rgba(255,255,255,0.95)');
+        gd.addColorStop(0.4, 'rgba(200,220,255,0.6)');
+        gd.addColorStop(1,   'rgba(150,180,220,0.0)');
+        ctx.fillStyle = gd;
+        ctx.beginPath();
+        ctx.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Outline tipis seperti tetes air beneran
+        if (rx > 2) {
+            ctx.globalAlpha = alpha * 0.6;
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth   = 0.4;
+            ctx.beginPath();
+            ctx.ellipse(px, py, rx, ry, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // Tambahan: beberapa tetes besar yang sliding ke bawah (streak)
+    const streaks = 12;
+    for (let i = 0; i < streaks; i++) {
+        const sx     = seededRand(i * 8831 + 500) * SIZE;
+        const speed  = 0.3 + seededRand(i * 3317) * 0.5;
+        const phase  = (animPhase * speed + seededRand(i * 6113)) % 1;
+        const sy     = phase * (SIZE + 40) - 20;
+        const slen   = 8 + seededRand(i * 4441) * 22;
+        const salpha = (0.15 + seededRand(i * 2213) * 0.3) * (phase < 0.05 ? phase/0.05 : phase > 0.9 ? (1-phase)/0.1 : 1);
+        if (salpha < 0.04) continue;
+        ctx.save();
+        ctx.globalAlpha = salpha;
+        const sg = ctx.createLinearGradient(sx, sy, sx, sy + slen);
+        sg.addColorStop(0,   'rgba(255,255,255,0)');
+        sg.addColorStop(0.4, 'rgba(200,230,255,0.8)');
+        sg.addColorStop(1,   'rgba(255,255,255,0.3)');
+        ctx.strokeStyle = sg;
+        ctx.lineWidth   = 1.0 + seededRand(i * 7711) * 1.2;
         ctx.lineCap     = 'round';
         ctx.beginPath();
-        ctx.moveTo(px, py);
-        ctx.lineTo(px - len * 0.08, py + len);
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + (seededRand(i*3311)-0.5)*3, sy + slen);
         ctx.stroke();
-
-        // Percikan kecil di ujung bawah sesekali
-        if (seededRand(i * 411 + frameIdx) > 0.65 && py + len < SIZE - 10) {
-            ctx.globalAlpha = alpha * 0.5;
-            ctx.fillStyle   = 'rgba(200,230,255,0.8)';
-            ctx.beginPath();
-            ctx.arc(px - len * 0.08, py + len, 1.2, 0, Math.PI * 2);
-            ctx.fill();
-        }
         ctx.restore();
     }
 }
@@ -955,8 +983,8 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     const maxH    = SIZE - 40;
     const fOpts   = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
-    // Font sebesar mungkin — seperti referensi teks hampir penuh layar
-    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 130, 32, fOpts);
+    // Font sekeras mungkin tapi SELALU muat — paksa fit dari ukuran besar
+    const { fontSize, wrapped: lines } = fitFontSize(text, maxW, maxH, 130, 18, fOpts);
     const lineH  = fontSize * 1.18;
     const totalH = lines.length * lineH;
 
@@ -972,8 +1000,8 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     ctx.fillStyle = `rgb(${fl},${fl},${fl})`;
     ctx.fillRect(0, 0, SIZE, SIZE);
 
-    // Greenscreen rain — garis jatuh diagonal di seluruh frame
-    drawBgRain(ctx, SIZE, frameIdx, animPhase);
+    // Tetesan air di kaca — di atas seluruh frame sebelum teks
+    drawGlassDroplets(ctx, SIZE, frameIdx, animPhase);
 
     // Camera shake — translate saja, NO rotate, NO fisheye
     ctx.save();
