@@ -852,78 +852,44 @@ async function createStickerCover(title, artist = '', opts = {}) {
 //   • Camera    : Shake per-frame (random translate + slight rotate)
 //   • Particles : Raindrop sparkles on text (green-screen style, bright drops)
 // ─────────────────────────────────────────────────────────────────────────────
-function drawWindowRain(ctx, SIZE, frameIdx, animPhase) {
-    // Air hujan di kaca — aliran vertikal lurus ke bawah seperti di jendela
-    const STREAMS = 55;
+function drawGreenscreenRain(ctx, SIZE, frameIdx, animPhase) {
+    // Rain seperti greenscreen/blackscreen YouTube —
+    // garis vertikal dengan kepala bulat, jatuh cepat, putih cerah
+    const STREAMS = 60;
     for (let i = 0; i < STREAMS; i++) {
         const px    = seededRand(i * 3131) * SIZE;
-        const speed = 0.5 + seededRand(i * 2711) * 1.2;
+        const speed = 1.2 + seededRand(i * 2711) * 2.0; // cepat
         const phase = (animPhase * speed + seededRand(i * 1777)) % 1;
-        const py    = phase * (SIZE + 80) - 80;
+        const py    = phase * (SIZE + 120) - 120;
 
-        // Panjang aliran — bervariasi, lebih panjang seperti air di kaca
-        const len   = 30 + seededRand(i * 5113) * 90;
-        const w     = 1.0 + seededRand(i * 9001) * 2.5;
-        const alpha = 0.25 + seededRand(i * 7777) * 0.50;
-        const fade  = phase < 0.06 ? phase / 0.06 : phase > 0.88 ? (1 - phase) / 0.12 : 1;
-        if (fade * alpha < 0.04) continue;
+        const len   = 20 + seededRand(i * 5113) * 60;
+        const w     = 1.2 + seededRand(i * 9001) * 2.0;
+        const alpha = 0.40 + seededRand(i * 7777) * 0.55;
+        const fade  = phase < 0.05 ? phase / 0.05 : phase > 0.90 ? (1 - phase) / 0.10 : 1;
+        if (fade * alpha < 0.06) continue;
 
         ctx.save();
         ctx.globalAlpha = fade * alpha;
 
-        // Gradient: atas transparan → tengah opak → bawah transparan (ekor aliran)
+        // Kepala bulat cerah di ujung atas
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.beginPath();
+        ctx.arc(px, py, w * 1.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Batang lurus ke bawah — gradient fade di bawah
         const g = ctx.createLinearGradient(px, py, px, py + len);
-        g.addColorStop(0,    'rgba(255,255,255,0.0)');
-        g.addColorStop(0.15, 'rgba(220,235,255,0.85)');
-        g.addColorStop(0.5,  'rgba(255,255,255,0.95)');
-        g.addColorStop(0.85, 'rgba(220,235,255,0.70)');
-        g.addColorStop(1,    'rgba(255,255,255,0.0)');
+        g.addColorStop(0,   'rgba(255,255,255,0.95)');
+        g.addColorStop(0.4, 'rgba(230,240,255,0.80)');
+        g.addColorStop(1,   'rgba(255,255,255,0.0)');
         ctx.strokeStyle = g;
         ctx.lineWidth   = w;
-        ctx.lineCap     = 'round';
-
-        // Jalur sedikit bergelombang seperti air mengalir di kaca
-        const wobble = seededRand(i * 4441) * 3;
+        ctx.lineCap     = 'butt';
         ctx.beginPath();
         ctx.moveTo(px, py);
-        ctx.bezierCurveTo(
-            px + wobble,      py + len * 0.33,
-            px - wobble * 0.5, py + len * 0.66,
-            px + wobble * 0.3, py + len
-        );
+        ctx.lineTo(px, py + len);
         ctx.stroke();
 
-        // Titik kepala tetes di ujung atas aliran
-        if (alpha > 0.35) {
-            ctx.globalAlpha = fade * alpha * 0.8;
-            ctx.fillStyle   = 'rgba(255,255,255,0.9)';
-            ctx.beginPath();
-            ctx.ellipse(px, py + len * 0.15, w * 0.9, w * 1.4, 0, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        ctx.restore();
-    }
-
-    // Tetes statis di kaca — tidak bergerak, hanya berkedip (efek kondensasi)
-    const DROPS = 30;
-    for (let i = 0; i < DROPS; i++) {
-        const px = seededRand(i * 8831) * SIZE;
-        const py = seededRand(i * 6113) * SIZE;
-        const r  = 1.5 + seededRand(i * 4441) * 3.5;
-        const blinkT = (animPhase * (0.4 + seededRand(i*1337)*0.8) + seededRand(i*2999)) % 1;
-        const blink  = blinkT < 0.3 ? blinkT/0.3 : blinkT < 0.7 ? 1 : (1-blinkT)/0.3;
-        const alpha  = (0.10 + seededRand(i * 7777) * 0.25) * blink;
-        if (alpha < 0.03) continue;
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        const gd = ctx.createRadialGradient(px - r*0.3, py - r*0.3, 0, px, py, r);
-        gd.addColorStop(0,   'rgba(255,255,255,0.9)');
-        gd.addColorStop(0.5, 'rgba(200,220,255,0.5)');
-        gd.addColorStop(1,   'rgba(150,180,255,0.0)');
-        ctx.fillStyle = gd;
-        ctx.beginPath();
-        ctx.ellipse(px, py, r, r * 1.2, 0, 0, Math.PI * 2);
-        ctx.fill();
         ctx.restore();
     }
 }
@@ -982,19 +948,21 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
     ctx.restore();
 }
 
-function applyBarrelWarp(srcCtx, dstCtx, SIZE, strength = 0.30) {
-    // Barrel distortion (cembung) — pixel remap dari src ke dst
+function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.28) {
+    // Bulge (cembung ke DEPAN) — tengah membesar, pinggir mengecil
+    // Untuk setiap pixel dst, cari sumber di src dengan reverse mapping
     const src = srcCtx.getImageData(0, 0, SIZE, SIZE);
     const dst = dstCtx.createImageData(SIZE, SIZE);
     const cx = SIZE / 2, cy = SIZE / 2;
     const R  = SIZE / 2;
     for (let y = 0; y < SIZE; y++) {
         for (let x = 0; x < SIZE; x++) {
-            const nx = (x - cx) / R;
+            const nx = (x - cx) / R; // -1..1
             const ny = (y - cy) / R;
             const r  = Math.sqrt(nx * nx + ny * ny);
-            // barrel: r' = r*(1 - strength*r^2) — invert mapping (sample dari src)
-            const rf = r < 1 ? r / (1 + strength * r * r) : r;
+            // Bulge: piksel dst (x,y) diambil dari src yang lebih ke pinggir
+            // rf > r sehingga tengah 'ditarik' dari area lebih luas (membesar)
+            const rf = r < 1 ? r * (1 + strength * (1 - r * r)) : r;
             const sx = Math.round(cx + (r > 0 ? nx / r : 0) * rf * R);
             const sy = Math.round(cy + (r > 0 ? ny / r : 0) * rf * R);
             const di = (y * SIZE + x) * 4;
@@ -1089,8 +1057,8 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     tc.fillStyle = `rgb(${fl},${fl},${fl})`;
     tc.fillRect(0, 0, SIZE, SIZE);
 
-    // Rain di background (window rain)
-    drawWindowRain(tc, SIZE, frameIdx, animPhase);
+    // Rain di background — greenscreen style
+    drawGreenscreenRain(tc, SIZE, frameIdx, animPhase);
 
     // Teks
     const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
@@ -1125,10 +1093,10 @@ function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
         drawTextRaindrops(tc, lx, ly, mw, fontSize, animPhase, frameIdx, i);
     }
 
-    // ── Apply barrel warp (cembung) ke canvas final ───────────────────────────
+    // ── Apply bulge warp (cembung ke depan) ke canvas final ──────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
-    applyBarrelWarp(tc, oc, SIZE, 0.32);
+    applyBulgeWarp(tc, oc, SIZE, 0.22);
 
     // Vignette di atas warp result
     const vig = oc.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.18, SIZE/2, SIZE/2, SIZE*0.80);
