@@ -1019,21 +1019,23 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
     ctx.restore();
 }
 
-function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.5) {
-    // Fisheye barrel distortion — seperti referensi, teks mengisi dengan melengkung
+function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.45) {
+    // Fisheye barrel distortion klasik — backward mapping
+    // Untuk setiap pixel output, cari dari mana pixel src harus diambil
     const src = srcCtx.getImageData(0, 0, SIZE, SIZE);
     const dst = dstCtx.createImageData(SIZE, SIZE);
     const cx = SIZE / 2, cy = SIZE / 2;
     const R  = SIZE / 2;
+    const k  = strength; // barrel coefficient
 
     for (let y = 0; y < SIZE; y++) {
         for (let x = 0; x < SIZE; x++) {
             const nx = (x - cx) / R;
             const ny = (y - cy) / R;
-            const r = Math.sqrt(nx * nx + ny * ny);
+            const r_out = Math.sqrt(nx * nx + ny * ny);
             const di = (y * SIZE + x) * 4;
 
-            if (r === 0) {
+            if (r_out === 0) {
                 const si = (cy * SIZE + cx) * 4;
                 dst.data[di] = src.data[si];
                 dst.data[di+1] = src.data[si+1];
@@ -1042,14 +1044,12 @@ function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.5) {
                 continue;
             }
 
-            // Barrel distortion formula: Rin = Rout * (1 + k * Rout^2)
-            // Inverse: Rout = Rin / (1 + k * Rin^2)
-            const k = strength * 1.2;
-            const rin = r;
-            const rout = rin / (1 + k * rin * rin);
+            // Barrel: r_in = r_out / (1 + k * r_out^2)
+            // Ini membuat pinggir "ditarik" ke dalam, tengah membengkak keluar
+            const r_in = r_out / (1 + k * r_out * r_out);
 
-            const sx = Math.round(cx + (nx / r) * rout * R);
-            const sy = Math.round(cy + (ny / r) * rout * R);
+            const sx = Math.round(cx + (nx / r_out) * r_in * R);
+            const sy = Math.round(cy + (ny / r_out) * r_in * R);
 
             if (sx >= 0 && sx < SIZE && sy >= 0 && sy < SIZE) {
                 const si = (sy * SIZE + sx) * 4;
