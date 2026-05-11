@@ -1164,10 +1164,17 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
         const lx = PAD;
-        tc.fillStyle = 'rgba(0,0,0,0.85)';
+        // Shadow + glow
+        tc.shadowColor = 'rgba(255,255,255,0.4)';
+        tc.shadowBlur = 8;
+        tc.fillStyle = 'rgba(0,0,0,0.9)';
         tc.fillText(lines[i], lx + 3, ly + 3);
+        // Teks putih terang
+        tc.shadowColor = 'rgba(255,255,255,0.6)';
+        tc.shadowBlur = 12;
         tc.fillStyle = '#FFFFFF';
         tc.fillText(lines[i], lx, ly);
+        tc.shadowBlur = 0;
     }
     tc.restore();
 
@@ -1181,9 +1188,9 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
             tc.beginPath();
             tc.rect(minX, minY, textW, textH);
             tc.clip();
-            // Draw rain frame — source-over biasa, di atas teks
+            // Draw rain frame — source-over, lebih bening/transparan
             tc.globalCompositeOperation = 'source-over';
-            tc.globalAlpha = 0.85;
+            tc.globalAlpha = 0.42; // lebih bening
             tc.drawImage(rf, 0, 0, SIZE, SIZE);
             tc.restore();
         }
