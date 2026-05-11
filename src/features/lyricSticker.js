@@ -1109,13 +1109,14 @@ function drawTextRaindrops(ctx, lx, ly, mw, fontSize, animPhase, frameIdx, lineI
 
 async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = false) {
     const SIZE = 512;
-    const PAD  = 24;
+    const PAD  = 28; // padding lebih besar
     const maxW = SIZE - PAD * 2;
-    const maxH = SIZE - 48;
+    // Kurangi maxH supaya fisheye tidak bikin teks keluar batas
+    const maxH = SIZE - 90; // margin aman untuk fisheye bulge
     const fOpts = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
     // Fit font — turun sampai semua baris muat di maxH
-    let fontSize = 128;
+    let fontSize = 96; // max lebih kecil supaya aman setelah fisheye
     let lines    = [];
     for (; fontSize >= 14; fontSize -= 2) {
         const tmp = createCanvas(maxW + 10, 100);
