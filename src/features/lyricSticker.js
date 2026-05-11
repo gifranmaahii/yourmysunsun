@@ -1020,44 +1020,36 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
 }
 
 function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.5) {
-    // Bulge fisheye agresif — tengah membungkak keluar seperti referensi
+    // Fisheye barrel distortion — seperti referensi, teks mengisi dengan melengkung
     const src = srcCtx.getImageData(0, 0, SIZE, SIZE);
     const dst = dstCtx.createImageData(SIZE, SIZE);
     const cx = SIZE / 2, cy = SIZE / 2;
     const R  = SIZE / 2;
-    const maxR = 1.0;
 
     for (let y = 0; y < SIZE; y++) {
         for (let x = 0; x < SIZE; x++) {
-            // Normalized coords from center
             const nx = (x - cx) / R;
             const ny = (y - cy) / R;
-            const r  = Math.sqrt(nx * nx + ny * ny);
+            const r = Math.sqrt(nx * nx + ny * ny);
+            const di = (y * SIZE + x) * 4;
 
-            if (r === 0 || r > maxR) {
-                const di = (y * SIZE + x) * 4;
-                if (r === 0) {
-                    const si = (cy * SIZE + cx) * 4;
-                    dst.data[di] = src.data[si];
-                    dst.data[di+1] = src.data[si+1];
-                    dst.data[di+2] = src.data[si+2];
-                    dst.data[di+3] = src.data[si+3];
-                }
+            if (r === 0) {
+                const si = (cy * SIZE + cx) * 4;
+                dst.data[di] = src.data[si];
+                dst.data[di+1] = src.data[si+1];
+                dst.data[di+2] = src.data[si+2];
+                dst.data[di+3] = src.data[si+3];
                 continue;
             }
 
-            // Bulge formula: pindahkan pixel dari dekat tengah ke posisi pinggir
-            // rf = r^power dengan power < 1 → tengah melebar
-            const power = 1 / (1 + strength * 2.5);
-            const rf = Math.pow(r, power);
+            // Barrel distortion formula: Rin = Rout * (1 + k * Rout^2)
+            // Inverse: Rout = Rin / (1 + k * Rin^2)
+            const k = strength * 1.2;
+            const rin = r;
+            const rout = rin / (1 + k * rin * rin);
 
-            // Scale factor untuk control seberapa jauh bulge-nya
-            const bulge = 1 + (1 - r) * strength * 1.5;
-            const finalR = rf * bulge;
-
-            const sx = Math.round(cx + (nx / r) * finalR * R);
-            const sy = Math.round(cy + (ny / r) * finalR * R);
-            const di = (y * SIZE + x) * 4;
+            const sx = Math.round(cx + (nx / r) * rout * R);
+            const sy = Math.round(cy + (ny / r) * rout * R);
 
             if (sx >= 0 && sx < SIZE && sy >= 0 && sy < SIZE) {
                 const si = (sy * SIZE + sx) * 4;
