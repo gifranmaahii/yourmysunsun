@@ -1188,9 +1188,9 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
             tc.beginPath();
             tc.rect(minX, minY, textW, textH);
             tc.clip();
-            // Draw rain frame — sangat bening
+            // Draw rain frame — sangat tipis/sedikit
             tc.globalCompositeOperation = 'source-over';
-            tc.globalAlpha = 0.25; // sangat bening, hanya sedikit terlihat
+            tc.globalAlpha = 0.15; // sangat tipis, hanya nuansa air
             tc.drawImage(rf, 0, 0, SIZE, SIZE);
             tc.restore();
         }
@@ -1198,10 +1198,22 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
         logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
     }
 
-    // ── Apply bulge warp ke canvas output (rain+teks bareng) ─────────────────
+    // ── Apply bulge warp + camera shake ke output ───────────────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
     applyBulgeWarp(tc, oc, SIZE, 0.10);
+
+    // Camera shake effect
+    const shakeX = (seededRand(frameIdx * 7) - 0.5) * 6;
+    const shakeY = (seededRand(frameIdx * 11) - 0.5) * 6;
+    const rot = (seededRand(frameIdx * 3) - 0.5) * 0.8;
+    oc.save();
+    oc.translate(SIZE/2 + shakeX, SIZE/2 + shakeY);
+    oc.rotate(rot * Math.PI / 180);
+    oc.translate(-SIZE/2, -SIZE/2);
+    oc.globalCompositeOperation = 'copy';
+    oc.drawImage(outCanvas, 0, 0);
+    oc.restore();
 
     // Vignette
     const vig = oc.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.18, SIZE/2, SIZE/2, SIZE*0.80);
