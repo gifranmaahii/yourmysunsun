@@ -1112,7 +1112,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const PAD  = 28; // padding lebih besar
     const maxW = SIZE - PAD * 2;
     // Kurangi maxH supaya fisheye tidak bikin teks keluar batas
-    const maxH = SIZE - 140; // margin lebih besar supaya fisheye tidak potong teks
+    const maxH = SIZE - 180; // margin sangat besar supaya aman dari fisheye
     const fOpts = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
     // Fit font — turun sampai semua baris muat di maxH
@@ -1212,7 +1212,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     // ── Apply bulge warp + camera shake ke output ───────────────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
-    applyBulgeWarp(tc, oc, SIZE, 0.22); // fisheye subtle, tidak potong teks
+    applyBulgeWarp(tc, oc, SIZE, 0.12); // fisheye sangat subtle
 
     // Camera shake effect
     const shakeX = (seededRand(frameIdx * 7) - 0.5) * 6;
