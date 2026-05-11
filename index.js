@@ -4,13 +4,14 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 // Auto-install missing critical packages
-try {
-    require.resolve('@distube/ytdl-core');
-} catch(_) {
-    console.log('[startup] Installing @distube/ytdl-core...');
+const _missingPkgs = [];
+try { require.resolve('@distube/ytdl-core'); } catch(_) { _missingPkgs.push('@distube/ytdl-core'); }
+try { require.resolve('pm2'); } catch(_) { _missingPkgs.push('pm2'); }
+if (_missingPkgs.length > 0) {
+    console.log('[startup] Installing:', _missingPkgs.join(' '));
     try {
-        execSync('npm install @distube/ytdl-core --save --prefer-offline', { stdio: 'inherit', timeout: 120000 });
-        console.log('[startup] @distube/ytdl-core installed OK');
+        execSync(`npm install ${_missingPkgs.join(' ')} --save`, { stdio: 'inherit', timeout: 120000 });
+        console.log('[startup] Install OK');
     } catch(e) {
         console.warn('[startup] Install failed:', e.message);
     }
