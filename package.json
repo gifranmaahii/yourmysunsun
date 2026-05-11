@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@bochilteam/scraper": "^5.0.1",
+    "@distube/ytdl-core": "^4.16.12",
     "@faouzkk/tiktok-dl": "^1.0.1",
     "@lottiefiles/lottie-js": "^0.4.2",
     "@napi-rs/canvas": "^0.1.65",

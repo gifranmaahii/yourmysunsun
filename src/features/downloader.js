@@ -10,19 +10,24 @@ let _ytdlpReady = false;
 
 async function _ensureYtdlp() {
     if (_ytdlpReady) return;
-    // Cek binary lokal
-    if (fs.existsSync(_YTDLP_BIN)) { _ytdlpReady = true; return; }
-    // Download binary yt-dlp (Linux x86_64)
+    if (fs.existsSync(_YTDLP_BIN)) {
+        // Pastikan executable
+        try { fs.chmodSync(_YTDLP_BIN, 0o755); } catch(_) {}
+        _ytdlpReady = true;
+        logger.info('[yt-dlp] Binary found at ' + _YTDLP_BIN);
+        return;
+    }
     try {
-        logger.info('[yt-dlp] Binary not found, downloading...');
+        logger.info('[yt-dlp] Downloading binary...');
         const dir = path.dirname(_YTDLP_BIN);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         const res = await fetch('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const buf = Buffer.from(await res.arrayBuffer());
-        fs.writeFileSync(_YTDLP_BIN, buf, { mode: 0o755 });
+        fs.writeFileSync(_YTDLP_BIN, buf);
+        fs.chmodSync(_YTDLP_BIN, 0o755);
         _ytdlpReady = true;
-        logger.info('[yt-dlp] Downloaded successfully');
+        logger.info('[yt-dlp] Downloaded OK, size=' + buf.length);
     } catch(e) {
         logger.warn('[yt-dlp] Download failed: ' + e.message);
     }
@@ -41,10 +46,14 @@ function _ytdlp(args, timeout = 25000) {
         function tryNext() {
             if (idx >= cmds.length) return reject(new Error('yt-dlp not found'));
             const [cmd, a] = cmds[idx++];
-            if (!fs.existsSync(cmd) && cmd === _YTDLP_BIN) return tryNext();
-            execFile(cmd, a, { timeout }, (err, stdout) => {
-                if (err || !stdout.trim()) return tryNext();
-                resolve(stdout.trim());
+            if (cmd === _YTDLP_BIN && !fs.existsSync(cmd)) return tryNext();
+            execFile(cmd, a, { timeout }, (err, stdout, stderr) => {
+                const out = (stdout || '').trim();
+                if (out) return resolve(out);
+                if (err) {
+                    logger.warn('[yt-dlp] cmd=' + cmd + ' err=' + (err.message||'').substring(0,60));
+                }
+                tryNext();
             });
         }
         tryNext();
@@ -293,7 +302,19 @@ async function ytmp3(query) {
         } catch (e) { logger.warn('[YTMP3] Lolhuman API failed: ' + e.message); }
     }
 
-    // Attempt 5: yt-dlp lokal — download MP3 ke tmp, return file path
+    // Attempt 5: @distube/ytdl-core — pure Node, tidak butuh binary apapun
+    try {
+        const ytdl = require('@distube/ytdl-core');
+        const info = await ytdl.getInfo(url);
+        const fmt = ytdl.chooseFormat(info.formats, { quality: 'lowestaudio', filter: 'audioonly' })
+            || ytdl.chooseFormat(info.formats, { filter: 'audioonly' })
+            || info.formats.find(f => f.hasAudio);
+        if (fmt?.url) {
+            return { title: info.videoDetails.title || 'YouTube Audio', url: fmt.url };
+        }
+    } catch (e) { logger.warn('[YTMP3] ytdl-core failed: ' + e.message); }
+
+    // Attempt 6: yt-dlp lokal — download MP3 ke tmp, return file path
     try {
         const filePath = await ytdlpDownloadMp3(url);
         const title = await ytdlpGetTitle(url);
