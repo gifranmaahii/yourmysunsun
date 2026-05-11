@@ -1058,7 +1058,7 @@ function drawTextRaindrops(ctx, lx, ly, mw, fontSize, animPhase, frameIdx, lineI
     }
 }
 
-async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
+async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = false) {
     const SIZE = 512;
     const PAD  = 24;
     const maxW = SIZE - PAD * 2;
@@ -1121,7 +1121,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     applyBulgeWarp(tc, oc, SIZE, 0.10);
 
     // ── Rain DI ATAS teks hasil warp — source-over biasa ─────────────────────
-    try {
+    try { if (!showRain) throw new Error('rain disabled');
         const rainFrames = await getRainFrames();
         if (rainFrames.length > 0) {
             const rf = rainFrames[frameIdx % rainFrames.length];
@@ -1178,7 +1178,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     return outCanvas.toBuffer('image/png');
 }
 
-async function createLyricSticker3(lines, secPerLine = 2) {
+async function createLyricSticker3(lines, secPerLine = 2, showRain = false) {
     const FPS3         = 15;
     const framesPerLine = Math.max(2, Math.round(FPS3 * secPerLine));
     const tempId       = randomBytes(6).toString('hex');
@@ -1201,7 +1201,7 @@ async function createLyricSticker3(lines, secPerLine = 2) {
         for (let i = 0; i < lines.length; i++) {
             for (let f = 0; f < framesPerLine; f++) {
                 const animPhase = (globalTick / FPS3) % 1;
-                const rawBuf = await drawLyricFrame3(lines[i], animPhase, globalTick);
+                const rawBuf = await drawLyricFrame3(lines[i], animPhase, globalTick, showRain);
                 const fp = path.join(tempDir, `lyric3_frame_${tempId}_${globalTick}.png`);
                 fs.writeFileSync(fp, rawBuf);
                 framePaths.push(fp);

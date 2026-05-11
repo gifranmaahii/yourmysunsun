@@ -4084,17 +4084,21 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                             `\`${PREFIX}stickerlirik3 baris1, baris2, baris3\`\n\n` +
                             `Contoh:\n` +
                             `\`${PREFIX}stickerlirik3 aku cinta kamu, selalu dan selamanya\`\n\n` +
-                            `✨ Otomatis: font Montserrat, fisheye lens, camera shake, raindrop`
+                            `✨ Otomatis: font Montserrat, fisheye lens, camera shake\n` +
+                            `🌧️ Tambah efek hujan: ketik \`--rain\` di akhir\n` +
+                            `Contoh: \`${PREFIX}stickerlirik3 aku cinta kamu --rain\``
                         }, { quoted: msg });
                         continue;
                     }
+                    const showRain3 = lyric3Raw.includes('--rain');
+                    lyric3Raw = lyric3Raw.replace('--rain', '').trim();
                     const lines3 = lyric3Raw.split(',').map(l => l.trim()).filter(Boolean);
                     if (lines3.length === 0) continue;
                     await simulateTyping(sock, remoteJid, 1000);
-                    await sock.sendMessage(remoteJid, { text: '🎛️ Membuat sticker nightclub...' }, { quoted: msg });
+                    await sock.sendMessage(remoteJid, { text: `🎛️ Membuat sticker nightclub${showRain3 ? ' 🌧️' : ''}...` }, { quoted: msg });
                     try {
                         const secPerLine3 = 2;
-                        const buf3 = await createLyricSticker3(lines3, secPerLine3);
+                        const buf3 = await createLyricSticker3(lines3, secPerLine3, showRain3);
                         await sock.sendMessage(remoteJid, { sticker: buf3 }, { quoted: msg });
                         logger.info(`🎵 Lyric3 sticker dikirim ke ${remoteJid} — ${lines3.length} baris`);
                     } catch (err3) {
