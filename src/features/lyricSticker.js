@@ -1019,23 +1019,29 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
     ctx.restore();
 }
 
-function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.45) {
-    // Fisheye barrel distortion klasik — backward mapping
-    // Untuk setiap pixel output, cari dari mana pixel src harus diambil
+function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.5) {
+    // Simplified fisheye: zoom tengah + radial squeeze
     const src = srcCtx.getImageData(0, 0, SIZE, SIZE);
     const dst = dstCtx.createImageData(SIZE, SIZE);
     const cx = SIZE / 2, cy = SIZE / 2;
-    const R  = SIZE / 2;
-    const k  = strength; // barrel coefficient
 
     for (let y = 0; y < SIZE; y++) {
         for (let x = 0; x < SIZE; x++) {
-            const nx = (x - cx) / R;
-            const ny = (y - cy) / R;
-            const r_out = Math.sqrt(nx * nx + ny * ny);
-            const di = (y * SIZE + x) * 4;
+            const dx = x - cx;
+            const dy = y - cy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const maxDist = SIZE * 0.707; // diagonal half
 
-            if (r_out === 0) {
+            // Normalize distance 0-1
+            const t = Math.min(dist / maxDist, 1);
+
+            // Fisheye curve: more compression at edges
+            // t_src = t^1.5 for bulge effect
+            const tSrc = Math.pow(t, 1.4);
+            const newDist = tSrc * maxDist;
+
+            if (dist === 0) {
+                const di = (y * SIZE + x) * 4;
                 const si = (cy * SIZE + cx) * 4;
                 dst.data[di] = src.data[si];
                 dst.data[di+1] = src.data[si+1];
@@ -1044,13 +1050,11 @@ function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.45) {
                 continue;
             }
 
-            // Barrel: r_in = r_out / (1 + k * r_out^2)
-            // Ini membuat pinggir "ditarik" ke dalam, tengah membengkak keluar
-            const r_in = r_out / (1 + k * r_out * r_out);
+            const scale = newDist / dist;
+            const sx = Math.round(cx + dx * scale);
+            const sy = Math.round(cy + dy * scale);
 
-            const sx = Math.round(cx + (nx / r_out) * r_in * R);
-            const sy = Math.round(cy + (ny / r_out) * r_in * R);
-
+            const di = (y * SIZE + x) * 4;
             if (sx >= 0 && sx < SIZE && sy >= 0 && sy < SIZE) {
                 const si = (sy * SIZE + sx) * 4;
                 dst.data[di]   = src.data[si];
