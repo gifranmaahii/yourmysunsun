@@ -1153,49 +1153,26 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const textW = maxX - minX;
     const textH = maxY - minY;
 
-    // ── Rain DI BELAKANG teks — procedural, posisi selalu di area teks ─────
+    // ── Rain DI ATAS/ DEPAN teks — pakai JPG frames, clip ke area teks ──────
     try { if (showRain) {
-        // Generate rain drops yang posisinya selalu di dalam text bounding box
-        const DROPS = 15;
-        for (let i = 0; i < DROPS; i++) {
-            const seed = i * 997 + frameIdx * 13;
-            const px = minX + (seededRand(seed) * textW);
-            const speed = 0.6 + seededRand(seed + 1) * 0.8;
-            const phase = (animPhase * speed + seededRand(seed + 2)) % 1;
-            const py = minY + phase * (textH + 40) - 20;
-
-            const len = 12 + seededRand(seed + 3) * 20;
-            const w = 1.2 + seededRand(seed + 4) * 1.5;
-            const fade = phase < 0.15 ? phase / 0.15 : phase > 0.75 ? (1 - phase) / 0.25 : 1;
-
+        const rainFrames = await getRainFrames();
+        if (rainFrames.length > 0) {
+            const rf = rainFrames[frameIdx % rainFrames.length];
             tc.save();
-            tc.globalAlpha = fade * 0.65;
-
-            // Kepala bulat putih terang
-            tc.fillStyle = 'rgba(255,255,255,0.9)';
             tc.beginPath();
-            tc.arc(px, py, w * 0.9, 0, Math.PI * 2);
-            tc.fill();
-
-            // Batang putih terang
-            const g = tc.createLinearGradient(px, py, px, py + len);
-            g.addColorStop(0, 'rgba(255,255,255,0.70)');
-            g.addColorStop(0.5, 'rgba(220,230,255,0.45)');
-            g.addColorStop(1, 'rgba(255,255,255,0)');
-            tc.strokeStyle = g;
-            tc.lineWidth = w * 0.8;
-            tc.lineCap = 'round';
-            tc.beginPath();
-            tc.moveTo(px, py);
-            tc.lineTo(px + (seededRand(seed + 5) - 0.5) * 2, py + len);
-            tc.stroke();
+            tc.rect(minX, minY, textW, textH);
+            tc.clip();
+            // Draw rain frame dengan screen blend
+            tc.globalCompositeOperation = 'screen';
+            tc.globalAlpha = 0.55;
+            tc.drawImage(rf, 0, 0, SIZE, SIZE);
             tc.restore();
         }
     }} catch (rainErr) {
         logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
     }
 
-    // ── Teks DI DEPAN rain ──────────────────────────────────────────────────
+    // ── Teks (rain sudah di depan via screen blend) ─────────────────────────
     tc.font         = fontStr;
     tc.textAlign    = 'left';
     tc.textBaseline = 'middle';
