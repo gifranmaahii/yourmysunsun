@@ -1181,8 +1181,8 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     return outCanvas.toBuffer('image/png');
 }
 
-async function createLyricSticker3(lines, secPerLine = 2, showRain = false) {
-    const FPS3         = 15;
+async function createLyricSticker3(lines, secPerLine = 1.5, showRain = false) {
+    const FPS3         = 8; // turun dari 15 untuk file lebih kecil
     const framesPerLine = Math.max(2, Math.round(FPS3 * secPerLine));
     const tempId       = randomBytes(6).toString('hex');
     const tempDir      = path.join(__dirname, '../../temp');
@@ -1228,8 +1228,8 @@ async function createLyricSticker3(lines, secPerLine = 2, showRain = false) {
                 .inputOptions(['-f concat', '-safe 0'])
                 .outputOptions([
                     '-vcodec libwebp', '-vf', 'scale=512:512',
-                    '-lossless 0', '-compression_level 4',
-                    '-q:v 75', '-loop 0', '-preset default', '-an', '-vsync 0'
+                    '-lossless 0', '-compression_level 6',
+                    '-q:v 60', '-loop 0', '-preset picture', '-an', '-vsync 0'
                 ])
                 .toFormat('webp')
                 .on('end', async () => {
