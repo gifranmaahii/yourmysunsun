@@ -1153,50 +1153,43 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const textW = maxX - minX;
     const textH = maxY - minY;
 
-    // ── Rain DI BELAKANG teks — hanya di area tulisan ────────────────────────
+    // ── Rain DI BELAKANG teks — hanya di area tulisan (clipped) ────────────
     try { if (showRain) {
         const rainFrames = await getRainFrames();
+        tc.save();
+        tc.beginPath();
+        tc.rect(minX, minY, textW, textH);
+        tc.clip();
         if (rainFrames.length > 0) {
             const rf = rainFrames[frameIdx % rainFrames.length];
-            const rainCanvas = createCanvas(textW, textH);
-            const rctx = rainCanvas.getContext('2d');
-            rctx.drawImage(rf, minX, minY, textW, textH, 0, 0, textW, textH);
             try {
-                const imgData = rctx.getImageData(0, 0, textW, textH);
+                // Chroma-key langsung di canvas besar dengan clip
+                const tempC = createCanvas(SIZE, SIZE);
+                const tctx = tempC.getContext('2d');
+                tctx.drawImage(rf, 0, 0, SIZE, SIZE);
+                const imgData = tctx.getImageData(0, 0, SIZE, SIZE);
                 const d = imgData.data;
                 for (let p = 0; p < d.length; p += 4) {
                     const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
-                    if (brightness < 60) {
-                        d[p+3] = 0;
-                    } else {
+                    if (brightness < 60) d[p+3] = 0;
+                    else {
                         const alpha = Math.min(255, Math.round((brightness - 60) * 2.8));
-                        const boost = Math.min(255, Math.round(d[p] * 1.4));
-                        d[p] = boost; d[p+1] = boost; d[p+2] = boost;
+                        d[p] = d[p+1] = d[p+2] = Math.min(255, Math.round(d[p] * 1.4));
                         d[p+3] = alpha;
                     }
                 }
-                rctx.putImageData(imgData, 0, 0);
-                // Draw rain DI BELAKANG teks (sebelum teks di-draw)
-                tc.save();
-                tc.globalAlpha = 0.35; // bening
-                tc.drawImage(rainCanvas, minX, minY, textW, textH);
-                tc.restore();
+                tctx.putImageData(imgData, 0, 0);
+                tc.globalAlpha = 0.35;
+                tc.drawImage(tempC, 0, 0, SIZE, SIZE);
             } catch (pixErr) {
-                tc.save();
                 tc.globalCompositeOperation = 'screen';
                 tc.globalAlpha = 0.5;
-                tc.drawImage(rf, minX, minY, textW, textH, minX, minY, textW, textH);
-                tc.restore();
+                tc.drawImage(rf, 0, 0, SIZE, SIZE);
             }
         } else {
-            // Fallback ke generated rain
-            tc.save();
-            tc.beginPath();
-            tc.rect(minX, minY, textW, textH);
-            tc.clip();
             drawGreenscreenRainOnText(tc, textW, textH, frameIdx, animPhase, minX, minY);
-            tc.restore();
         }
+        tc.restore();
     }} catch (rainErr) {
         logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
     }
