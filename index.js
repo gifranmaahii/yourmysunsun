@@ -5177,17 +5177,22 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                 if (textContent.startsWith(PREFIX + 'ytmp3') || textContent.startsWith(PREFIX + 'play')) {
                     const query = textContent.replace(/^\.(ytmp3|play)\s*/i, '').trim();
                     if (!query) {
-                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ytmp3 <link/judul>*` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { text: `❌ Format: *${PREFIX}ytmp3 <link/judul>* atau *${PREFIX}play <judul>*` }, { quoted: msg });
                         continue;
                     }
-                    await sock.sendMessage(remoteJid, { text: '⏳ Sedang memproses audio...' }, { quoted: msg });
+                    await sock.sendMessage(remoteJid, { react: { text: '🎵', key: msg.key } });
                     try {
                         const res = await dl.ytmp3(query);
-                        await sock.sendMessage(remoteJid, {
-                            audio: { url: res.url },
-                            mimetype: 'audio/mp4',
-                            ptt: false
-                        }, { quoted: msg });
+                        if (res.filePath) {
+                            // Kalau yt-dlp download lokal
+                            const audioBuf = require('fs').readFileSync(res.filePath);
+                            try { require('fs').unlinkSync(res.filePath); } catch(_) {}
+                            await sock.sendMessage(remoteJid, { audio: audioBuf, mimetype: 'audio/mpeg', fileName: (res.title || 'audio') + '.mp3' }, { quoted: msg });
+                        } else {
+                            // Kalau API return URL langsung
+                            await sock.sendMessage(remoteJid, { audio: { url: res.url }, mimetype: 'audio/mpeg', fileName: res.title || 'audio.mp3' }, { quoted: msg });
+                        }
+                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Gagal: ${e.message}` }, { quoted: msg });
                     }
