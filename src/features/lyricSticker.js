@@ -1164,14 +1164,14 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
         const lx = PAD;
-        // Shadow + glow
-        tc.shadowColor = 'rgba(255,255,255,0.4)';
-        tc.shadowBlur = 8;
-        tc.fillStyle = 'rgba(0,0,0,0.9)';
+        // Strong glow effect — outline putih
+        tc.shadowColor = 'rgba(255,255,255,0.9)';
+        tc.shadowBlur = 16;
+        tc.fillStyle = 'rgba(0,0,0,0.95)';
         tc.fillText(lines[i], lx + 3, ly + 3);
-        // Teks putih terang
-        tc.shadowColor = 'rgba(255,255,255,0.6)';
-        tc.shadowBlur = 12;
+        // Teks putih dengan glow menyala
+        tc.shadowColor = 'rgba(255,255,255,0.85)';
+        tc.shadowBlur = 20;
         tc.fillStyle = '#FFFFFF';
         tc.fillText(lines[i], lx, ly);
         tc.shadowBlur = 0;
@@ -1188,9 +1188,9 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
             tc.beginPath();
             tc.rect(minX, minY, textW, textH);
             tc.clip();
-            // Draw rain frame — source-over, lebih bening/transparan
+            // Draw rain frame — sangat bening
             tc.globalCompositeOperation = 'source-over';
-            tc.globalAlpha = 0.42; // lebih bening
+            tc.globalAlpha = 0.25; // sangat bening, hanya sedikit terlihat
             tc.drawImage(rf, 0, 0, SIZE, SIZE);
             tc.restore();
         }
