@@ -1153,43 +1153,46 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const textW = maxX - minX;
     const textH = maxY - minY;
 
-    // ── Rain DI BELAKANG teks — hanya di area tulisan (clipped) ────────────
+    // ── Rain DI BELAKANG teks — procedural, posisi selalu di area teks ─────
     try { if (showRain) {
-        const rainFrames = await getRainFrames();
-        tc.save();
-        tc.beginPath();
-        tc.rect(minX, minY, textW, textH);
-        tc.clip();
-        if (rainFrames.length > 0) {
-            const rf = rainFrames[frameIdx % rainFrames.length];
-            try {
-                // Chroma-key langsung di canvas besar dengan clip
-                const tempC = createCanvas(SIZE, SIZE);
-                const tctx = tempC.getContext('2d');
-                tctx.drawImage(rf, 0, 0, SIZE, SIZE);
-                const imgData = tctx.getImageData(0, 0, SIZE, SIZE);
-                const d = imgData.data;
-                for (let p = 0; p < d.length; p += 4) {
-                    const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
-                    if (brightness < 60) d[p+3] = 0;
-                    else {
-                        const alpha = Math.min(255, Math.round((brightness - 60) * 2.8));
-                        d[p] = d[p+1] = d[p+2] = Math.min(255, Math.round(d[p] * 1.4));
-                        d[p+3] = alpha;
-                    }
-                }
-                tctx.putImageData(imgData, 0, 0);
-                tc.globalAlpha = 0.35;
-                tc.drawImage(tempC, 0, 0, SIZE, SIZE);
-            } catch (pixErr) {
-                tc.globalCompositeOperation = 'screen';
-                tc.globalAlpha = 0.5;
-                tc.drawImage(rf, 0, 0, SIZE, SIZE);
-            }
-        } else {
-            drawGreenscreenRainOnText(tc, textW, textH, frameIdx, animPhase, minX, minY);
+        // Generate rain drops yang posisinya selalu di dalam text bounding box
+        const DROPS = 12;
+        for (let i = 0; i < DROPS; i++) {
+            // Seed berdasarkan frameIdx agar animasi consistent
+            const seed = i * 997 + frameIdx * 13;
+            const px = minX + (seededRand(seed) * textW);
+            const speed = 0.8 + seededRand(seed + 1) * 1.2;
+            const phase = (animPhase * speed + seededRand(seed + 2)) % 1;
+            const py = minY + phase * (textH + 30) - 15;
+
+            const len = 8 + seededRand(seed + 3) * 18;
+            const w = 0.6 + seededRand(seed + 4) * 0.9;
+            const fade = phase < 0.1 ? phase / 0.1 : phase > 0.8 ? (1 - phase) / 0.2 : 1;
+            if (fade < 0.05) continue;
+
+            tc.save();
+            tc.globalAlpha = fade * 0.45;
+
+            // Kepala bulat
+            tc.fillStyle = 'rgba(200,220,255,0.6)';
+            tc.beginPath();
+            tc.arc(px, py, w * 0.7, 0, Math.PI * 2);
+            tc.fill();
+
+            // Batang
+            const g = tc.createLinearGradient(px, py, px, py + len);
+            g.addColorStop(0, 'rgba(200,220,255,0.4)');
+            g.addColorStop(0.5, 'rgba(180,200,230,0.25)');
+            g.addColorStop(1, 'rgba(200,220,255,0)');
+            tc.strokeStyle = g;
+            tc.lineWidth = w * 0.5;
+            tc.lineCap = 'round';
+            tc.beginPath();
+            tc.moveTo(px, py);
+            tc.lineTo(px + (seededRand(seed + 5) - 0.5), py + len);
+            tc.stroke();
+            tc.restore();
         }
-        tc.restore();
     }} catch (rainErr) {
         logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
     }
