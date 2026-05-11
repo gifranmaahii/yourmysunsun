@@ -886,9 +886,8 @@ async function createStickerCover(title, artist = '', opts = {}) {
 //   • Particles : Raindrop sparkles on text (green-screen style, bright drops)
 // ─────────────────────────────────────────────────────────────────────────────
 function drawGreenscreenRain(ctx, SIZE, frameIdx, animPhase) {
-    // Rain seperti greenscreen/blackscreen YouTube —
-    // garis vertikal dengan kepala bulat, jatuh cepat, putih cerah
-    const STREAMS = 60;
+    // Rain tipis & bening — sedikit tetesan saja
+    const STREAMS = 25;
     for (let i = 0; i < STREAMS; i++) {
         const px    = seededRand(i * 3131) * SIZE;
         const speed = 1.2 + seededRand(i * 2711) * 2.0; // cepat
@@ -897,23 +896,23 @@ function drawGreenscreenRain(ctx, SIZE, frameIdx, animPhase) {
 
         const len   = 20 + seededRand(i * 5113) * 60;
         const w     = 1.2 + seededRand(i * 9001) * 2.0;
-        const alpha = 0.40 + seededRand(i * 7777) * 0.55;
+        const alpha = 0.15 + seededRand(i * 7777) * 0.25; // lebih bening/transparan
         const fade  = phase < 0.05 ? phase / 0.05 : phase > 0.90 ? (1 - phase) / 0.10 : 1;
         if (fade * alpha < 0.06) continue;
 
         ctx.save();
         ctx.globalAlpha = fade * alpha;
 
-        // Kepala bulat cerah di ujung atas
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        // Kepala bulat bening di ujung atas
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
         ctx.beginPath();
         ctx.arc(px, py, w * 1.1, 0, Math.PI * 2);
         ctx.fill();
 
-        // Batang lurus ke bawah — gradient fade di bawah
+        // Batang lurus ke bawah — gradient fade tipis
         const g = ctx.createLinearGradient(px, py, px, py + len);
-        g.addColorStop(0,   'rgba(255,255,255,0.95)');
-        g.addColorStop(0.4, 'rgba(230,240,255,0.80)');
+        g.addColorStop(0,   'rgba(255,255,255,0.50)');
+        g.addColorStop(0.4, 'rgba(230,240,255,0.30)');
         g.addColorStop(1,   'rgba(255,255,255,0.0)');
         ctx.strokeStyle = g;
         ctx.lineWidth   = w;
@@ -1147,7 +1146,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
                 rctx.putImageData(imgData, 0, 0);
                 oc.save();
                 oc.globalCompositeOperation = 'source-over';
-                oc.globalAlpha = 1.0;
+                oc.globalAlpha = 0.45; // lebih bening/transparan
                 oc.drawImage(rainCanvas, 0, 0, SIZE, SIZE);
                 oc.restore();
             } catch (pixErr) {
