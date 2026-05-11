@@ -1035,9 +1035,8 @@ function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.5) {
             // Normalize distance 0-1
             const t = Math.min(dist / maxDist, 1);
 
-            // Fisheye curve: lonjong merata — tengah dan pinggir
-            // t^0.9 untuk bulge lebih luas, tidak terlalu fokus di tengah
-            const tSrc = Math.pow(t, 0.92);
+            // Fisheye curve: mirip referensi — bulge tengah & pinggir
+            const tSrc = Math.pow(t, 1.15); // sweet spot
             const newDist = tSrc * maxDist;
 
             if (dist === 0) {
