@@ -1201,7 +1201,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     // ── Apply bulge warp + camera shake ke output ───────────────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
-    applyBulgeWarp(tc, oc, SIZE, 0.10);
+    applyBulgeWarp(tc, oc, SIZE, 0.35); // fisheye lebih kuat
 
     // Camera shake effect
     const shakeX = (seededRand(frameIdx * 7) - 0.5) * 6;
