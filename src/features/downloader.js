@@ -260,28 +260,49 @@ async function ytmp3(query) {
         }
     } catch (e) { logger.warn('[YTMP3] Ryzumi API failed: ' + e.message); }
 
-    // Attempt 1: Magma API (Free & Stable)
+    // Attempt 1: Cobalt Tools API (Free & Very Stable)
+    try {
+        const res = await fetchWithTimeout(`https://api.cobalt.tools/api/json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ url: url, audioFormat: 'mp3', downloadMode: 'audio' }),
+            timeout: 15000
+        });
+        const json = await res.json();
+        if (json.status === 'stream' || json.status === 'success' || json.url) {
+            return { title: json.title || 'YouTube Audio', url: json.url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Cobalt API failed: ' + e.message); }
+
+    // Attempt 2: Y2mate.is API (Free)
+    try {
+        const res = await fetchWithTimeout(`https://y2mate.is/api/convert?url=${encodedUrl}&format=mp3`, { timeout: 10000 });
+        const json = await res.json();
+        if (json.status === 'success' && json.downloadUrl) {
+            return { title: json.title || 'YouTube Audio', url: json.downloadUrl };
+        }
+    } catch (e) { logger.warn('[YTMP3] Y2mate API failed: ' + e.message); }
+
+    // Attempt 3: Magma API
     try {
         const res = await fetchWithTimeout(`https://www.magma-api.biz.id/download/ytmp3?url=${encodedUrl}`, { timeout: 8000 });
         const json = await res.json();
-        console.log('[YTMP3] Magma response:', JSON.stringify(json).substring(0, 200));
         if (json.status && (json.result?.download?.url || json.result?.url)) {
             return { title: json.result.title || 'YouTube Audio', url: json.result.download?.url || json.result.url };
         }
     } catch (e) { logger.warn('[YTMP3] Magma API failed: ' + e.message); }
 
-    // Attempt 2: Deline API (Free & Stable)
+    // Attempt 4: Deline API
     try {
         const res = await fetchWithTimeout(`https://api.deline.web.id/downloader/ytmp3?url=${encodedUrl}`, { timeout: 8000 });
         const json = await res.json();
-        console.log('[YTMP3] Deline response:', JSON.stringify(json).substring(0, 200));
         const dlUrl = json.result?.url || json.result?.media?.mp3;
         if (json.status && dlUrl) {
             return { title: json.result.title || 'YouTube Audio', url: dlUrl };
         }
     } catch (e) { logger.warn('[YTMP3] Deline API failed: ' + e.message); }
 
-    // Attempt 3: Vreden API (Free)
+    // Attempt 5: Vreden API
     try {
         const res = await fetchWithTimeout(`https://api.vreden.my.id/api/ytmp3?url=${encodedUrl}`, { timeout: 8000 });
         const json = await res.json();
@@ -290,7 +311,7 @@ async function ytmp3(query) {
         }
     } catch (e) { logger.warn('[YTMP3] Vreden API failed: ' + e.message); }
 
-    // Attempt 4: Lolhuman (Premium/Key Based)
+    // Attempt 6: Lolhuman (Premium/Key Based)
     const LOL_KEY = process.env.LOLHUMAN_API_KEY;
     if (LOL_KEY) {
         try {
@@ -302,30 +323,7 @@ async function ytmp3(query) {
         } catch (e) { logger.warn('[YTMP3] Lolhuman API failed: ' + e.message); }
     }
 
-    // Attempt 5: Cobalt Tools API (Free & Very Stable)
-    try {
-        const res = await fetchWithTimeout(`https://api.cobalt.tools/api/json`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ url: url, audioFormat: 'mp3', downloadMode: 'audio' }),
-            timeout: 15000
-        });
-        const json = await res.json();
-        if (json.status === 'stream' || json.status === 'success') {
-            return { title: 'YouTube Audio', url: json.url };
-        }
-    } catch (e) { logger.warn('[YTMP3] Cobalt API failed: ' + e.message); }
-
-    // Attempt 5b: Y2mate.is API (Free)
-    try {
-        const res = await fetchWithTimeout(`https://y2mate.is/api/convert?url=${encodedUrl}&format=mp3`, { timeout: 10000 });
-        const json = await res.json();
-        if (json.status === 'success' && json.downloadUrl) {
-            return { title: json.title || 'YouTube Audio', url: json.downloadUrl };
-        }
-    } catch (e) { logger.warn('[YTMP3] Y2mate API failed: ' + e.message); }
-
-    // Attempt 5c: @distube/ytdl-core — pure Node
+    // Attempt 7: @distube/ytdl-core — pure Node
     try {
         const ytdl = require('@distube/ytdl-core');
         const info = await ytdl.getInfo(url);
@@ -337,14 +335,7 @@ async function ytmp3(query) {
         }
     } catch (e) { logger.warn('[YTMP3] ytdl-core failed: ' + e.message); }
 
-    // Attempt 6: yt-dlp lokal — download MP3 ke tmp, return file path
-    try {
-        const filePath = await ytdlpDownloadMp3(url);
-        const title = await ytdlpGetTitle(url);
-        return { title, filePath, url: null };
-    } catch (e) { logger.warn('[YTMP3] yt-dlp failed: ' + e.message); }
-
-    // Attempt 7: Skizo API (Free)
+    // Attempt 8: Skizo API
     try {
         const res = await fetchWithTimeout(`https://skizo.tech/api/ytdl?url=${encodedUrl}&apikey=af7d4c86`, { timeout: 10000 });
         const json = await res.json();
@@ -353,7 +344,7 @@ async function ytmp3(query) {
         }
     } catch (e) { logger.warn('[YTMP3] Skizo API failed: ' + e.message); }
 
-    // Attempt 8: Siputzx Direct
+    // Attempt 9: Siputzx Direct
     try {
         const res = await fetchWithTimeout(`${FREE_API_URL}/d/ytmp3?url=${encodedUrl}`, { timeout: 10000 });
         const json = await res.json();
@@ -362,7 +353,14 @@ async function ytmp3(query) {
         }
     } catch (e) { logger.warn('[YTMP3] Siputzx direct API failed: ' + e.message); }
 
-    // Last fallback: Return error yang informatif
+    // LAST ATTEMPT: yt-dlp lokal — download MP3 ke tmp
+    try {
+        const filePath = await ytdlpDownloadMp3(url);
+        if (!fs.existsSync(filePath)) throw new Error('Downloaded file not found');
+        const title = await ytdlpGetTitle(url);
+        return { title, filePath, url: null };
+    } catch (e) { logger.warn('[YTMP3] yt-dlp failed: ' + e.message); }
+
     throw new Error('Semua API download gagal. Coba lagi nanti atau gunakan link YouTube yang berbeda.');
 }
 
