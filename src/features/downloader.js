@@ -1,5 +1,36 @@
 const { logger } = require('../utils/logger');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
+
+// Coba python -m yt_dlp dulu, fallback ke yt-dlp binary
+function _ytdlp(args, timeout = 20000) {
+    return new Promise((resolve, reject) => {
+        const cmds = [['python', ['-m', 'yt_dlp', ...args]], ['yt-dlp', args]];
+        let idx = 0;
+        function tryNext() {
+            if (idx >= cmds.length) return reject(new Error('yt-dlp not found'));
+            const [cmd, a] = cmds[idx++];
+            execFile(cmd, a, { timeout }, (err, stdout) => {
+                if (err) return tryNext();
+                resolve(stdout.trim());
+            });
+        }
+        tryNext();
+    });
+}
+
+async function ytdlpGetUrl(ytUrl, format = 'bestaudio/best') {
+    const out = await _ytdlp(['--get-url', '--format', format, '--no-playlist', ytUrl]);
+    const line = out.split('\n')[0].trim();
+    if (!line.startsWith('http')) throw new Error('No URL from yt-dlp');
+    return line;
+}
+
+async function ytdlpGetTitle(ytUrl) {
+    try {
+        return await _ytdlp(['--get-title', '--no-playlist', ytUrl]);
+    } catch (_) { return 'YouTube Audio'; }
+}
 
 const API_KEY = process.env.BETABOTZ_API_KEY || 'Btz-7cYq3';
 const BETABOTZ_URL = 'https://api.betabotz.eu.org/api';
@@ -204,31 +235,14 @@ async function ytmp3(query) {
         } catch (e) { logger.warn('[YTMP3] Lolhuman API failed: ' + e.message); }
     }
 
-    // Attempt 5: Cobalt API (open source, sangat reliable)
+    // Attempt 5: yt-dlp lokal (paling reliable, tidak butuh API eksternal)
     try {
-        const res = await fetchWithTimeout('https://cobalt.tools/api/json', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ url, isAudioOnly: true, aFormat: 'mp3' }),
-            timeout: 12000
-        });
-        const json = await res.json();
-        if ((json.status === 'redirect' || json.status === 'stream') && json.url) {
-            return { title: 'YouTube Audio', url: json.url };
+        const streamUrl = await ytdlpGetUrl(url, 'bestaudio[ext=m4a]/bestaudio/best');
+        if (streamUrl) {
+            const title = await ytdlpGetTitle(url);
+            return { title, url: streamUrl };
         }
-        if (json.status === 'picker' && json.picker?.[0]?.url) {
-            return { title: 'YouTube Audio', url: json.picker[0].url };
-        }
-    } catch (e) { logger.warn('[YTMP3] Cobalt API failed: ' + e.message); }
-
-    // Attempt 6: Ndownloader API
-    try {
-        const res = await fetchWithTimeout(`https://ndownloader.xyz/api/yt?url=${encodedUrl}&type=mp3`, { timeout: 10000 });
-        const json = await res.json();
-        if (json.status && json.data?.download_url) {
-            return { title: json.data.title || 'YouTube Audio', url: json.data.download_url };
-        }
-    } catch (e) { logger.warn('[YTMP3] Ndownloader API failed: ' + e.message); }
+    } catch (e) { logger.warn('[YTMP3] yt-dlp failed: ' + e.message); }
 
     return await fallbackDownload(`${FREE_API_URL}/d/ytmp3?url=`, '/download/ytmp3', url);
 }
