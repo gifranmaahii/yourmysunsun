@@ -1239,7 +1239,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     return outCanvas.toBuffer('image/png');
 }
 
-async function createLyricSticker3(lines, secPerLine = 1.5, showRain = false) {
+async function createLyricSticker3(lines, secPerLine = 1.5, showRain = true) {
     const FPS3         = 8; // turun dari 15 untuk file lebih kecil
     const framesPerLine = Math.max(2, Math.round(FPS3 * secPerLine));
     const tempId       = randomBytes(6).toString('hex');
