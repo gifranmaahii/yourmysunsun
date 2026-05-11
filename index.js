@@ -1,6 +1,20 @@
 require('dotenv').config();
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
+
+// Auto-install missing critical packages
+try {
+    require.resolve('@distube/ytdl-core');
+} catch(_) {
+    console.log('[startup] Installing @distube/ytdl-core...');
+    try {
+        execSync('npm install @distube/ytdl-core --save --prefer-offline', { stdio: 'inherit', timeout: 120000 });
+        console.log('[startup] @distube/ytdl-core installed OK');
+    } catch(e) {
+        console.warn('[startup] Install failed:', e.message);
+    }
+}
 
 // Helper untuk kirim notifikasi ke Telegram (mendukung main & child bots)
 const notifyTelegram = (message) => {
