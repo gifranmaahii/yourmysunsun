@@ -1153,26 +1153,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const textW = maxX - minX;
     const textH = maxY - minY;
 
-    // ── Rain DI ATAS/ DEPAN teks — pakai JPG frames, clip ke area teks ──────
-    try { if (showRain) {
-        const rainFrames = await getRainFrames();
-        if (rainFrames.length > 0) {
-            const rf = rainFrames[frameIdx % rainFrames.length];
-            tc.save();
-            tc.beginPath();
-            tc.rect(minX, minY, textW, textH);
-            tc.clip();
-            // Draw rain frame dengan screen blend
-            tc.globalCompositeOperation = 'screen';
-            tc.globalAlpha = 0.55;
-            tc.drawImage(rf, 0, 0, SIZE, SIZE);
-            tc.restore();
-        }
-    }} catch (rainErr) {
-        logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
-    }
-
-    // ── Teks (rain sudah di depan via screen blend) ─────────────────────────
+    // ── Teks ──────────────────────────────────────────────────────────────
     tc.font         = fontStr;
     tc.textAlign    = 'left';
     tc.textBaseline = 'middle';
@@ -1189,6 +1170,26 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
         tc.fillText(lines[i], lx, ly);
     }
     tc.restore();
+
+    // ── Rain DI PALING DEPAN — di atas teks ──────────────────────────────────
+    try { if (showRain) {
+        const rainFrames = await getRainFrames();
+        if (rainFrames.length > 0) {
+            const rf = rainFrames[frameIdx % rainFrames.length];
+            tc.save();
+            // Clip ke area teks saja
+            tc.beginPath();
+            tc.rect(minX, minY, textW, textH);
+            tc.clip();
+            // Draw rain frame — source-over biasa, di atas teks
+            tc.globalCompositeOperation = 'source-over';
+            tc.globalAlpha = 0.85;
+            tc.drawImage(rf, 0, 0, SIZE, SIZE);
+            tc.restore();
+        }
+    }} catch (rainErr) {
+        logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
+    }
 
     // ── Apply bulge warp ke canvas output (rain+teks bareng) ─────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
