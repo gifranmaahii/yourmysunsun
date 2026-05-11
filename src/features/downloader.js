@@ -204,6 +204,32 @@ async function ytmp3(query) {
         } catch (e) { logger.warn('[YTMP3] Lolhuman API failed: ' + e.message); }
     }
 
+    // Attempt 5: Cobalt API (open source, sangat reliable)
+    try {
+        const res = await fetchWithTimeout('https://cobalt.tools/api/json', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ url, isAudioOnly: true, aFormat: 'mp3' }),
+            timeout: 12000
+        });
+        const json = await res.json();
+        if ((json.status === 'redirect' || json.status === 'stream') && json.url) {
+            return { title: 'YouTube Audio', url: json.url };
+        }
+        if (json.status === 'picker' && json.picker?.[0]?.url) {
+            return { title: 'YouTube Audio', url: json.picker[0].url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Cobalt API failed: ' + e.message); }
+
+    // Attempt 6: Ndownloader API
+    try {
+        const res = await fetchWithTimeout(`https://ndownloader.xyz/api/yt?url=${encodedUrl}&type=mp3`, { timeout: 10000 });
+        const json = await res.json();
+        if (json.status && json.data?.download_url) {
+            return { title: json.data.title || 'YouTube Audio', url: json.data.download_url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Ndownloader API failed: ' + e.message); }
+
     return await fallbackDownload(`${FREE_API_URL}/d/ytmp3?url=`, '/download/ytmp3', url);
 }
 
