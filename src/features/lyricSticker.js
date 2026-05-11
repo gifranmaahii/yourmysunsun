@@ -1019,37 +1019,44 @@ function drawGrainNoise(ctx, SIZE, frameIdx, intensity = 0.18) {
     ctx.restore();
 }
 
-function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.45) {
-    // Fisheye / Bulge warp — efek mata ikan yang lebih jelas
-    // Pixel tengah diperbesar, pinggiran diremungkan
+function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.5) {
+    // Bulge fisheye agresif — tengah membungkak keluar seperti referensi
     const src = srcCtx.getImageData(0, 0, SIZE, SIZE);
     const dst = dstCtx.createImageData(SIZE, SIZE);
     const cx = SIZE / 2, cy = SIZE / 2;
     const R  = SIZE / 2;
-    const k  = strength * 1.2; // exaggeration factor
+    const maxR = 1.0;
 
     for (let y = 0; y < SIZE; y++) {
         for (let x = 0; x < SIZE; x++) {
+            // Normalized coords from center
             const nx = (x - cx) / R;
             const ny = (y - cy) / R;
             const r  = Math.sqrt(nx * nx + ny * ny);
 
-            if (r === 0) {
+            if (r === 0 || r > maxR) {
                 const di = (y * SIZE + x) * 4;
-                const si = (cy * SIZE + cx) * 4;
-                dst.data[di] = src.data[si];
-                dst.data[di+1] = src.data[si+1];
-                dst.data[di+2] = src.data[si+2];
-                dst.data[di+3] = src.data[si+3];
+                if (r === 0) {
+                    const si = (cy * SIZE + cx) * 4;
+                    dst.data[di] = src.data[si];
+                    dst.data[di+1] = src.data[si+1];
+                    dst.data[di+2] = src.data[si+2];
+                    dst.data[di+3] = src.data[si+3];
+                }
                 continue;
             }
 
-            // Fisheye formula: rf = (2 / PI) * atan(r * k) / k
-            // Ini memberikan efek bulge yang halus di tengah dan merata ke pinggir
-            const rf = r < 1 ? (Math.atan(r * k) / (Math.PI / 2)) / Math.max(k, 0.1) : r;
+            // Bulge formula: pindahkan pixel dari dekat tengah ke posisi pinggir
+            // rf = r^power dengan power < 1 → tengah melebar
+            const power = 1 / (1 + strength * 2.5);
+            const rf = Math.pow(r, power);
 
-            const sx = Math.round(cx + (nx / r) * rf * R);
-            const sy = Math.round(cy + (ny / r) * rf * R);
+            // Scale factor untuk control seberapa jauh bulge-nya
+            const bulge = 1 + (1 - r) * strength * 1.5;
+            const finalR = rf * bulge;
+
+            const sx = Math.round(cx + (nx / r) * finalR * R);
+            const sy = Math.round(cy + (ny / r) * finalR * R);
             const di = (y * SIZE + x) * 4;
 
             if (sx >= 0 && sx < SIZE && sy >= 0 && sy < SIZE) {
