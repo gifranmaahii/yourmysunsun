@@ -1134,12 +1134,14 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
                 const d = imgData.data;
                 for (let p = 0; p < d.length; p += 4) {
                     const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
-                    if (brightness < 18) {
-                        d[p+3] = 0;
+                    if (brightness < 60) {
+                        d[p+3] = 0; // hapus semua pixel gelap/hitam JPG
                     } else {
-                        const boost = Math.min(255, Math.round(d[p] * 1.5));
+                        // Soft edge: makin terang makin opaque
+                        const alpha = Math.min(255, Math.round((brightness - 60) * 2.8));
+                        const boost = Math.min(255, Math.round(d[p] * 1.4));
                         d[p] = boost; d[p+1] = boost; d[p+2] = boost;
-                        d[p+3] = Math.min(255, Math.round(brightness * 2.2));
+                        d[p+3] = alpha;
                     }
                 }
                 rctx.putImageData(imgData, 0, 0);
