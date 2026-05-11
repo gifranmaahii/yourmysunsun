@@ -1035,9 +1035,8 @@ function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.5) {
             // Normalize distance 0-1
             const t = Math.min(dist / maxDist, 1);
 
-            // Fisheye curve: more compression at edges
-            // t_src = t^1.5 for bulge effect
-            const tSrc = Math.pow(t, 1.4);
+            // Fisheye curve: subtle compression
+            const tSrc = Math.pow(t, 1.25); // lebih subtle
             const newDist = tSrc * maxDist;
 
             if (dist === 0) {
@@ -1164,9 +1163,9 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const textW = maxX - minX;
     const textH = maxY - minY;
 
-    // ── Teks ──────────────────────────────────────────────────────────────
+    // ── Teks CENTER ─────────────────────────────────────────────────────────
     tc.font         = fontStr;
-    tc.textAlign    = 'left';
+    tc.textAlign    = 'center';
     tc.textBaseline = 'middle';
     tc.save();
     tc.beginPath();
@@ -1174,7 +1173,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     tc.clip();
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
-        const lx = PAD;
+        const lx = SIZE / 2; // center X
         // Strong glow effect — outline putih
         tc.shadowColor = 'rgba(255,255,255,0.9)';
         tc.shadowBlur = 16;
