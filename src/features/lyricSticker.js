@@ -1114,15 +1114,20 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const maxH = SIZE - 100; // cukup space untuk teks
     const fOpts = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
-    // Fit font — turun sampai semua baris muat di maxH
-    let fontSize = 64; // max lebih kecil supaya aman dari fisheye
+    // Dynamic font sizing — teks pendek = font besar, panjang = font kecil
+    // Base size menyesuaikan panjang teks
+    const textLen = text.length;
+    const baseMaxSize = textLen <= 10 ? 80 : textLen <= 20 ? 72 : textLen <= 35 ? 64 : 56;
+    
+    let fontSize = baseMaxSize;
     let lines    = [];
     for (; fontSize >= 14; fontSize -= 2) {
         const tmp = createCanvas(maxW + 10, 100);
         const tc  = tmp.getContext('2d');
         tc.font   = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
         const wrapped = wordWrap(tc, text, maxW);
-        if (wrapped.length * fontSize * 1.18 <= maxH) { lines = wrapped; break; }
+        // Line height lebih tight untuk muat lebih banyak
+        if (wrapped.length * fontSize * 1.12 <= maxH) { lines = wrapped; break; }
     }
     if (lines.length === 0) {
         const tmp = createCanvas(maxW + 10, 100);
