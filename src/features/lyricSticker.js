@@ -1087,7 +1087,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     const totalH = lines.length * lineH;
     const startY = (SIZE - totalH) / 2 + lineH * 0.5;
 
-    // ── Render ke canvas sementara (sebelum barrel warp) ──────────────────────
+    // ── Canvas 1: BG + Teks (untuk di-warp) ──────────────────────────────────
     const tmpCanvas = createCanvas(SIZE, SIZE);
     const tc        = tmpCanvas.getContext('2d');
 
@@ -1096,51 +1096,65 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     tc.fillStyle = `rgb(${fl},${fl},${fl})`;
     tc.fillRect(0, 0, SIZE, SIZE);
 
-    // Load rain frames (lazy)
-    const rainFrames = await getRainFrames();
-
-    // Teks dulu
+    // Teks
     const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
     tc.font         = fontStr;
     tc.textAlign    = 'left';
     tc.textBaseline = 'middle';
-
-    // Clip ketat supaya teks tidak keluar
     tc.save();
     tc.beginPath();
     tc.rect(0, 0, SIZE, SIZE);
     tc.clip();
-
     for (let i = 0; i < lines.length; i++) {
         const ly = startY + i * lineH;
         const lx = PAD;
-        // Shadow
         tc.fillStyle = 'rgba(0,0,0,0.85)';
         tc.fillText(lines[i], lx + 3, ly + 3);
-        // Teks putih
         tc.fillStyle = '#FFFFFF';
         tc.fillText(lines[i], lx, ly);
     }
     tc.restore();
 
-    // Rain di atas teks — screen blend: hitam hilang, tetesan tampil di atas font
-    if (rainFrames.length > 0) {
-        const rf = rainFrames[frameIdx % rainFrames.length];
-        tc.save();
-        tc.globalCompositeOperation = 'screen';
-        tc.globalAlpha = 0.45;
-        tc.drawImage(rf, 0, 0, SIZE, SIZE);
-        tc.restore();
-    } else {
-        drawGreenscreenRain(tc, SIZE, frameIdx, animPhase);
-    }
-
-    // ── Apply bulge warp (cembung ke depan) ke canvas final ──────────────────
+    // ── Apply bulge warp ke canvas output ────────────────────────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
     applyBulgeWarp(tc, oc, SIZE, 0.10);
 
-    // Vignette di atas warp result
+    // ── Rain DI ATAS teks hasil warp — source-over biasa ─────────────────────
+    const rainFrames = await getRainFrames();
+    if (rainFrames.length > 0) {
+        const rf = rainFrames[frameIdx % rainFrames.length];
+
+        // Buat canvas rain terpisah — extract pixel terang saja (bukan hitam)
+        const rainCanvas = createCanvas(SIZE, SIZE);
+        const rctx = rainCanvas.getContext('2d');
+        rctx.drawImage(rf, 0, 0, SIZE, SIZE);
+        // Chroma-key: hapus pixel gelap, sisakan hanya tetesan terang
+        const imgData = rctx.getImageData(0, 0, SIZE, SIZE);
+        const d = imgData.data;
+        for (let p = 0; p < d.length; p += 4) {
+            const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
+            if (brightness < 18) {
+                d[p+3] = 0; // hapus pixel gelap/hitam
+            } else {
+                // Boost brightness & alpha supaya tetesan keliatan jelas di atas teks
+                const boost = Math.min(255, Math.round(d[p] * 1.5));
+                d[p] = boost; d[p+1] = boost; d[p+2] = boost;
+                d[p+3] = Math.min(255, Math.round(brightness * 2.2));
+            }
+        }
+        rctx.putImageData(imgData, 0, 0);
+
+        oc.save();
+        oc.globalCompositeOperation = 'source-over';
+        oc.globalAlpha = 1.0;
+        oc.drawImage(rainCanvas, 0, 0, SIZE, SIZE);
+        oc.restore();
+    } else {
+        drawGreenscreenRain(oc, SIZE, frameIdx, animPhase);
+    }
+
+    // Vignette
     const vig = oc.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.18, SIZE/2, SIZE/2, SIZE*0.80);
     vig.addColorStop(0,   'rgba(0,0,0,0)');
     vig.addColorStop(0.55,'rgba(0,0,0,0.12)');
