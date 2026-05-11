@@ -926,6 +926,45 @@ function drawGreenscreenRain(ctx, SIZE, frameIdx, animPhase) {
     }
 }
 
+// Rain khusus untuk area teks — lebih sedikit tetesan (10-12), lebih bening
+function drawGreenscreenRainOnText(ctx, w, h, frameIdx, animPhase, offsetX, offsetY) {
+    const DROPS = 10; // sangat sedikit tetesan
+    for (let i = 0; i < DROPS; i++) {
+        const px = seededRand(i * 3131 + frameIdx) * w;
+        const speed = 1.0 + seededRand(i * 2711) * 1.5;
+        const phase = (animPhase * speed + seededRand(i * 1777)) % 1;
+        const py = phase * (h + 40) - 20;
+
+        const len = 12 + seededRand(i * 5113) * 25;
+        const dropW = 0.8 + seededRand(i * 9001) * 1.2;
+        const fade = phase < 0.08 ? phase / 0.08 : phase > 0.85 ? (1 - phase) / 0.15 : 1;
+        if (fade < 0.1) continue;
+
+        ctx.save();
+        ctx.globalAlpha = fade * 0.35; // sangat bening
+
+        // Kepala bulat kecil
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath();
+        ctx.arc(px, py, dropW * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Batang tipis
+        const g = ctx.createLinearGradient(px, py, px, py + len);
+        g.addColorStop(0,   'rgba(255,255,255,0.35)');
+        g.addColorStop(0.5, 'rgba(230,240,255,0.20)');
+        g.addColorStop(1,   'rgba(255,255,255,0.0)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth = dropW * 0.6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px, py + len);
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
 function applyFisheyeToCanvas(srcCanvas) {
     const SIZE   = srcCanvas.width;
     const dst    = createCanvas(SIZE, SIZE);
@@ -1120,23 +1159,42 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const oc        = outCanvas.getContext('2d');
     applyBulgeWarp(tc, oc, SIZE, 0.10);
 
-    // ── Rain DI ATAS teks hasil warp — source-over biasa ─────────────────────
+    // ── Rain DI ATAS teks — hanya di area tulisan (clipped) ──────────────────
     try { if (!showRain) throw new Error('rain disabled');
+        // Hitung bounding box dari semua lines teks
+        let minX = SIZE, maxX = 0, minY = SIZE, maxY = 0;
+        oc.font = fontStr; // sync font dengan yang dipakai di tc
+        for (let i = 0; i < lines.length; i++) {
+            const ly = startY + i * lineH;
+            const lx = PAD;
+            const mw = oc.measureText(lines[i]).width;
+            minX = Math.min(minX, lx - 4);
+            maxX = Math.max(maxX, lx + mw + 4);
+            minY = Math.min(minY, ly - fontSize * 0.5);
+            maxY = Math.max(maxY, ly + fontSize * 0.5);
+        }
+        // Padding kecil di sekitar teks
+        minX = Math.max(0, minX - 6); maxX = Math.min(SIZE, maxX + 6);
+        minY = Math.max(0, minY - 8); maxY = Math.min(SIZE, maxY + 8);
+        const textW = maxX - minX;
+        const textH = maxY - minY;
+
         const rainFrames = await getRainFrames();
         if (rainFrames.length > 0) {
             const rf = rainFrames[frameIdx % rainFrames.length];
-            const rainCanvas = createCanvas(SIZE, SIZE);
+            // Buat canvas rain kecil sesuai ukuran teks saja
+            const rainCanvas = createCanvas(textW, textH);
             const rctx = rainCanvas.getContext('2d');
-            rctx.drawImage(rf, 0, 0, SIZE, SIZE);
+            // Draw rain frame yang di-crop ke area teks
+            rctx.drawImage(rf, minX, minY, textW, textH, 0, 0, textW, textH);
             try {
-                const imgData = rctx.getImageData(0, 0, SIZE, SIZE);
+                const imgData = rctx.getImageData(0, 0, textW, textH);
                 const d = imgData.data;
                 for (let p = 0; p < d.length; p += 4) {
                     const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
                     if (brightness < 60) {
-                        d[p+3] = 0; // hapus semua pixel gelap/hitam JPG
+                        d[p+3] = 0;
                     } else {
-                        // Soft edge: makin terang makin opaque
                         const alpha = Math.min(255, Math.round((brightness - 60) * 2.8));
                         const boost = Math.min(255, Math.round(d[p] * 1.4));
                         d[p] = boost; d[p+1] = boost; d[p+2] = boost;
@@ -1144,26 +1202,34 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
                     }
                 }
                 rctx.putImageData(imgData, 0, 0);
+                // Draw rain di atas teks, hanya di area teks
                 oc.save();
                 oc.globalCompositeOperation = 'source-over';
-                oc.globalAlpha = 0.45; // lebih bening/transparan
-                oc.drawImage(rainCanvas, 0, 0, SIZE, SIZE);
+                oc.globalAlpha = 0.40;
+                oc.drawImage(rainCanvas, minX, minY, textW, textH);
                 oc.restore();
             } catch (pixErr) {
-                // Fallback: pakai screen blend tanpa pixel manipulation
                 logger.warn('[Lyric3] getImageData failed, using screen blend: ' + pixErr.message);
                 oc.save();
+                oc.beginPath();
+                oc.rect(minX, minY, textW, textH);
+                oc.clip();
                 oc.globalCompositeOperation = 'screen';
-                oc.globalAlpha = 0.9;
+                oc.globalAlpha = 0.6;
                 oc.drawImage(rf, 0, 0, SIZE, SIZE);
                 oc.restore();
             }
         } else {
-            drawGreenscreenRain(oc, SIZE, frameIdx, animPhase);
+            // Fallback: drawGreenscreenRain dengan clip ke area teks saja
+            oc.save();
+            oc.beginPath();
+            oc.rect(minX, minY, textW, textH);
+            oc.clip();
+            drawGreenscreenRainOnText(oc, textW, textH, frameIdx, animPhase, minX, minY);
+            oc.restore();
         }
     } catch (rainErr) {
         logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
-        drawGreenscreenRain(oc, SIZE, frameIdx, animPhase);
     }
 
     // Vignette
