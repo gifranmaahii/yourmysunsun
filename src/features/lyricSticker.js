@@ -27,9 +27,10 @@ async function getRainFrames() {
         if (fs.existsSync(path.join(d, 'rain_frame_01.jpg'))) { dir = d; break; }
     }
     if (!dir) {
-        logger.warn('rain_frame_01.jpg not found, rain overlay disabled');
+        logger.warn('[Rain] rain_frame_01.jpg not found in: ' + _RAIN_FRAMES_CANDIDATES.join(', '));
         return _rainFrames;
     }
+    logger.info('[Rain] Found frames dir: ' + dir);
     for (let i = 1; i <= 16; i++) {
         const fp = path.join(dir, `rain_frame_${String(i).padStart(2,'0')}.jpg`);
         if (!fs.existsSync(fp)) continue;
