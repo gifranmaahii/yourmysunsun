@@ -1121,36 +1121,46 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     applyBulgeWarp(tc, oc, SIZE, 0.10);
 
     // ── Rain DI ATAS teks hasil warp — source-over biasa ─────────────────────
-    const rainFrames = await getRainFrames();
-    if (rainFrames.length > 0) {
-        const rf = rainFrames[frameIdx % rainFrames.length];
-
-        // Buat canvas rain terpisah — extract pixel terang saja (bukan hitam)
-        const rainCanvas = createCanvas(SIZE, SIZE);
-        const rctx = rainCanvas.getContext('2d');
-        rctx.drawImage(rf, 0, 0, SIZE, SIZE);
-        // Chroma-key: hapus pixel gelap, sisakan hanya tetesan terang
-        const imgData = rctx.getImageData(0, 0, SIZE, SIZE);
-        const d = imgData.data;
-        for (let p = 0; p < d.length; p += 4) {
-            const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
-            if (brightness < 18) {
-                d[p+3] = 0; // hapus pixel gelap/hitam
-            } else {
-                // Boost brightness & alpha supaya tetesan keliatan jelas di atas teks
-                const boost = Math.min(255, Math.round(d[p] * 1.5));
-                d[p] = boost; d[p+1] = boost; d[p+2] = boost;
-                d[p+3] = Math.min(255, Math.round(brightness * 2.2));
+    try {
+        const rainFrames = await getRainFrames();
+        if (rainFrames.length > 0) {
+            const rf = rainFrames[frameIdx % rainFrames.length];
+            const rainCanvas = createCanvas(SIZE, SIZE);
+            const rctx = rainCanvas.getContext('2d');
+            rctx.drawImage(rf, 0, 0, SIZE, SIZE);
+            try {
+                const imgData = rctx.getImageData(0, 0, SIZE, SIZE);
+                const d = imgData.data;
+                for (let p = 0; p < d.length; p += 4) {
+                    const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
+                    if (brightness < 18) {
+                        d[p+3] = 0;
+                    } else {
+                        const boost = Math.min(255, Math.round(d[p] * 1.5));
+                        d[p] = boost; d[p+1] = boost; d[p+2] = boost;
+                        d[p+3] = Math.min(255, Math.round(brightness * 2.2));
+                    }
+                }
+                rctx.putImageData(imgData, 0, 0);
+                oc.save();
+                oc.globalCompositeOperation = 'source-over';
+                oc.globalAlpha = 1.0;
+                oc.drawImage(rainCanvas, 0, 0, SIZE, SIZE);
+                oc.restore();
+            } catch (pixErr) {
+                // Fallback: pakai screen blend tanpa pixel manipulation
+                logger.warn('[Lyric3] getImageData failed, using screen blend: ' + pixErr.message);
+                oc.save();
+                oc.globalCompositeOperation = 'screen';
+                oc.globalAlpha = 0.9;
+                oc.drawImage(rf, 0, 0, SIZE, SIZE);
+                oc.restore();
             }
+        } else {
+            drawGreenscreenRain(oc, SIZE, frameIdx, animPhase);
         }
-        rctx.putImageData(imgData, 0, 0);
-
-        oc.save();
-        oc.globalCompositeOperation = 'source-over';
-        oc.globalAlpha = 1.0;
-        oc.drawImage(rainCanvas, 0, 0, SIZE, SIZE);
-        oc.restore();
-    } else {
+    } catch (rainErr) {
+        logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
         drawGreenscreenRain(oc, SIZE, frameIdx, animPhase);
     }
 
@@ -1186,11 +1196,11 @@ async function createLyricSticker3(lines, secPerLine = 2) {
     }
 
     try {
+        logger.info(`[Lyric3] Start: ${lines.length} lines × ${framesPerLine} frames`);
         let globalTick = 0;
         for (let i = 0; i < lines.length; i++) {
             for (let f = 0; f < framesPerLine; f++) {
                 const animPhase = (globalTick / FPS3) % 1;
-                // Draw frame langsung — no fisheye
                 const rawBuf = await drawLyricFrame3(lines[i], animPhase, globalTick);
                 const fp = path.join(tempDir, `lyric3_frame_${tempId}_${globalTick}.png`);
                 fs.writeFileSync(fp, rawBuf);
@@ -1198,6 +1208,7 @@ async function createLyricSticker3(lines, secPerLine = 2) {
                 globalTick++;
             }
         }
+        logger.info(`[Lyric3] Frames done: ${framePaths.length}`);
 
         const frameDur = (1 / FPS3).toFixed(4);
         const toFFPath = p => p.replace(/\\/g, '/');
@@ -1206,26 +1217,29 @@ async function createLyricSticker3(lines, secPerLine = 2) {
         concatTxt += `file '${toFFPath(framePaths[framePaths.length - 1])}'\nduration 0.001\n`;
         fs.writeFileSync(concatPath, concatTxt);
 
+        logger.info(`[Lyric3] Running ffmpeg...`);
         return await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { cleanup(); reject(new Error('ffmpeg timeout 90s')); }, 90000);
             ffmpeg()
                 .input(concatPath)
                 .inputOptions(['-f concat', '-safe 0'])
                 .outputOptions([
-                    '-vcodec libwebp', '-vf', 'format=rgba',
-                    '-lossless 0', '-compression_level 6',
-                    '-q:v 80', '-loop 0', '-preset default', '-an', '-vsync 0'
+                    '-vcodec libwebp', '-vf', 'scale=512:512',
+                    '-lossless 0', '-compression_level 4',
+                    '-q:v 75', '-loop 0', '-preset default', '-an', '-vsync 0'
                 ])
                 .toFormat('webp')
                 .on('end', async () => {
+                    clearTimeout(timer);
                     try {
                         const outBuf = fs.readFileSync(outputPath);
                         cleanup();
                         const cfg = getConfig();
                         resolve(await addExif(outBuf, cfg.stickerPackName, cfg.stickerPackAuthor).catch(() => outBuf));
-                        logger.info(`🎵 Lyric3 sticker: ${lines.length} line(s) × ${framesPerLine} frames`);
-                    } catch (e) { cleanup(); reject(e); }
+                        logger.info(`[Lyric3] ✅ Done: ${lines.length} line(s) × ${framesPerLine} frames`);
+                    } catch (e) { clearTimeout(timer); cleanup(); reject(e); }
                 })
-                .on('error', (err) => { logger.error(`❌ Lyric3 ffmpeg: ${err.message}`); cleanup(); reject(err); })
+                .on('error', (err) => { clearTimeout(timer); logger.error(`[Lyric3] ❌ ffmpeg: ${err.message}`); cleanup(); reject(err); })
                 .save(outputPath);
         });
     } catch (e) { cleanup(); throw e; }
