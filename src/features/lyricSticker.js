@@ -1109,14 +1109,13 @@ function drawTextRaindrops(ctx, lx, ly, mw, fontSize, animPhase, frameIdx, lineI
 
 async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = false) {
     const SIZE = 512;
-    const PAD  = 28; // padding lebih besar
+    const PAD  = 40; // padding sangat besar supaya teks aman dari pinggir
     const maxW = SIZE - PAD * 2;
-    // Kurangi maxH supaya fisheye tidak bikin teks keluar batas
-    const maxH = SIZE - 180; // margin sangat besar supaya aman dari fisheye
+    const maxH = SIZE - 100; // cukup space untuk teks
     const fOpts = _fontMap['montserrat'] || _fontMap['impact'] || _defFont;
 
     // Fit font — turun sampai semua baris muat di maxH
-    let fontSize = 96; // max lebih kecil supaya aman setelah fisheye
+    let fontSize = 64; // max lebih kecil supaya aman dari fisheye
     let lines    = [];
     for (; fontSize >= 14; fontSize -= 2) {
         const tmp = createCanvas(maxW + 10, 100);
@@ -1212,7 +1211,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     // ── Apply bulge warp + camera shake ke output ───────────────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
-    applyBulgeWarp(tc, oc, SIZE, 0.12); // fisheye sangat subtle
+    applyBulgeWarp(tc, oc, SIZE, 0.08); // fisheye minimalis
 
     // Camera shake effect
     const shakeX = (seededRand(frameIdx * 7) - 0.5) * 6;
