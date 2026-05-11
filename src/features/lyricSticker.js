@@ -1126,7 +1126,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     const totalH = lines.length * lineH;
     const startY = (SIZE - totalH) / 2 + lineH * 0.5;
 
-    // ── Canvas 1: BG + Teks (untuk di-warp) ──────────────────────────────────
+    // ── Canvas 1: BG + Rain (di belakang) + Teks (di depan) ─────────────────
     const tmpCanvas = createCanvas(SIZE, SIZE);
     const tc        = tmpCanvas.getContext('2d');
 
@@ -1135,8 +1135,73 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     tc.fillStyle = `rgb(${fl},${fl},${fl})`;
     tc.fillRect(0, 0, SIZE, SIZE);
 
-    // Teks
+    // Hitung bounding box teks dulu untuk rain positioning
     const fontStr = `bold ${fontSize}px "${fOpts.family}", Impact, Arial Black, sans-serif`;
+    tc.font = fontStr;
+    let minX = SIZE, maxX = 0, minY = SIZE, maxY = 0;
+    for (let i = 0; i < lines.length; i++) {
+        const ly = startY + i * lineH;
+        const lx = PAD;
+        const mw = tc.measureText(lines[i]).width;
+        minX = Math.min(minX, lx - 4);
+        maxX = Math.max(maxX, lx + mw + 4);
+        minY = Math.min(minY, ly - fontSize * 0.5);
+        maxY = Math.max(maxY, ly + fontSize * 0.5);
+    }
+    minX = Math.max(0, minX - 6); maxX = Math.min(SIZE, maxX + 6);
+    minY = Math.max(0, minY - 8); maxY = Math.min(SIZE, maxY + 8);
+    const textW = maxX - minX;
+    const textH = maxY - minY;
+
+    // ── Rain DI BELAKANG teks — hanya di area tulisan ────────────────────────
+    try { if (showRain) {
+        const rainFrames = await getRainFrames();
+        if (rainFrames.length > 0) {
+            const rf = rainFrames[frameIdx % rainFrames.length];
+            const rainCanvas = createCanvas(textW, textH);
+            const rctx = rainCanvas.getContext('2d');
+            rctx.drawImage(rf, minX, minY, textW, textH, 0, 0, textW, textH);
+            try {
+                const imgData = rctx.getImageData(0, 0, textW, textH);
+                const d = imgData.data;
+                for (let p = 0; p < d.length; p += 4) {
+                    const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
+                    if (brightness < 60) {
+                        d[p+3] = 0;
+                    } else {
+                        const alpha = Math.min(255, Math.round((brightness - 60) * 2.8));
+                        const boost = Math.min(255, Math.round(d[p] * 1.4));
+                        d[p] = boost; d[p+1] = boost; d[p+2] = boost;
+                        d[p+3] = alpha;
+                    }
+                }
+                rctx.putImageData(imgData, 0, 0);
+                // Draw rain DI BELAKANG teks (sebelum teks di-draw)
+                tc.save();
+                tc.globalAlpha = 0.35; // bening
+                tc.drawImage(rainCanvas, minX, minY, textW, textH);
+                tc.restore();
+            } catch (pixErr) {
+                tc.save();
+                tc.globalCompositeOperation = 'screen';
+                tc.globalAlpha = 0.5;
+                tc.drawImage(rf, minX, minY, textW, textH, minX, minY, textW, textH);
+                tc.restore();
+            }
+        } else {
+            // Fallback ke generated rain
+            tc.save();
+            tc.beginPath();
+            tc.rect(minX, minY, textW, textH);
+            tc.clip();
+            drawGreenscreenRainOnText(tc, textW, textH, frameIdx, animPhase, minX, minY);
+            tc.restore();
+        }
+    }} catch (rainErr) {
+        logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
+    }
+
+    // ── Teks DI DEPAN rain ──────────────────────────────────────────────────
     tc.font         = fontStr;
     tc.textAlign    = 'left';
     tc.textBaseline = 'middle';
@@ -1154,83 +1219,10 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     }
     tc.restore();
 
-    // ── Apply bulge warp ke canvas output ────────────────────────────────────
+    // ── Apply bulge warp ke canvas output (rain+teks bareng) ─────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
     applyBulgeWarp(tc, oc, SIZE, 0.10);
-
-    // ── Rain DI ATAS teks — hanya di area tulisan (clipped) ──────────────────
-    try { if (!showRain) throw new Error('rain disabled');
-        // Hitung bounding box dari semua lines teks
-        let minX = SIZE, maxX = 0, minY = SIZE, maxY = 0;
-        oc.font = fontStr; // sync font dengan yang dipakai di tc
-        for (let i = 0; i < lines.length; i++) {
-            const ly = startY + i * lineH;
-            const lx = PAD;
-            const mw = oc.measureText(lines[i]).width;
-            minX = Math.min(minX, lx - 4);
-            maxX = Math.max(maxX, lx + mw + 4);
-            minY = Math.min(minY, ly - fontSize * 0.5);
-            maxY = Math.max(maxY, ly + fontSize * 0.5);
-        }
-        // Padding kecil di sekitar teks
-        minX = Math.max(0, minX - 6); maxX = Math.min(SIZE, maxX + 6);
-        minY = Math.max(0, minY - 8); maxY = Math.min(SIZE, maxY + 8);
-        const textW = maxX - minX;
-        const textH = maxY - minY;
-
-        const rainFrames = await getRainFrames();
-        if (rainFrames.length > 0) {
-            const rf = rainFrames[frameIdx % rainFrames.length];
-            // Buat canvas rain kecil sesuai ukuran teks saja
-            const rainCanvas = createCanvas(textW, textH);
-            const rctx = rainCanvas.getContext('2d');
-            // Draw rain frame yang di-crop ke area teks
-            rctx.drawImage(rf, minX, minY, textW, textH, 0, 0, textW, textH);
-            try {
-                const imgData = rctx.getImageData(0, 0, textW, textH);
-                const d = imgData.data;
-                for (let p = 0; p < d.length; p += 4) {
-                    const brightness = (d[p] + d[p+1] + d[p+2]) / 3;
-                    if (brightness < 60) {
-                        d[p+3] = 0;
-                    } else {
-                        const alpha = Math.min(255, Math.round((brightness - 60) * 2.8));
-                        const boost = Math.min(255, Math.round(d[p] * 1.4));
-                        d[p] = boost; d[p+1] = boost; d[p+2] = boost;
-                        d[p+3] = alpha;
-                    }
-                }
-                rctx.putImageData(imgData, 0, 0);
-                // Draw rain di atas teks, hanya di area teks
-                oc.save();
-                oc.globalCompositeOperation = 'source-over';
-                oc.globalAlpha = 0.40;
-                oc.drawImage(rainCanvas, minX, minY, textW, textH);
-                oc.restore();
-            } catch (pixErr) {
-                logger.warn('[Lyric3] getImageData failed, using screen blend: ' + pixErr.message);
-                oc.save();
-                oc.beginPath();
-                oc.rect(minX, minY, textW, textH);
-                oc.clip();
-                oc.globalCompositeOperation = 'screen';
-                oc.globalAlpha = 0.6;
-                oc.drawImage(rf, 0, 0, SIZE, SIZE);
-                oc.restore();
-            }
-        } else {
-            // Fallback: drawGreenscreenRain dengan clip ke area teks saja
-            oc.save();
-            oc.beginPath();
-            oc.rect(minX, minY, textW, textH);
-            oc.clip();
-            drawGreenscreenRainOnText(oc, textW, textH, frameIdx, animPhase, minX, minY);
-            oc.restore();
-        }
-    } catch (rainErr) {
-        logger.warn('[Lyric3] Rain overlay failed: ' + rainErr.message);
-    }
 
     // Vignette
     const vig = oc.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.18, SIZE/2, SIZE/2, SIZE*0.80);
