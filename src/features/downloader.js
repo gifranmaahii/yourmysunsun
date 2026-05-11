@@ -66,6 +66,30 @@ async function ytdlpGetTitle(ytUrl) {
     } catch (_) { return 'YouTube Audio'; }
 }
 
+async function ytdlpDownloadMp3(ytUrl) {
+    await _ensureYtdlp();
+    const os = require('os');
+    const outDir = os.tmpdir();
+    const outTpl = path.join(outDir, 'ytdlp_%(id)s.%(ext)s');
+    // Download audio terbaik, convert ke mp3
+    await _ytdlp([
+        '--no-playlist',
+        '--format', 'bestaudio/best',
+        '--extract-audio',
+        '--audio-format', 'mp3',
+        '--audio-quality', '128K',
+        '--output', outTpl,
+        '--no-warnings',
+        ytUrl
+    ], 60000);
+    // Cari file hasil download
+    const id = ytUrl.match(/[?&]v=([^&]+)/)?.[1] || 'ytdlp';
+    const candidates = fs.readdirSync(outDir).filter(f => f.startsWith('ytdlp_') && f.endsWith('.mp3'));
+    candidates.sort((a,b) => fs.statSync(path.join(outDir,b)).mtimeMs - fs.statSync(path.join(outDir,a)).mtimeMs);
+    if (!candidates.length) throw new Error('yt-dlp download produced no file');
+    return path.join(outDir, candidates[0]);
+}
+
 const API_KEY = process.env.BETABOTZ_API_KEY || 'Btz-7cYq3';
 const BETABOTZ_URL = 'https://api.betabotz.eu.org/api';
 const FREE_API_URL = 'https://api.siputzx.my.id/api';
@@ -269,13 +293,11 @@ async function ytmp3(query) {
         } catch (e) { logger.warn('[YTMP3] Lolhuman API failed: ' + e.message); }
     }
 
-    // Attempt 5: yt-dlp lokal (paling reliable, tidak butuh API eksternal)
+    // Attempt 5: yt-dlp lokal — download MP3 ke tmp, return file path
     try {
-        const streamUrl = await ytdlpGetUrl(url, 'bestaudio[ext=m4a]/bestaudio/best');
-        if (streamUrl) {
-            const title = await ytdlpGetTitle(url);
-            return { title, url: streamUrl };
-        }
+        const filePath = await ytdlpDownloadMp3(url);
+        const title = await ytdlpGetTitle(url);
+        return { title, filePath, url: null };
     } catch (e) { logger.warn('[YTMP3] yt-dlp failed: ' + e.message); }
 
     return await fallbackDownload(`${FREE_API_URL}/d/ytmp3?url=`, '/download/ytmp3', url);

@@ -1764,7 +1764,13 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     try {
                         const dl = require('./src/features/downloader');
                         const data = await dl.ytmp3(query);
-                        await sock.sendMessage(remoteJid, { audio: { url: data.url }, mimetype: 'audio/mpeg', fileName: data.title }, { quoted: msg });
+                        if (data.filePath) {
+                            const audioBuf = require('fs').readFileSync(data.filePath);
+                            try { require('fs').unlinkSync(data.filePath); } catch(_) {}
+                            await sock.sendMessage(remoteJid, { audio: audioBuf, mimetype: 'audio/mpeg', fileName: (data.title || 'audio') + '.mp3' }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(remoteJid, { audio: { url: data.url }, mimetype: 'audio/mpeg', fileName: data.title }, { quoted: msg });
+                        }
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
