@@ -1,17 +1,49 @@
 const { logger } = require('../utils/logger');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-// Coba python -m yt_dlp dulu, fallback ke yt-dlp binary
-function _ytdlp(args, timeout = 20000) {
+// Path binary yt-dlp lokal di dalam folder bot
+const _YTDLP_BIN = path.join(__dirname, '../../bin/yt-dlp');
+let _ytdlpReady = false;
+
+async function _ensureYtdlp() {
+    if (_ytdlpReady) return;
+    // Cek binary lokal
+    if (fs.existsSync(_YTDLP_BIN)) { _ytdlpReady = true; return; }
+    // Download binary yt-dlp (Linux x86_64)
+    try {
+        logger.info('[yt-dlp] Binary not found, downloading...');
+        const dir = path.dirname(_YTDLP_BIN);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const res = await fetch('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const buf = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(_YTDLP_BIN, buf, { mode: 0o755 });
+        _ytdlpReady = true;
+        logger.info('[yt-dlp] Downloaded successfully');
+    } catch(e) {
+        logger.warn('[yt-dlp] Download failed: ' + e.message);
+    }
+}
+
+function _ytdlp(args, timeout = 25000) {
     return new Promise((resolve, reject) => {
-        const cmds = [['python', ['-m', 'yt_dlp', ...args]], ['yt-dlp', args]];
+        // Urutan: binary lokal → yt-dlp system → python3 -m yt_dlp → python -m yt_dlp
+        const cmds = [
+            [_YTDLP_BIN, args],
+            ['yt-dlp', args],
+            ['python3', ['-m', 'yt_dlp', ...args]],
+            ['python',  ['-m', 'yt_dlp', ...args]],
+        ];
         let idx = 0;
         function tryNext() {
             if (idx >= cmds.length) return reject(new Error('yt-dlp not found'));
             const [cmd, a] = cmds[idx++];
+            if (!fs.existsSync(cmd) && cmd === _YTDLP_BIN) return tryNext();
             execFile(cmd, a, { timeout }, (err, stdout) => {
-                if (err) return tryNext();
+                if (err || !stdout.trim()) return tryNext();
                 resolve(stdout.trim());
             });
         }
@@ -20,6 +52,7 @@ function _ytdlp(args, timeout = 20000) {
 }
 
 async function ytdlpGetUrl(ytUrl, format = 'bestaudio/best') {
+    await _ensureYtdlp();
     const out = await _ytdlp(['--get-url', '--format', format, '--no-playlist', ytUrl]);
     const line = out.split('\n')[0].trim();
     if (!line.startsWith('http')) throw new Error('No URL from yt-dlp');
@@ -28,6 +61,7 @@ async function ytdlpGetUrl(ytUrl, format = 'bestaudio/best') {
 
 async function ytdlpGetTitle(ytUrl) {
     try {
+        await _ensureYtdlp();
         return await _ytdlp(['--get-title', '--no-playlist', ytUrl]);
     } catch (_) { return 'YouTube Audio'; }
 }
