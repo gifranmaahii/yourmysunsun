@@ -302,7 +302,30 @@ async function ytmp3(query) {
         } catch (e) { logger.warn('[YTMP3] Lolhuman API failed: ' + e.message); }
     }
 
-    // Attempt 5: @distube/ytdl-core — pure Node, tidak butuh binary apapun
+    // Attempt 5: Cobalt Tools API (Free & Very Stable)
+    try {
+        const res = await fetchWithTimeout(`https://api.cobalt.tools/api/json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ url: url, audioFormat: 'mp3', downloadMode: 'audio' }),
+            timeout: 15000
+        });
+        const json = await res.json();
+        if (json.status === 'stream' || json.status === 'success') {
+            return { title: 'YouTube Audio', url: json.url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Cobalt API failed: ' + e.message); }
+
+    // Attempt 5b: Y2mate.is API (Free)
+    try {
+        const res = await fetchWithTimeout(`https://y2mate.is/api/convert?url=${encodedUrl}&format=mp3`, { timeout: 10000 });
+        const json = await res.json();
+        if (json.status === 'success' && json.downloadUrl) {
+            return { title: json.title || 'YouTube Audio', url: json.downloadUrl };
+        }
+    } catch (e) { logger.warn('[YTMP3] Y2mate API failed: ' + e.message); }
+
+    // Attempt 5c: @distube/ytdl-core — pure Node
     try {
         const ytdl = require('@distube/ytdl-core');
         const info = await ytdl.getInfo(url);
@@ -321,7 +344,26 @@ async function ytmp3(query) {
         return { title, filePath, url: null };
     } catch (e) { logger.warn('[YTMP3] yt-dlp failed: ' + e.message); }
 
-    return await fallbackDownload(`${FREE_API_URL}/d/ytmp3?url=`, '/download/ytmp3', url);
+    // Attempt 7: Skizo API (Free)
+    try {
+        const res = await fetchWithTimeout(`https://skizo.tech/api/ytdl?url=${encodedUrl}&apikey=af7d4c86`, { timeout: 10000 });
+        const json = await res.json();
+        if (json.status && (json.audio?.url || json.download?.url)) {
+            return { title: json.title || 'YouTube Audio', url: json.audio?.url || json.download?.url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Skizo API failed: ' + e.message); }
+
+    // Attempt 8: Siputzx Direct
+    try {
+        const res = await fetchWithTimeout(`${FREE_API_URL}/d/ytmp3?url=${encodedUrl}`, { timeout: 10000 });
+        const json = await res.json();
+        if (json.status && (json.data?.dl || json.data?.url)) {
+            return { title: json.data?.title || 'YouTube Audio', url: json.data?.dl || json.data?.url };
+        }
+    } catch (e) { logger.warn('[YTMP3] Siputzx direct API failed: ' + e.message); }
+
+    // Last fallback: Return error yang informatif
+    throw new Error('Semua API download gagal. Coba lagi nanti atau gunakan link YouTube yang berbeda.');
 }
 
 async function ytmp4(query) {
