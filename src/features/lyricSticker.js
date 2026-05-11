@@ -1156,40 +1156,38 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0, showRain = fal
     // ── Rain DI BELAKANG teks — procedural, posisi selalu di area teks ─────
     try { if (showRain) {
         // Generate rain drops yang posisinya selalu di dalam text bounding box
-        const DROPS = 12;
+        const DROPS = 15;
         for (let i = 0; i < DROPS; i++) {
-            // Seed berdasarkan frameIdx agar animasi consistent
             const seed = i * 997 + frameIdx * 13;
             const px = minX + (seededRand(seed) * textW);
-            const speed = 0.8 + seededRand(seed + 1) * 1.2;
+            const speed = 0.6 + seededRand(seed + 1) * 0.8;
             const phase = (animPhase * speed + seededRand(seed + 2)) % 1;
-            const py = minY + phase * (textH + 30) - 15;
+            const py = minY + phase * (textH + 40) - 20;
 
-            const len = 8 + seededRand(seed + 3) * 18;
-            const w = 0.6 + seededRand(seed + 4) * 0.9;
-            const fade = phase < 0.1 ? phase / 0.1 : phase > 0.8 ? (1 - phase) / 0.2 : 1;
-            if (fade < 0.05) continue;
+            const len = 12 + seededRand(seed + 3) * 20;
+            const w = 1.2 + seededRand(seed + 4) * 1.5;
+            const fade = phase < 0.15 ? phase / 0.15 : phase > 0.75 ? (1 - phase) / 0.25 : 1;
 
             tc.save();
-            tc.globalAlpha = fade * 0.45;
+            tc.globalAlpha = fade * 0.65;
 
-            // Kepala bulat
-            tc.fillStyle = 'rgba(200,220,255,0.6)';
+            // Kepala bulat putih terang
+            tc.fillStyle = 'rgba(255,255,255,0.9)';
             tc.beginPath();
-            tc.arc(px, py, w * 0.7, 0, Math.PI * 2);
+            tc.arc(px, py, w * 0.9, 0, Math.PI * 2);
             tc.fill();
 
-            // Batang
+            // Batang putih terang
             const g = tc.createLinearGradient(px, py, px, py + len);
-            g.addColorStop(0, 'rgba(200,220,255,0.4)');
-            g.addColorStop(0.5, 'rgba(180,200,230,0.25)');
-            g.addColorStop(1, 'rgba(200,220,255,0)');
+            g.addColorStop(0, 'rgba(255,255,255,0.70)');
+            g.addColorStop(0.5, 'rgba(220,230,255,0.45)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
             tc.strokeStyle = g;
-            tc.lineWidth = w * 0.5;
+            tc.lineWidth = w * 0.8;
             tc.lineCap = 'round';
             tc.beginPath();
             tc.moveTo(px, py);
-            tc.lineTo(px + (seededRand(seed + 5) - 0.5), py + len);
+            tc.lineTo(px + (seededRand(seed + 5) - 0.5) * 2, py + len);
             tc.stroke();
             tc.restore();
         }
