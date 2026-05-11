@@ -989,7 +989,7 @@ function applyBulgeWarp(srcCtx, dstCtx, SIZE, strength = 0.45) {
     const dst = dstCtx.createImageData(SIZE, SIZE);
     const cx = SIZE / 2, cy = SIZE / 2;
     const R  = SIZE / 2;
-    const pw = 1 / (1 + strength); // < 1, jadi rf < r
+    const pw = 1 / (1 + strength * 0.8); // < 1, jadi rf < r
     for (let y = 0; y < SIZE; y++) {
         for (let x = 0; x < SIZE; x++) {
             const nx = (x - cx) / R;
@@ -1128,7 +1128,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
         const rf = rainFrames[frameIdx % rainFrames.length];
         tc.save();
         tc.globalCompositeOperation = 'screen';
-        tc.globalAlpha = 0.90;
+        tc.globalAlpha = 0.45;
         tc.drawImage(rf, 0, 0, SIZE, SIZE);
         tc.restore();
     } else {
@@ -1138,7 +1138,7 @@ async function drawLyricFrame3(text, animPhase = 0, frameIdx = 0) {
     // ── Apply bulge warp (cembung ke depan) ke canvas final ──────────────────
     const outCanvas = createCanvas(SIZE, SIZE);
     const oc        = outCanvas.getContext('2d');
-    applyBulgeWarp(tc, oc, SIZE, 0.22);
+    applyBulgeWarp(tc, oc, SIZE, 0.10);
 
     // Vignette di atas warp result
     const vig = oc.createRadialGradient(SIZE/2, SIZE/2, SIZE*0.18, SIZE/2, SIZE/2, SIZE*0.80);
