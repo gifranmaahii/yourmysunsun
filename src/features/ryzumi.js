@@ -235,7 +235,16 @@ async function createLocalQuotly(text, name, avatar) {
     }
     ctx.fillText(line, 40, y);
     
-    return canvas.toBuffer('image/png');
+    const pngBuffer = canvas.toBuffer('image/png');
+    
+    // Convert PNG ke WebP
+    try {
+        const sharp = require('sharp');
+        return await sharp(pngBuffer).webp().toBuffer();
+    } catch (e) {
+        // Jika sharp tidak ada, return PNG saja (handler akan convert)
+        return pngBuffer;
+    }
 }
 
 /**
