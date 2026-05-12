@@ -362,6 +362,45 @@ async function searchSticker(query) {
         logger.warn('[TOOLS] Ryzumi Sticker Search failed: ' + e.message);
     }
     
+    // Attempt 3: Velg API
+    try {
+        const res = await fetch(`https://api.velg.vercel.app/search/sticker?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const json = await res.json();
+            if (json.sticker_url || json.result || json.url) {
+                return json.sticker_url || json.result || json.url;
+            }
+        }
+    } catch (e) {
+        logger.warn('[TOOLS] Velg Sticker Search failed: ' + e.message);
+    }
+    
+    // Attempt 4: Diky API
+    try {
+        const res = await fetch(`https://api.diky.workers.dev/sticker?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const json = await res.json();
+            if (json.sticker_url || json.url || json.data?.url) {
+                return json.sticker_url || json.url || json.data?.url;
+            }
+        }
+    } catch (e) {
+        logger.warn('[TOOLS] Diky Sticker Search failed: ' + e.message);
+    }
+    
+    // Attempt 5: Bull API
+    try {
+        const res = await fetch(`https://api.bull.tk/sticker?query=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const json = await res.json();
+            if (json.url || json.sticker || json.result) {
+                return json.url || json.sticker || json.result;
+            }
+        }
+    } catch (e) {
+        logger.warn('[TOOLS] Bull Sticker Search failed: ' + e.message);
+    }
+    
     return null;
 }
 
