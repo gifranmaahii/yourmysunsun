@@ -7,6 +7,7 @@ const { execSync } = require('child_process');
 const _missingPkgs = [];
 try { require.resolve('@distube/ytdl-core'); } catch(_) { _missingPkgs.push('@distube/ytdl-core'); }
 try { require.resolve('pm2'); } catch(_) { _missingPkgs.push('pm2'); }
+try { require.resolve('telegraf'); } catch(_) { _missingPkgs.push('telegraf'); }
 if (_missingPkgs.length > 0) {
     console.log('[startup] Installing:', _missingPkgs.join(' '));
     try {
@@ -15,6 +16,29 @@ if (_missingPkgs.length > 0) {
     } catch(e) {
         console.warn('[startup] Install failed:', e.message);
     }
+}
+
+// Auto-start Hermes Agent
+const { spawn } = require('child_process');
+const hermesPath = path.join(__dirname, 'src', 'agent', 'hermes.js');
+if (fs.existsSync(hermesPath)) {
+    console.log('[HERMES] 🤖 Starting Hermes Agent...');
+    const hermes = spawn('node', [hermesPath], {
+        detached: true,
+        stdio: 'ignore',
+        env: {
+            ...process.env,
+            TELEGRAM_BOT_TOKEN: '8783439213:AAEVFKHkKI4yfx3FesaNj4x_lh-IfeWNfco',
+            TELEGRAM_ADMIN_ID: '978960819',
+            AI_PROVIDER: 'devin',
+            AI_API_KEY: 'cog_egwg5e6qidcbbnpfbgnc34hldz2hijv26hxijdifshuubjl6wcha',
+            PANEL_URL: 'https://public-server.verlang.id',
+            PANEL_API_KEY: 'ptlc_5GhxULOUtm0kk9l7u9l16WKHMFUW1uN7WczzLe2Ba44',
+            SERVER_ID: 'ccbb66cb'
+        }
+    });
+    hermes.unref();
+    console.log('[HERMES] ✅ Hermes Agent started (PID:', hermes.pid + ')');
 }
 
 // Helper untuk kirim notifikasi ke Telegram (mendukung main & child bots)
