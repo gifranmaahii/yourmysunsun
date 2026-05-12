@@ -325,15 +325,43 @@ function hilih(text) {
  * Sticker Search
  */
 async function searchSticker(query) {
+    // Attempt 1: Agatz API
     try {
         const res = await fetch(`https://api.agatz.xyz/api/sticker?message=${encodeURIComponent(query)}`);
+        
+        // Cek status dan content-type
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            throw new Error('Invalid content-type: ' + contentType);
+        }
+        
         const json = await res.json();
         if (json.status === 200 && json.data) {
             return json.data;
         }
     } catch (e) {
-        logger.error('[TOOLS] Sticker Search failed: ' + e.message);
+        logger.warn('[TOOLS] Agatz Sticker Search failed: ' + e.message);
     }
+    
+    // Attempt 2: Ryzumi API
+    try {
+        const res = await fetch(`https://api.ryzumi.net/api/image/sticker?query=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const json = await res.json();
+                if (json.result || json.data) {
+                    return json.result || json.data;
+                }
+            }
+        }
+    } catch (e) {
+        logger.warn('[TOOLS] Ryzumi Sticker Search failed: ' + e.message);
+    }
+    
     return null;
 }
 
