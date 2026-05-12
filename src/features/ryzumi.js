@@ -99,15 +99,37 @@ async function quotly(text, name, avatar) {
         });
         const res = await fetch(`https://api.ryzumi.net/api/image/quotly?${params.toString()}`);
         console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
-        if (res.headers.get('content-type').includes('application/json')) {
+        
+        const contentType = res.headers.get('content-type') || '';
+        
+        // Jika response adalah JSON, ambil URL lalu download gambar
+        if (contentType.includes('application/json')) {
             const json = await res.json();
-            return json.result || json.url;
+            const imageUrl = json.result || json.url || json.image;
+            
+            if (!imageUrl) {
+                throw new Error('API tidak mengembalikan URL gambar');
+            }
+            
+            console.log(`[RYZUMI] 📥 Downloading image from: ${imageUrl.substring(0, 50)}...`);
+            const imgRes = await fetch(imageUrl);
+            if (!imgRes.ok) {
+                throw new Error(`Failed to download image: ${imgRes.status}`);
+            }
+            return await imgRes.buffer();
         }
+        
+        // Jika response langsung gambar
+        if (contentType.includes('image/')) {
+            return await res.buffer();
+        }
+        
+        // Fallback: coba buffer apapun
         return await res.buffer();
     } catch (e) {
         console.log(`[RYZUMI] ❌ Error Quotly: ${e.message}`);
         logger.error(`[RYZUMI QUOTLY] Error: ${e.message}`);
-        throw new Error('Gagal membuat stiker Quotly.');
+        throw new Error('Gagal membuat stiker Quotly: ' + e.message);
     }
 }
 

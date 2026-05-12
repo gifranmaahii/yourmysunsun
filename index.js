@@ -1440,12 +1440,23 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                         try { ppUrl = await sock.profilePictureUrl(senderName, 'image'); } catch (e) { ppUrl = 'https://i.ibb.co/0m0x0x0/user.png'; }
                         
                         const stickerBuffer = await ryzumi.quotly(text, pushName, ppUrl);
+                        
+                        // Validasi buffer
+                        if (!stickerBuffer || !(stickerBuffer instanceof Buffer)) {
+                            throw new Error('Invalid image buffer received from API');
+                        }
+                        if (stickerBuffer.length < 100) {
+                            throw new Error('Image buffer too small, likely an error');
+                        }
+                        
                         const { addExif } = require('./src/features/sticker');
                         const finalSticker = await addExif(stickerBuffer, 'Quotly', BOT_NAME);
                         await sock.sendMessage(remoteJid, { sticker: finalSticker }, { quoted: msg });
                         await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
                     } catch (e) {
+                        console.error('[QC] Error:', e);
                         await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
+                        await sock.sendMessage(remoteJid, { react: { text: '❌', key: msg.key } });
                     }
                     continue;
                 }
