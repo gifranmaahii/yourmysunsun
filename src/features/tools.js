@@ -322,49 +322,55 @@ function hilih(text) {
 }
 
 /**
- * Sticker Search - menggunakan Tenor API
+ * Sticker Search - menggunakan API alternatif
  */
 async function searchSticker(query) {
-    // Try Tenor API (free key yang lebih reliable)
+    // Attempt 1: Sanakan API
     try {
-        const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        
-        const json = await res.json();
-        if (json.results && json.results.length > 0) {
-            const random = json.results[Math.floor(Math.random() * json.results.length)];
-            return random.media?.[0]?.gif?.url || random.url;
+        const res = await fetch(`https://api.sanakan.my.id/api/sticker?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const json = await res.json();
+            if (json.url || json.result || json.data?.url) {
+                return json.url || json.result || json.data?.url;
+            }
         }
     } catch (e) {
-        logger.warn('[TOOLS] Tenor Search failed: ' + e.message);
+        logger.warn('[TOOLS] Sanakan Sticker Search failed: ' + e.message);
     }
     
-    // Fallback: Giphy dengan key public
+    // Attempt 2: Rose API
     try {
-        const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=dc6zaTOxFJmzC&q=${encodeURIComponent(query)}&limit=20`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        
-        const json = await res.json();
-        if (json.data && json.data.length > 0) {
-            const random = json.data[Math.floor(Math.random() * json.data.length)];
-            return random.images?.fixed_height?.url || random.images?.original?.url;
+        const res = await fetch(`https://api.itsrose.life/sticker/search?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const json = await res.json();
+            if (json.result && json.result.length > 0) {
+                const random = json.result[Math.floor(Math.random() * json.result.length)];
+                return random.url || random.sticker || random.webp;
+            }
         }
     } catch (e) {
-        logger.warn('[TOOLS] Giphy Search failed: ' + e.message);
+        logger.warn('[TOOLS] Rose Sticker Search failed: ' + e.message);
     }
     
-    // Last fallback: Scraping Tenor langsung
+    // Attempt 3: Velg API (sticker line)
     try {
-        const res = await fetch(`https://g.tenor.com/v1/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        
-        const json = await res.json();
-        if (json.results && json.results.length > 0) {
-            const random = json.results[Math.floor(Math.random() * json.results.length)];
-            return random.media?.[0]?.gif?.url || random.itemurl;
+        const res = await fetch(`https://api.velg.vercel.app/search/sticker?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const json = await res.json();
+            if (json.sticker_url || json.result || json.url) {
+                return json.sticker_url || json.result || json.url;
+            }
         }
     } catch (e) {
-        logger.warn('[TOOLS] Tenor v1 failed: ' + e.message);
+        logger.warn('[TOOLS] Velg Sticker Search failed: ' + e.message);
+    }
+    
+    // Attempt 4: Web sticker API
+    try {
+        const res = await fetch(`https://api.telegram.org/bot/token/getStickerSet?name=${encodeURIComponent(query)}`);
+        // Ini tidak akan work tanpa token, skip
+    } catch (e) {
+        // Ignore
     }
     
     return null;
