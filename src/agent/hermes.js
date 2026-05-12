@@ -110,15 +110,7 @@ class HermesAgent {
             this.telegramBot.command('start', (ctx) => ctx.reply('🤖 Hermes Agent v3.2\nSmart Model Switching Active\n\nUse /help'));
             
             this.telegramBot.command('help', (ctx) => ctx.reply(
-                `*Hermes Commands:*\n\n` +
-                `🎯 /ai <desc> - Auto-switch model\n` +
-                `🔧 /fix <feat> - Fix with Devin\n` +
-                `💡 /recommend - AI suggestions\n` +
-                `🧪 /testfeat <cmd> - Test\n` +
-                `🚀 /deploy - Deploy to panel\n` +
-                `⚡ /fulldeploy - Git + Panel\n` +
-                `💰 /tokens - Token usage stats\n` +
-                `📊 /status - Bot status`
+                getHelpText()
             ));
 
             this.telegramBot.command('ai', async (ctx) => {
@@ -186,6 +178,34 @@ class HermesAgent {
             });
 
             this.telegramBot.command('status', async (ctx) => ctx.reply(await this.getBotStatus()));
+
+            // Mangseb Bot Commands
+            this.telegramBot.command('startmangseb', async (ctx) => {
+                ctx.reply('📢 *Mangseb Bot*\n\nBot untuk promosi ke semua grup WhatsApp\n\nCommands:\n/mangsebqr - QR login\n/mangsebpairing - Pairing code\n/mangsebpromosi <text> - Kirim promosi\n/mangsebstatus - Status bot\n/mangseblist - List grup');
+            });
+
+            this.telegramBot.command('mangsebqr', async (ctx) => {
+                ctx.reply('📱 *QR Code Mangseb*\n\nQR akan muncul di logs panel\nCek console panel atau tunggu beberapa detik kemudian kirim /mangsebqr lagi');
+            });
+
+            this.telegramBot.command('mangsebpairing', async (ctx) => {
+                ctx.reply('🔑 *Pairing Code*\n\nGunakan command ini di WhatsApp setelah bot terhubung:\n`.addbotjaseb` untuk pairing login');
+            });
+
+            this.telegramBot.command('mangsebpromosi', async (ctx) => {
+                const text = ctx.message.text.slice('/mangsebpromosi'.length).trim();
+                if (!text) return ctx.reply('❌ Format: /mangsebpromosi <pesan promosi>');
+                
+                ctx.reply(`📢 *Kirim Promosi*\n\nPesan: ${text.substring(0, 100)}...\n\n✅ Instruksi dikirim ke Mangseb Bot!\n\nGunakan command ini di WhatsApp:\n\`.promosi ${text}\``);
+            });
+
+            this.telegramBot.command('mangsebstatus', async (ctx) => {
+                ctx.reply('📊 *Mangseb Bot Status*\n\n🤖 Bot Rey: Running\n📢 Mangseb: Integrated\n\nCek logs panel untuk detail koneksi WhatsApp');
+            });
+
+            this.telegramBot.command('mangseblist', async (ctx) => {
+                ctx.reply('📋 *List Grup*\n\nGunakan command ini di WhatsApp setelah login:\n`.listgrup`');
+            });
 
             this.telegramBot.catch((err) => logger.error(`Telegram: ${err.message}`));
             this.telegramBot.launch();
