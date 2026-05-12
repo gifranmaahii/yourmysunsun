@@ -325,27 +325,23 @@ function hilih(text) {
  * Sticker Search - menggunakan Tenor API
  */
 async function searchSticker(query) {
-    // Gunakan Tenor API (Google) untuk GIF/sticker
-    const TENOR_KEY = process.env.TENOR_API_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQmlUfPN4NXxE';
-    
+    // Try Tenor API (free key yang lebih reliable)
     try {
-        const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${TENOR_KEY}&client_key=whatsapp-bot&limit=20&contentfilter=low`);
+        const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         
         const json = await res.json();
         if (json.results && json.results.length > 0) {
-            // Ambil random GIF dari hasil
             const random = json.results[Math.floor(Math.random() * json.results.length)];
-            return random.media_formats?.tinygif?.url || random.media_formats?.gif?.url || random.url;
+            return random.media?.[0]?.gif?.url || random.url;
         }
     } catch (e) {
         logger.warn('[TOOLS] Tenor Search failed: ' + e.message);
     }
     
-    // Fallback: Giphy API
-    const GIPHY_KEY = process.env.GIPHY_API_KEY || 'jGvYvIvsSm9pM9fgYTrk9c7GwxB4dVJ8';
+    // Fallback: Giphy dengan key public
     try {
-        const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=20&rating=g`);
+        const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=dc6zaTOxFJmzC&q=${encodeURIComponent(query)}&limit=20`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         
         const json = await res.json();
@@ -355,6 +351,20 @@ async function searchSticker(query) {
         }
     } catch (e) {
         logger.warn('[TOOLS] Giphy Search failed: ' + e.message);
+    }
+    
+    // Last fallback: Scraping Tenor langsung
+    try {
+        const res = await fetch(`https://g.tenor.com/v1/search?q=${encodeURIComponent(query)}&key=LIVDSRZULELA&limit=20`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
+        const json = await res.json();
+        if (json.results && json.results.length > 0) {
+            const random = json.results[Math.floor(Math.random() * json.results.length)];
+            return random.media?.[0]?.gif?.url || random.itemurl;
+        }
+    } catch (e) {
+        logger.warn('[TOOLS] Tenor v1 failed: ' + e.message);
     }
     
     return null;
