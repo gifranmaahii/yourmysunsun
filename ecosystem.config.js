@@ -28,6 +28,17 @@ module.exports = {
         PANEL_API_KEY: "ptlc_5GhxULOUtm0kk9l7u9l16WKHMFUW1uN7WczzLe2Ba44",
         SERVER_ID: "ccbb66cb"
       }
+    },
+    {
+      name: 'mangseb-promosi',
+      script: './temp_mangseb/bot-promosi.js',
+      cwd: __dirname,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      env: {
+        NODE_ENV: "production"
+      }
     }
   ]
 };
