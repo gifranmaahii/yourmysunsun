@@ -201,39 +201,53 @@ async function createLocalQuotly(text, name, avatar) {
     
     // Name
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 28px Arial';
+    ctx.font = 'bold 24px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText(name || 'User', 150, 70);
+    // Truncate nama panjang
+    const displayName = (name || 'User').length > 20 ? (name || 'User').substring(0, 20) + '...' : (name || 'User');
+    ctx.fillText(displayName, 150, 70);
     
     // Time
     ctx.fillStyle = '#aaa';
-    ctx.font = '18px Arial';
-    ctx.fillText(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 150, 100);
+    ctx.font = '16px Arial';
+    ctx.fillText(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 150, 95);
     
-    // Text
+    // Text — dynamic font size based on text length
+    const textLen = text.length;
+    const fontSize = textLen > 100 ? 24 : textLen > 50 ? 28 : 32;
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 36px Arial';
+    ctx.font = `bold ${fontSize}px Arial`;
     
-    // Word wrap
+    // Word wrap dengan limit baris
     const words = text.split(' ');
     let line = '';
-    let y = 200;
+    let y = 180;
     const maxWidth = width - 80;
-    const lineHeight = 45;
+    const lineHeight = fontSize + 8;
+    const maxLines = 6;
+    let lineCount = 0;
     
     for (let n = 0; n < words.length; n++) {
         const testLine = line + words[n] + ' ';
         const metrics = ctx.measureText(testLine);
         const testWidth = metrics.width;
         if (testWidth > maxWidth && n > 0) {
+            if (lineCount >= maxLines - 1) {
+                ctx.fillText(line.trim() + '...', 40, y);
+                lineCount++;
+                break;
+            }
             ctx.fillText(line, 40, y);
             line = words[n] + ' ';
             y += lineHeight;
+            lineCount++;
         } else {
             line = testLine;
         }
     }
-    ctx.fillText(line, 40, y);
+    if (lineCount < maxLines) {
+        ctx.fillText(line, 40, y);
+    }
     
     const pngBuffer = canvas.toBuffer('image/png');
     
