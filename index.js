@@ -1913,27 +1913,11 @@ Ketik perintah sendiri (tanpa argumen) untuk melihat tutorial lengkapnya.
                     continue;
                 }
 
-                // 27. STICKER SEARCH (.ssearch)
+                // 27. STICKER SEARCH (.ssearch) - DISABLED: API semua down
                 if (textContent.startsWith(PREFIX + 'ssearch')) {
-                    const query = textContent.slice((PREFIX + 'ssearch').length).trim();
-                    if (!query) {
-                        await sock.sendMessage(remoteJid, { text: `🔍 Cari sticker apa?\nContoh: *${PREFIX}ssearch patrick*` }, { quoted: msg });
-                        continue;
-                    }
-                    await sock.sendMessage(remoteJid, { react: { text: '🔍', key: msg.key } });
-                    try {
-                        const data = await tools.searchSticker(query);
-                        if (!data || data.length === 0) throw new Error('Sticker tidak ditemukan.');
-                        
-                        // Kirim 3 sticker random dari hasil pencarian
-                        const results = data.slice(0, 3);
-                        for (let url of results) {
-                            await sock.sendMessage(remoteJid, { sticker: { url } }, { quoted: msg });
-                        }
-                        await sock.sendMessage(remoteJid, { react: { text: '✅', key: msg.key } });
-                    } catch (e) {
-                        await sock.sendMessage(remoteJid, { text: `❌ Error: ${e.message}` }, { quoted: msg });
-                    }
+                    await sock.sendMessage(remoteJid, { 
+                        text: `❌ Fitur .ssearch sedang tidak tersedia.\n\nGunakan alternatif:\n• *.lottie* — Stiker animasi\n• *.play* — Download lagu\n• Stiker manual: kirim foto/video lalu ketik *.sticker*` 
+                    }, { quoted: msg });
                     continue;
                 }
 
