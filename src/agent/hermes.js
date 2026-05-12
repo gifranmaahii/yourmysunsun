@@ -61,6 +61,27 @@ class HermesAgent {
         }
     }
 
+    // HELP TEXT
+    getHelpText() {
+        return `*🤖 Hermes Agent Commands:*\n\n` +
+            `🎯 /ai <desc> - AI generate (auto-switch)\n` +
+            `🔧 /fix <feat> - Fix with Devin\n` +
+            `💡 /recommend - AI suggestions\n` +
+            `🧪 /testfeat <cmd> - Test feature\n` +
+            `🚀 /deploy - Deploy to panel\n` +
+            `📤 /gitpush - Push to GitHub\n` +
+            `⚡ /fulldeploy - Git + Panel\n` +
+            `💰 /tokens - Token usage stats\n` +
+            `📊 /status - Bot status\n\n` +
+            `*📢 Mangseb Bot (Promosi):*\n` +
+            `/startmangseb - Status Mangseb\n` +
+            `/mangsebqr - Get QR login\n` +
+            `/mangsebpairing - Pairing code\n` +
+            `/mangsebpromosi <text> - Promosi grup\n` +
+            `/mangsebstatus - Status WA bot\n` +
+            `/mangseblist - List grup`;
+    }
+
     // SMART MODEL DETECTION
     detectTaskComplexity(description) {
         const codingKeywords = [
