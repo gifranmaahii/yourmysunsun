@@ -322,83 +322,39 @@ function hilih(text) {
 }
 
 /**
- * Sticker Search
+ * Sticker Search - menggunakan Tenor API
  */
 async function searchSticker(query) {
-    // Attempt 1: Agatz API
+    // Gunakan Tenor API (Google) untuk GIF/sticker
+    const TENOR_KEY = process.env.TENOR_API_KEY || 'AIzaSyAyimkuYQYF_FXVALexPuGQmlUfPN4NXxE';
+    
     try {
-        const res = await fetch(`https://api.agatz.xyz/api/sticker?message=${encodeURIComponent(query)}`);
-        
-        // Cek status dan content-type
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-        }
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-            throw new Error('Invalid content-type: ' + contentType);
-        }
+        const res = await fetch(`https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${TENOR_KEY}&client_key=whatsapp-bot&limit=20&contentfilter=low`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         
         const json = await res.json();
-        if (json.status === 200 && json.data) {
-            return json.data;
+        if (json.results && json.results.length > 0) {
+            // Ambil random GIF dari hasil
+            const random = json.results[Math.floor(Math.random() * json.results.length)];
+            return random.media_formats?.tinygif?.url || random.media_formats?.gif?.url || random.url;
         }
     } catch (e) {
-        logger.warn('[TOOLS] Agatz Sticker Search failed: ' + e.message);
+        logger.warn('[TOOLS] Tenor Search failed: ' + e.message);
     }
     
-    // Attempt 2: Ryzumi API
+    // Fallback: Giphy API
+    const GIPHY_KEY = process.env.GIPHY_API_KEY || 'jGvYvIvsSm9pM9fgYTrk9c7GwxB4dVJ8';
     try {
-        const res = await fetch(`https://api.ryzumi.net/api/image/sticker?query=${encodeURIComponent(query)}`);
-        if (res.ok) {
-            const contentType = res.headers.get('content-type') || '';
-            if (contentType.includes('application/json')) {
-                const json = await res.json();
-                if (json.result || json.data) {
-                    return json.result || json.data;
-                }
-            }
+        const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(query)}&limit=20&rating=g`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
+        const json = await res.json();
+        if (json.data && json.data.length > 0) {
+            const random = json.data[Math.floor(Math.random() * json.data.length)];
+            return random.images?.fixed_height?.url || random.images?.original?.url;
         }
     } catch (e) {
-        logger.warn('[TOOLS] Ryzumi Sticker Search failed: ' + e.message);
-    }
-    
-    // Attempt 3: Velg API
-    try {
-        const res = await fetch(`https://api.velg.vercel.app/search/sticker?q=${encodeURIComponent(query)}`);
-        if (res.ok) {
-            const json = await res.json();
-            if (json.sticker_url || json.result || json.url) {
-                return json.sticker_url || json.result || json.url;
-            }
-        }
-    } catch (e) {
-        logger.warn('[TOOLS] Velg Sticker Search failed: ' + e.message);
-    }
-    
-    // Attempt 4: Diky API
-    try {
-        const res = await fetch(`https://api.diky.workers.dev/sticker?q=${encodeURIComponent(query)}`);
-        if (res.ok) {
-            const json = await res.json();
-            if (json.sticker_url || json.url || json.data?.url) {
-                return json.sticker_url || json.url || json.data?.url;
-            }
-        }
-    } catch (e) {
-        logger.warn('[TOOLS] Diky Sticker Search failed: ' + e.message);
-    }
-    
-    // Attempt 5: Bull API
-    try {
-        const res = await fetch(`https://api.bull.tk/sticker?query=${encodeURIComponent(query)}`);
-        if (res.ok) {
-            const json = await res.json();
-            if (json.url || json.sticker || json.result) {
-                return json.url || json.sticker || json.result;
-            }
-        }
-    } catch (e) {
-        logger.warn('[TOOLS] Bull Sticker Search failed: ' + e.message);
+        logger.warn('[TOOLS] Giphy Search failed: ' + e.message);
     }
     
     return null;
