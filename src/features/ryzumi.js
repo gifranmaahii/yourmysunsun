@@ -90,6 +90,7 @@ async function remini(imageUrl) {
  * Quotly (Teks ke Stiker Quote)
  */
 async function quotly(text, name, avatar) {
+    // Try Ryzumi API first
     try {
         console.log(`[RYZUMI] 💬 Membuat Quotly: "${text}" dari ${name}`);
         const params = new URLSearchParams({
@@ -100,37 +101,166 @@ async function quotly(text, name, avatar) {
         const res = await fetch(`https://api.ryzumi.net/api/image/quotly?${params.toString()}`);
         console.log(`[RYZUMI] 📡 Status: ${res.status} ${res.statusText}`);
         
-        const contentType = res.headers.get('content-type') || '';
-        
-        // Jika response adalah JSON, ambil URL lalu download gambar
-        if (contentType.includes('application/json')) {
-            const json = await res.json();
-            const imageUrl = json.result || json.url || json.image;
+        if (res.ok) {
+            const contentType = res.headers.get('content-type') || '';
+            console.log(`[RYZUMI] 📄 Content-Type: ${contentType}`);
             
-            if (!imageUrl) {
-                throw new Error('API tidak mengembalikan URL gambar');
+            if (contentType.includes('application/json')) {
+                const json = await res.json();
+                const imageUrl = json.result || json.url || json.image || json.data?.url;
+                if (imageUrl) {
+                    const imgRes = await fetch(imageUrl);
+                    if (imgRes.ok) {
+                        const imgBuffer = await imgRes.buffer();
+                        if (isValidImage(imgBuffer)) return imgBuffer;
+                    }
+                }
+            } else if (contentType.includes('image/')) {
+                const buffer = await res.buffer();
+                if (isValidImage(buffer)) return buffer;
             }
-            
-            console.log(`[RYZUMI] 📥 Downloading image from: ${imageUrl.substring(0, 50)}...`);
-            const imgRes = await fetch(imageUrl);
-            if (!imgRes.ok) {
-                throw new Error(`Failed to download image: ${imgRes.status}`);
-            }
-            return await imgRes.buffer();
         }
-        
-        // Jika response langsung gambar
-        if (contentType.includes('image/')) {
-            return await res.buffer();
-        }
-        
-        // Fallback: coba buffer apapun
-        return await res.buffer();
+        throw new Error('Ryzumi API failed');
     } catch (e) {
-        console.log(`[RYZUMI] ❌ Error Quotly: ${e.message}`);
-        logger.error(`[RYZUMI QUOTLY] Error: ${e.message}`);
-        throw new Error('Gagal membuat stiker Quotly: ' + e.message);
+        console.log(`[RYZUMI] ❌ Ryzumi failed: ${e.message}`);
     }
+    
+    // Fallback 1: Otakustay API
+    try {
+        console.log(`[QUOTLY] Trying Otakustay API...`);
+        const res = await fetch(`https://api.otakustay.com/quotly?text=${encodeURIComponent(text)}&name=${encodeURIComponent(name || 'User')}&avatar=${encodeURIComponent(avatar || 'https://i.ibb.co/0m0x0x0/user.png')}`);
+        if (res.ok) {
+            const buffer = await res.buffer();
+            if (isValidImage(buffer)) return buffer;
+        }
+    } catch (e) {
+        console.log(`[QUOTLY] Otakustay failed: ${e.message}`);
+    }
+    
+    // Fallback 2: Create local quotly with canvas
+    try {
+        console.log(`[QUOTLY] Creating local quotly...`);
+        return await createLocalQuotly(text, name, avatar);
+    } catch (e) {
+        console.log(`[QUOTLY] Local creation failed: ${e.message}`);
+    }
+    
+    throw new Error('Semua API Quotly gagal');
+}
+
+/**
+ * Create local quotly using canvas
+ */
+async function createLocalQuotly(text, name, avatar) {
+    const { createCanvas, loadImage } = require('canvas');
+    const fetch = require('node-fetch');
+    
+    // Canvas setup
+    const width = 512;
+    const height = 512;
+    const canvas = createCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    
+    // Background gradient
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, '#1a1a2e');
+    gradient.addColorStop(1, '#16213e');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Card background
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.roundRect(20, 20, width - 40, height - 40, 20);
+    ctx.fill();
+    
+    // Try load avatar
+    try {
+        const avatarRes = await fetch(avatar || 'https://i.ibb.co/0m0x0x0/user.png');
+        const avatarBuffer = await avatarRes.buffer();
+        const avatarImg = await loadImage(avatarBuffer);
+        
+        // Draw avatar circle
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(80, 80, 50, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(avatarImg, 30, 30, 100, 100);
+        ctx.restore();
+    } catch (e) {
+        // Draw default avatar circle
+        ctx.fillStyle = '#0f3460';
+        ctx.beginPath();
+        ctx.arc(80, 80, 50, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 40px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText((name || 'U')[0].toUpperCase(), 80, 95);
+    }
+    
+    // Name
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(name || 'User', 150, 70);
+    
+    // Time
+    ctx.fillStyle = '#aaa';
+    ctx.font = '18px Arial';
+    ctx.fillText(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 150, 100);
+    
+    // Text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 36px Arial';
+    
+    // Word wrap
+    const words = text.split(' ');
+    let line = '';
+    let y = 200;
+    const maxWidth = width - 80;
+    const lineHeight = 45;
+    
+    for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        const testWidth = metrics.width;
+        if (testWidth > maxWidth && n > 0) {
+            ctx.fillText(line, 40, y);
+            line = words[n] + ' ';
+            y += lineHeight;
+        } else {
+            line = testLine;
+        }
+    }
+    ctx.fillText(line, 40, y);
+    
+    return canvas.toBuffer('image/png');
+}
+
+/**
+ * Cek magic bytes untuk validasi image (WebP/PNG/JPG)
+ */
+function isValidImage(buffer) {
+    if (!buffer || buffer.length < 10) return false;
+    
+    // WebP: RIFF....WEBP
+    if (buffer.toString('ascii', 0, 4) === 'RIFF' && 
+        buffer.toString('ascii', 8, 12) === 'WEBP') {
+        return true;
+    }
+    
+    // PNG: PNG
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+        return true;
+    }
+    
+    // JPEG: Ȣ
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+        return true;
+    }
+    
+    return false;
 }
 
 /**
