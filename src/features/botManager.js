@@ -354,16 +354,25 @@ const initChildBots = async () => {
             const botName = bot.sessionName;
             const lowRam = bot.isLowRam || false;
 
-            console.log(`🚀 [BotManager] Auto-start: ${botName} (${bot.phone})`);
+            // PENTING: Cek apakah session sudah ada (creds.json valid).
+            // Jika TIDAK ada -> JANGAN auto-start, karena akan minta pairing/QR baru
+            // setiap restart (= spam pairing code). Hanya resume kalau session sudah ada.
+            const sessionDir = path.join(__dirname, '../../sessions', botName);
+            const credsPath = path.join(sessionDir, 'creds.json');
+            const hasSession = fs.existsSync(credsPath);
 
-            let startCmd = bot.pairingCode === "QR_CODE"
-                ? `${pm2Path} start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList} --qr`
-                : `${pm2Path} start index.js --name ${botName} -- --session=${botName} --pairing=${bot.phone} --owner=${fullOwnerList}`;
-            
+            if (!hasSession) {
+                console.log(`⏭️  [BotManager] Skip auto-start ${botName} (${bot.phone}): tidak ada session. Gunakan /retrybot atau .retrybot dari bot utama untuk pairing manual.`);
+                continue;
+            }
+
+            console.log(`🚀 [BotManager] Auto-start: ${botName} (${bot.phone}) [resume session]`);
+
+            // Tidak pakai --pairing/--qr karena session sudah ada -> langsung resume.
+            let startCmd = `${pm2Path} start index.js --name ${botName} -- --session=${botName} --owner=${fullOwnerList}`;
+
             if (lowRam) {
-                startCmd = bot.pairingCode === "QR_CODE"
-                    ? `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --qr --low-ram`
-                    : `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --pairing=${bot.phone} --owner=${fullOwnerList} --low-ram`;
+                startCmd = `${pm2Path} start index.js --name ${botName} --node-args="--max-old-space-size=256" -- --session=${botName} --owner=${fullOwnerList} --low-ram`;
             }
 
             // Jalankan start (PM2 akan handle jika sudah ada/restart)
